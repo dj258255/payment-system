@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: pay
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/pay?serverTimezone=UTC&characterEncoding=UTF-8
+    username: pay
+    password: pay
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate        # 스키마는 마이그레이션으로 관리, JPA는 검증만 (원장 append-only 보호)
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+    open-in-view: false          # OSIV 비활성화 — 긴 트랜잭션/커넥션 점유 방지 (카카오페이 성능 개선 교훈)
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  # Spring Modulith Event Publication Registry (= Transactional Outbox) 를 JPA로 영속화
+  modulith:
+    events:
+      jdbc:
+        schema-initialization:
+          enabled: true          # event_publication 테이블 자동 생성 (개발용)
+      republish-outstanding-events-on-restart: true   # 미완료 이벤트 재시도
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, modulith
+
+logging:
+  level:
+    org.springframework.modulith: INFO
