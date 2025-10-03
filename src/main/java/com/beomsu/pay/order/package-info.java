@@ -6,6 +6,6 @@
  * 구독해 반영하며, payment 모듈을 직접 호출하지 않는다.
  */
 @org.springframework.modulith.ApplicationModule(
-        allowedDependencies = { "shared" }
+        allowedDependencies = { "shared", "payment" }
 )
 package com.beomsu.pay.order;
