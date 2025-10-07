@@ -102,6 +102,29 @@ public class Payment {
         transitionTo(PaymentStatus.ABORTED, TriggeredBy.USER, reason);
     }
 
+    // --- 복구(recovery) 경로: UNKNOWN 결제를 배치가 조회 후 확정한다 ---
+
+    /** UNKNOWN → DONE. PG 조회 결과 실제로는 승인돼 있었을 때(복구 전진). */
+    public void confirmByRecovery(String method) {
+        transitionTo(PaymentStatus.DONE, TriggeredBy.RECOVERY_BATCH, "복구: PG 승인 확인");
+        this.method = method;
+        this.approvedAt = Instant.now();
+    }
+
+    /** UNKNOWN → ABORTED. PG에 결제 정보가 없을 때(승인이 실제로 안 됨). */
+    public void abortByRecovery(String reason) {
+        transitionTo(PaymentStatus.ABORTED, TriggeredBy.RECOVERY_BATCH, reason);
+    }
+
+    /**
+     * UNKNOWN → CANCELED. 망취소(network cancel).
+     * 타임아웃 뒤 이 결제를 진행하지 않기로 했을 때, PG에 남은 "유령 승인"을 정리한다.
+     */
+    public void networkCancel(String reason) {
+        transitionTo(PaymentStatus.CANCELED, TriggeredBy.RECOVERY_BATCH, reason);
+        this.balanceAmount = 0;
+    }
+
     /**
      * 취소(전액/부분). 잔액을 초과하면 예외. 잔액이 0이 되면 CANCELED, 남으면 PARTIAL_CANCELED.
      */
