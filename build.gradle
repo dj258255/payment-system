@@ -13,6 +13,11 @@ java {
     }
 }
 
+tasks.withType(JavaCompile).configureEach {
+    // 파라미터 이름 보존 — Jackson의 record 역직렬화(멱등 응답 캐시)에 필요
+    options.compilerArgs << '-parameters'
+}
+
 repositories {
     mavenCentral()
 }
