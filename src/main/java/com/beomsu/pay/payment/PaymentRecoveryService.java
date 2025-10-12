@@ -59,6 +59,22 @@ public class PaymentRecoveryService {
         return recovered;
     }
 
+    /**
+     * paymentKey 하나를 PG 조회로 확정한다. 웹훅 수신 시 "페이로드를 믿지 말고 조회로 재검증"하는
+     * 경로가 이 메서드를 쓴다. 이미 확정된(DONE/CANCELED 등) 결제면 아무 것도 하지 않는다(멱등).
+     */
+    @Transactional
+    public void resolveByPaymentKey(String paymentKey) {
+        Payment payment = paymentRepository.findByPaymentKey(paymentKey)
+                .orElseThrow(() -> new PaymentException("PAYMENT_NOT_FOUND",
+                        "결제를 찾을 수 없습니다: " + paymentKey));
+        if (payment.getStatus() != PaymentStatus.UNKNOWN
+                && payment.getStatus() != PaymentStatus.IN_PROGRESS) {
+            return; // 이미 확정됨 — 웹훅이 늦게/중복 도착해도 안전(멱등)
+        }
+        resolve(payment);
+    }
+
     private void resolve(Payment payment) {
         PgQueryResult pg = pgClient.query(payment.getPaymentKey());
         switch (pg.status()) {
