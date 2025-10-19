@@ -8,6 +8,7 @@ import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -37,7 +38,7 @@ public class ResilientPgClient implements PgClient {
     private final CircuitBreaker circuitBreaker;
     private final Retry queryRetry;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     public ResilientPgClient(FakePgClient delegate) {
         this((PgClient) delegate);
     }

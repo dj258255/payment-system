@@ -23,7 +23,7 @@ public class CheckoutService {
 
     private final PaymentService paymentService;
     private final OrderRepository orderRepository;
-    private final StockRepository stockRepository;
+    private final StockDeductionService stockDeductionService;
     private final ProductRepository productRepository;
 
     /**
@@ -73,12 +73,10 @@ public class CheckoutService {
 
         // 5. 결과 분기
         if (result.isApproved()) {
-            // 재고 차감 (ADR-003: 승인 성공 시점 차감).
-            // Phase 1은 차감 실패를 예외로 둔다 → Phase 2에서 망취소/보상 트랜잭션으로 승격.
+            // 재고 차감 (ADR-003: 승인 성공 시점 차감). 전략은 조건부 UPDATE(ADR-004: 부하테스트에서 최속).
+            // 차감 실패(품절 경합)는 예외 → Phase 2의 망취소/보상 트랜잭션으로 승격.
             for (OrderItem item : order.getItems()) {
-                Stock stock = stockRepository.findById(item.getProductId())
-                        .orElseThrow(() -> OrderException.outOfStock(item.getProductId()));
-                stock.deduct(item.getQuantity());
+                stockDeductionService.deductConditional(item.getProductId(), item.getQuantity());
             }
             order.markPaid();
         } else if (result.isUnknown()) {
