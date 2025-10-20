@@ -46,6 +46,7 @@ dependencies {
 
     // --- Observability ---
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'   // /actuator/prometheus
 
     // --- Resilience (서킷브레이커·재시도) ---
     implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.2.0'

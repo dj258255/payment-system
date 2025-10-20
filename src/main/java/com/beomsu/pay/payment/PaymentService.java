@@ -5,6 +5,7 @@ import com.beomsu.pay.payment.pg.PgApproveResult;
 import com.beomsu.pay.payment.pg.PgCancelResult;
 import com.beomsu.pay.payment.pg.PgClient;
 import com.beomsu.pay.shared.Money;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final PgClient pgClient;
     private final ApplicationEventPublisher events;
+    private final MeterRegistry meterRegistry;
 
     /**
      * 결제 승인. order 모듈이 금액 검증·주문 상태 전이를 마친 뒤 호출한다.
@@ -36,6 +38,10 @@ public class PaymentService {
 
         PgApproveResult result = pgClient.approve(
                 new PgApproveCommand(paymentKey, orderNo, amount.amount()));
+
+        // 관측성: 승인 결과를 결과별로 계측한다. Grafana의 "결제 성공률" 패널의 소스.
+        meterRegistry.counter("payment.confirm", "outcome", result.outcome().name().toLowerCase())
+                .increment();
 
         return switch (result.outcome()) {
             case SUCCESS -> {

@@ -35,7 +35,10 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, metrics, modulith
+        include: health, info, metrics, modulith, prometheus
+  metrics:
+    tags:
+      application: pay
 
 logging:
   level:

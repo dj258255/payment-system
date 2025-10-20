@@ -41,7 +41,8 @@ public class NotificationService {
             // 실패를 삼키고 DLQ로 격리 → 리스너는 정상 종료(Modulith가 이벤트를 완료로 마킹).
             // 격리된 건은 DLQ에서 운영/배치로 재처리한다.
             log.warn("결제 완료 알림 처리 실패 → DLQ 격리 eventKey={} : {}", eventKey, ex.getMessage());
-            deadLetters.save(DeadLetter.of("PaymentConfirmedEvent", eventKey, ex.getMessage()));
+            deadLetters.save(DeadLetter.of("PaymentConfirmedEvent", eventKey,
+                    event.orderNo(), event.paymentId(), event.amount(), ex.getMessage()));
         }
     }
 }
