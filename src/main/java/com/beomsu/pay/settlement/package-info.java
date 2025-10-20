@@ -5,6 +5,6 @@
  * 배치 재실행 멱등성((merchant_id, settlement_date) 유니크)을 보장한다.
  */
 @org.springframework.modulith.ApplicationModule(
-        allowedDependencies = { "shared" }
+        allowedDependencies = { "shared", "payment" }
 )
 package com.beomsu.pay.settlement;

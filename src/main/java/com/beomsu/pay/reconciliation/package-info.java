@@ -5,6 +5,6 @@
  * 결정적(deterministic) 매칭 엔진 + 예외 큐. "결제 시스템의 최종 방어선".
  */
 @org.springframework.modulith.ApplicationModule(
-        allowedDependencies = { "shared" }
+        allowedDependencies = { "shared", "payment" }
 )
 package com.beomsu.pay.reconciliation;
