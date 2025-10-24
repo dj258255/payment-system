@@ -1,0 +1,10 @@
+# Prometheus 스크레이프 설정 — 결제 앱 메트릭 수집
+# 실행: prometheus --config.file=monitoring/prometheus.yml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'pay'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
