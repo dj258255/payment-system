@@ -23,12 +23,17 @@ spring:
       host: localhost
       port: 6379
 
+  # 스키마는 Flyway가 관리한다 (원장 append-only 보호를 위해 JPA는 validate만)
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
   # Spring Modulith Event Publication Registry (= Transactional Outbox) 를 JPA로 영속화
   modulith:
     events:
       jdbc:
         schema-initialization:
-          enabled: true          # event_publication 테이블 자동 생성 (개발용)
+          enabled: false         # event_publication은 Flyway(V1)가 생성한다
       republish-outstanding-events-on-restart: true   # 미완료 이벤트 재시도
 
 management:

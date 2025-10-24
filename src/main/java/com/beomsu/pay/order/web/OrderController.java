@@ -29,7 +29,7 @@ public class OrderController {
         return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
 
-    /** 주문 생성 요청. Phase 1은 상품 스냅샷(이름·단가)을 요청에서 직접 받는다. */
+    /** 주문 생성 요청. 클라이언트는 productId·quantity만 보내고, 가격은 서버가 카탈로그에서 조회한다. */
     public record CreateOrderRequest(long userId, List<OrderLine> items) {
     }
 }
