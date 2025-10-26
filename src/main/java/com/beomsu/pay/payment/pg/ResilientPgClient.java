@@ -9,6 +9,7 @@ import io.github.resilience4j.retry.RetryConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -38,13 +39,13 @@ public class ResilientPgClient implements PgClient {
     private final CircuitBreaker circuitBreaker;
     private final Retry queryRetry;
 
+    /**
+     * 활성 PG 어댑터를 위임 대상으로 감싼다. 개발/테스트는 {@code FakePgClient}, 운영은
+     * {@code TossPgClient}가 {@code @Qualifier("pgDelegate")}로 주입된다(프로파일로 택일).
+     * 테스트에서는 이 생성자를 직접 호출해 장애 주입 더블을 감쌀 수 있다.
+     */
     @Autowired
-    public ResilientPgClient(FakePgClient delegate) {
-        this((PgClient) delegate);
-    }
-
-    /** 테스트용 — 임의의 위임 대상(장애 주입 더블)을 감쌀 수 있게 한다. */
-    ResilientPgClient(PgClient delegate) {
+    public ResilientPgClient(@Qualifier("pgDelegate") PgClient delegate) {
         this.delegate = delegate;
 
         CircuitBreakerConfig cbConfig = CircuitBreakerConfig.custom()
