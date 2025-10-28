@@ -40,7 +40,7 @@ export default function () {
   // 1) 주문 생성 — 클라이언트는 productId·quantity만 보낸다(가격은 서버 권위)
   const orderRes = http.post(`${BASE}/api/v1/orders`, JSON.stringify({
     userId: 1,
-    lines: [{ productId: 1, quantity: 1 }],
+    items: [{ productId: 1, quantity: 1 }],
   }), { headers: { 'Content-Type': 'application/json' }, tags: { name: 'order' } });
 
   check(orderRes, { 'order 201': (r) => r.status === 201 });
