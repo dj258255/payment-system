@@ -3,6 +3,7 @@ package com.beomsu.pay.order;
 import com.beomsu.pay.payment.ConfirmResult;
 import com.beomsu.pay.payment.PaymentService;
 import com.beomsu.pay.payment.PaymentStatus;
+import com.beomsu.pay.point.PointService;
 import com.beomsu.pay.shared.Money;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,6 +23,7 @@ class CheckoutServiceTest {
     private OrderRepository orderRepository;
     private StockDeductionService stockDeductionService;
     private ProductRepository productRepository;
+    private PointService pointService;
     private CheckoutService service;
 
     @BeforeEach
@@ -30,7 +32,9 @@ class CheckoutServiceTest {
         orderRepository = mock(OrderRepository.class);
         stockDeductionService = mock(StockDeductionService.class);
         productRepository = mock(ProductRepository.class);
-        service = new CheckoutService(paymentService, orderRepository, stockDeductionService, productRepository);
+        pointService = mock(PointService.class);
+        service = new CheckoutService(paymentService, orderRepository, stockDeductionService,
+                productRepository, pointService);
     }
 
     /** 10,000 x 2 = 20,000 짜리 단일 항목 주문. */
@@ -51,11 +55,12 @@ class CheckoutServiceTest {
         Order order = orderOf(100L, 2);
         when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000));
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(stockDeductionService).deductConditional(100L, 2); // 조건부 UPDATE 전략(ADR-004)
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
+        verifyNoInteractions(pointService); // pointAmount=0 → 포인트 경로는 완전히 우회
     }
 
     @Test
@@ -63,7 +68,7 @@ class CheckoutServiceTest {
     void confirmAmountMismatchDoesNotCallPayment() {
         Order order = orderOf(100L, 2); // total 20,000
 
-        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(19_000)))
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(19_000), 0))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
 
@@ -79,7 +84,7 @@ class CheckoutServiceTest {
         when(paymentService.confirm(anyString(), anyString(), any(Money.class)))
                 .thenReturn(new ConfirmResult(123L, PaymentStatus.UNKNOWN, null, "확인 중"));
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000));
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_IN_PROGRESS);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.UNKNOWN);
@@ -93,7 +98,7 @@ class CheckoutServiceTest {
         when(paymentService.confirm(anyString(), anyString(), any(Money.class)))
                 .thenReturn(new ConfirmResult(123L, PaymentStatus.ABORTED, null, "잔액부족"));
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000));
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.ABORTED);
@@ -107,7 +112,7 @@ class CheckoutServiceTest {
         when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
         doThrow(OrderException.outOfStock(100L)).when(stockDeductionService).deductConditional(100L, 3);
 
-        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(30_000)))
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(30_000), 0))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("OUT_OF_STOCK"));
     }
@@ -117,9 +122,73 @@ class CheckoutServiceTest {
     void confirmOrderNotFound() {
         when(orderRepository.findByOrderNo("missing")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.confirm("missing", "pk-1", Money.of(20_000)))
+        assertThatThrownBy(() -> service.confirm("missing", "pk-1", Money.of(20_000), 0))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("ORDER_NOT_FOUND"));
+    }
+
+    // --- 복합결제(포인트+카드) ---
+
+    @Test
+    @DisplayName("복합결제 성공: 포인트 선점 + 카드 승인 + 재고 차감 + PAID")
+    void compositePaymentSuccess() {
+        Order order = orderOf(100L, 2); // total 20,000
+        when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
+
+        // 카드 14,000 + 포인트 6,000 = 20,000
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(pointService).use(1L, 6_000, order.getOrderNo());          // 포인트 선점(카드보다 먼저)
+        verify(paymentService).confirm(eq(order.getOrderNo()), eq("pk-1"), eq(Money.of(14_000)));
+        verify(stockDeductionService).deductConditional(100L, 2);
+        verify(pointService, never()).restore(anyLong(), anyLong(), anyString()); // 성공이므로 보상 없음
+        assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
+    }
+
+    @Test
+    @DisplayName("복합결제 카드 실패(ABORTED): 선점 포인트를 복원(보상)하고 PENDING_PAYMENT로 복귀")
+    void compositePaymentCardFailureRestoresPoint() {
+        Order order = orderOf(100L, 2); // total 20,000
+        when(paymentService.confirm(anyString(), anyString(), any(Money.class)))
+                .thenReturn(new ConfirmResult(123L, PaymentStatus.ABORTED, null, "잔액부족"));
+
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000);
+
+        verify(pointService).use(1L, 6_000, order.getOrderNo());
+        verify(pointService).restore(1L, 6_000, order.getOrderNo());       // 보상 트랜잭션
+        verify(stockDeductionService, never()).deductConditional(anyLong(), anyInt());
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.ABORTED);
+    }
+
+    @Test
+    @DisplayName("복합결제 금액 검증: 카드+포인트 합이 주문금액과 다르면 AMOUNT_MISMATCH")
+    void compositePaymentAmountMismatch() {
+        Order order = orderOf(100L, 2); // total 20,000
+
+        // 카드 14,000 + 포인트 5,000 = 19,000 ≠ 20,000
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 5_000))
+                .isInstanceOf(OrderException.class)
+                .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT); // 상태 전이 없음
+        verify(pointService, never()).use(anyLong(), anyLong(), anyString()); // 포인트 차감도 없음
+        verify(paymentService, never()).confirm(anyString(), anyString(), any(Money.class));
+    }
+
+    @Test
+    @DisplayName("전액 포인트 결제(cardAmount=0): 카드 호출 없이 재고 차감 + PAID")
+    void fullPointPayment() {
+        Order order = orderOf(100L, 2); // total 20,000
+
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(0), 20_000);
+
+        verify(pointService).use(1L, 20_000, order.getOrderNo());
+        verify(paymentService, never()).confirm(anyString(), anyString(), any(Money.class));
+        verify(stockDeductionService).deductConditional(100L, 2);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
     }
 
     @Test
