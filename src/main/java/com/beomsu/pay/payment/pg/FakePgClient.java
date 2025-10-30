@@ -1,5 +1,6 @@
 package com.beomsu.pay.payment.pg;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * 테스트할 수 있다.
  */
 @Component
+@Qualifier("pgDelegate")
 @Profile("!prod")
 public class FakePgClient implements PgClient {
 
