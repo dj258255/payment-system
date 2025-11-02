@@ -16,12 +16,18 @@ import org.springframework.security.web.SecurityFilterChain;
 /**
  * 보안 설정.
  *
- * <p>백오피스 어드민({@code /api/v1/admin/**})은 <b>ROLE_ADMIN 인증</b>을 요구한다 — DLQ 재처리처럼
- * 상태를 바꾸는 운영 액션을 아무나 호출하지 못하게 한다. 나머지 결제 흐름(주문/승인)은 사용자
- * 인증 체계가 별도로 붙는 영역이라 여기서는 열어 두고, 웹훅은 HMAC 서명으로 자체 인증한다.
+ * <p>접근 제어:
+ * <ul>
+ *   <li>{@code /api/v1/admin/**} → ROLE_ADMIN (DLQ 재처리 등 운영 액션)</li>
+ *   <li>{@code /api/v1/orders/**}, {@code /api/v1/payments/confirm} → ROLE_USER 인증.
+ *       userId는 인증된 principal에서 얻어 <b>주문 소유권을 검증</b>한다(IDOR 방지).</li>
+ *   <li>{@code /api/v1/webhooks/**} → 개방(HMAC 서명으로 자체 인증)</li>
+ *   <li>{@code /actuator} 메트릭 → ADMIN (health/info만 공개)</li>
+ * </ul>
  *
- * <p>어드민 자격증명은 프로퍼티로 주입한다({@code app.admin.username/password}). 운영에서는 반드시
- * 강한 비밀번호로 오버라이드해야 한다(기본값은 로컬 개발용).
+ * <p>자격증명은 프로퍼티로 주입한다. 데모 사용자 username은 곧 userId다(예: "1"). 운영에서는
+ * 실제 사용자 인증 체계(JWT/세션/게이트웨이)로 교체하되, "userId를 클라이언트가 아니라 인증
+ * 컨텍스트에서 얻는다"는 원칙은 동일하다. 기본 비밀번호는 로컬 개발용 — 운영에서 반드시 오버라이드.
  */
 @Configuration
 public class SecurityConfig {
@@ -32,24 +38,30 @@ public class SecurityConfig {
                 // 세션 없는 API + HMAC 웹훅이라 CSRF 토큰은 부적합 → 비활성화
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")   // 어드민만
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/webhooks/**").permitAll()      // HMAC 자체 인증
+                        .requestMatchers("/api/v1/orders/**", "/api/v1/payments/**").hasRole("USER")
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                        .requestMatchers("/actuator/**").hasRole("ADMIN")        // 메트릭도 보호
-                        .anyRequest().permitAll())                              // 결제 흐름·웹훅
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
+                        .anyRequest().permitAll())
                 .httpBasic(Customizer.withDefaults());
         return http.build();
     }
 
     @Bean
-    UserDetailsService adminUserDetails(
-            @Value("${app.admin.username:admin}") String username,
-            @Value("${app.admin.password:admin-local-only}") String password,
+    UserDetailsService userDetailsService(
+            @Value("${app.admin.username:admin}") String adminUsername,
+            @Value("${app.admin.password:admin-local-only}") String adminPassword,
+            @Value("${app.user.password:user-local-only}") String userPassword,
             PasswordEncoder encoder) {
-        UserDetails admin = User.withUsername(username)
-                .password(encoder.encode(password))
-                .roles("ADMIN")
-                .build();
-        return new InMemoryUserDetailsManager(admin);
+        UserDetails admin = User.withUsername(adminUsername)
+                .password(encoder.encode(adminPassword)).roles("ADMIN").build();
+        // 데모 사용자: username이 곧 userId (principal.getName() → Long.parseLong)
+        UserDetails user1 = User.withUsername("1")
+                .password(encoder.encode(userPassword)).roles("USER").build();
+        UserDetails user2 = User.withUsername("2")
+                .password(encoder.encode(userPassword)).roles("USER").build();
+        return new InMemoryUserDetailsManager(admin, user1, user2);
     }
 
     @Bean

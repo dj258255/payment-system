@@ -55,7 +55,7 @@ class CheckoutServiceTest {
         Order order = orderOf(100L, 2);
         when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(stockDeductionService).deductConditional(100L, 2); // 조건부 UPDATE 전략(ADR-004)
@@ -68,7 +68,7 @@ class CheckoutServiceTest {
     void confirmAmountMismatchDoesNotCallPayment() {
         Order order = orderOf(100L, 2); // total 20,000
 
-        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(19_000), 0))
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(19_000), 0, 1L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
 
@@ -84,7 +84,7 @@ class CheckoutServiceTest {
         when(paymentService.confirm(anyString(), anyString(), any(Money.class)))
                 .thenReturn(new ConfirmResult(123L, PaymentStatus.UNKNOWN, null, "확인 중"));
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_IN_PROGRESS);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.UNKNOWN);
@@ -98,7 +98,7 @@ class CheckoutServiceTest {
         when(paymentService.confirm(anyString(), anyString(), any(Money.class)))
                 .thenReturn(new ConfirmResult(123L, PaymentStatus.ABORTED, null, "잔액부족"));
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.ABORTED);
@@ -112,7 +112,7 @@ class CheckoutServiceTest {
         when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
         doThrow(OrderException.outOfStock(100L)).when(stockDeductionService).deductConditional(100L, 3);
 
-        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(30_000), 0))
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(30_000), 0, 1L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("OUT_OF_STOCK"));
     }
@@ -122,7 +122,7 @@ class CheckoutServiceTest {
     void confirmOrderNotFound() {
         when(orderRepository.findByOrderNo("missing")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.confirm("missing", "pk-1", Money.of(20_000), 0))
+        assertThatThrownBy(() -> service.confirm("missing", "pk-1", Money.of(20_000), 0, 1L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("ORDER_NOT_FOUND"));
     }
@@ -136,7 +136,7 @@ class CheckoutServiceTest {
         when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
 
         // 카드 14,000 + 포인트 6,000 = 20,000
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(pointService).use(1L, 6_000, order.getOrderNo());          // 포인트 선점(카드보다 먼저)
@@ -153,7 +153,7 @@ class CheckoutServiceTest {
         when(paymentService.confirm(anyString(), anyString(), any(Money.class)))
                 .thenReturn(new ConfirmResult(123L, PaymentStatus.ABORTED, null, "잔액부족"));
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 1L);
 
         verify(pointService).use(1L, 6_000, order.getOrderNo());
         verify(pointService).restore(1L, 6_000, order.getOrderNo());       // 보상 트랜잭션
@@ -168,7 +168,7 @@ class CheckoutServiceTest {
         Order order = orderOf(100L, 2); // total 20,000
 
         // 카드 14,000 + 포인트 5,000 = 19,000 ≠ 20,000
-        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 5_000))
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 5_000, 1L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
 
@@ -182,13 +182,39 @@ class CheckoutServiceTest {
     void fullPointPayment() {
         Order order = orderOf(100L, 2); // total 20,000
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(0), 20_000);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(0), 20_000, 1L);
 
         verify(pointService).use(1L, 20_000, order.getOrderNo());
         verify(paymentService, never()).confirm(anyString(), anyString(), any(Money.class));
         verify(stockDeductionService).deductConditional(100L, 2);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
+    }
+
+    @Test
+    @DisplayName("남의 주문을 결제하려 하면 ORDER_FORBIDDEN (IDOR 방지) — 검증·차감 전에 차단")
+    void confirmRejectsNonOwner() {
+        Order order = orderOf(100L, 2); // 주인은 userId 1
+
+        // userId 2가 주인이 1인 주문을 결제 시도
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 2L))
+                .isInstanceOf(OrderException.class)
+                .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("ORDER_FORBIDDEN"));
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT); // 상태 전이 없음
+        verifyNoInteractions(paymentService);
+        verify(pointService, never()).use(anyLong(), anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("음수 포인트/카드 금액은 거부한다 (검증 우회 방지)")
+    void confirmRejectsNegativeAmounts() {
+        Order order = orderOf(100L, 2);
+
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(25_000), -5_000, 1L))
+                .isInstanceOf(OrderException.class)
+                .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("INVALID_REQUEST"));
+        verifyNoInteractions(paymentService);
     }
 
     @Test

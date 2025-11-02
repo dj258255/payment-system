@@ -112,6 +112,16 @@ public class Order {
         }
     }
 
+    /**
+     * 소유권 검증 — 요청한 사용자가 이 주문의 주인인지 확인한다. 인증된 principal에서 얻은 userId를
+     * 넘겨받아, 남의 주문을 결제·조작(IDOR)하는 것을 막는다. 결제·포인트 차감 <b>이전에</b> 호출한다.
+     */
+    public void verifyOwner(long userId) {
+        if (this.userId != userId) {
+            throw OrderException.notOwner(orderNo);
+        }
+    }
+
     /** PENDING_PAYMENT → PAYMENT_IN_PROGRESS. 승인 진행 잠금(이중 지불 차단). */
     public void startPayment() {
         transitionTo(OrderStatus.PAYMENT_IN_PROGRESS);

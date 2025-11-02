@@ -67,14 +67,31 @@ public class CheckoutService {
      * @param cardAmount  카드로 결제할 금액
      * @param pointAmount 포인트로 결제할 금액(요청에 없으면 0)
      */
-    public CheckoutResult confirm(String orderNo, String paymentKey, Money cardAmount, long pointAmount) {
+    public CheckoutResult confirm(String orderNo, String paymentKey, Money cardAmount,
+                                  long pointAmount, long authenticatedUserId) {
+        // 0. 음수 방어 — 음수 pointAmount로 검증 우회·오버플로를 시도할 수 없게 한다.
+        if (pointAmount < 0 || cardAmount.amount() < 0) {
+            throw new OrderException("INVALID_REQUEST", "결제 금액은 음수일 수 없습니다.");
+        }
+
         // 1. 주문 로드
         Order order = orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> OrderException.orderNotFound(orderNo));
 
+        // 1.5. 소유권 검증 — 인증된 사용자가 이 주문의 주인인지 (IDOR 방지).
+        //      검증·상태전이·포인트차감 그 무엇보다 먼저 한다.
+        order.verifyOwner(authenticatedUserId);
+
         // 2. 금액 위변조 검증 — 카드+포인트 합이 주문 총액과 일치해야 한다.
+        //    합산은 오버플로 시 조용히 뒤집히지 않도록 addExact를 쓴다.
         //    불일치 시 여기서 예외가 나므로 포인트 차감·PG 승인은 호출되지 않는다.
-        order.verifyAmount(Money.of(cardAmount.amount() + pointAmount));
+        long requestedTotal;
+        try {
+            requestedTotal = Math.addExact(cardAmount.amount(), pointAmount);
+        } catch (ArithmeticException e) {
+            throw new OrderException("AMOUNT_OVERFLOW", "결제 금액이 허용 범위를 초과했습니다.");
+        }
+        order.verifyAmount(Money.of(requestedTotal));
 
         // 3. 주문 상태 조건부 전이 (이중 지불 차단)
         order.startPayment();

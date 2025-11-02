@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.security.Principal;
 import java.util.List;
 
 /** 주문 생성 REST 컨트롤러. */
@@ -24,12 +25,15 @@ public class OrderController {
     }
 
     @PostMapping
-    public ResponseEntity<CreateOrderResult> create(@RequestBody CreateOrderRequest request) {
-        CreateOrderResult result = checkoutService.createOrder(request.userId(), request.items());
+    public ResponseEntity<CreateOrderResult> create(
+            @RequestBody CreateOrderRequest request, Principal principal) {
+        // userId는 요청 본문이 아니라 인증된 principal에서 얻는다(스푸핑 방지).
+        long userId = Long.parseLong(principal.getName());
+        CreateOrderResult result = checkoutService.createOrder(userId, request.items());
         return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
 
-    /** 주문 생성 요청. 클라이언트는 productId·quantity만 보내고, 가격은 서버가 카탈로그에서 조회한다. */
-    public record CreateOrderRequest(long userId, List<OrderLine> items) {
+    /** 주문 생성 요청. 클라이언트는 productId·quantity만 보내고, 가격·소유자는 서버가 정한다. */
+    public record CreateOrderRequest(List<OrderLine> items) {
     }
 }

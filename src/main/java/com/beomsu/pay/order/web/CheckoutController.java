@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
+
 /**
  * 결제 승인(체크아웃) REST 컨트롤러.
  *
@@ -34,13 +36,16 @@ public class CheckoutController {
     @PostMapping("/confirm")
     public ResponseEntity<CheckoutResult> confirm(
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @RequestBody ConfirmRequest request) {
+            @RequestBody ConfirmRequest request,
+            Principal principal) {
 
+        // 인증된 사용자 ID — 주문 소유권 검증에 쓴다(남의 주문 결제/포인트 소진 방지).
+        long userId = Long.parseLong(principal.getName());
         CheckoutResult result = idempotencyService.execute(
                 idempotencyKey, PATH, "POST", request, CheckoutResult.class,
                 () -> checkoutService.confirm(
                         request.orderNo(), request.paymentKey(),
-                        Money.of(request.amount()), request.pointAmount()));
+                        Money.of(request.amount()), request.pointAmount(), userId));
 
         HttpStatus status = switch (result.paymentStatus()) {
             case DONE -> HttpStatus.OK;               // 승인 완료
