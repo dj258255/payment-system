@@ -26,7 +26,7 @@ public class GlobalExceptionHandler {
 
     private HttpStatus statusOf(String code) {
         return switch (code) {
-            case "AMOUNT_MISMATCH" -> HttpStatus.FORBIDDEN;                                  // 403
+            case "AMOUNT_MISMATCH", "ORDER_FORBIDDEN" -> HttpStatus.FORBIDDEN;                // 403
             case "ORDER_NOT_FOUND", "PAYMENT_NOT_FOUND", "PRODUCT_NOT_FOUND"
                     -> HttpStatus.NOT_FOUND;                                                 // 404
             case "INVALID_STATE_TRANSITION", "CANCEL_AMOUNT_EXCEEDED", "OUT_OF_STOCK",
