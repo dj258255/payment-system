@@ -1,7 +1,7 @@
 # 10. API 스펙 — 엔드포인트 설계와 에러 시맨틱
 
 > 토스페이먼츠 API 디자인(멱등키·에러 코드 체계)을 우리 서버에도 동일하게 적용한다 — "PG를 써본 사람"이 아니라 "PG를 만드는 사람"의 관점.
-> Base URL: `/api/v1` / 인증: 생략(포트폴리오 범위) 또는 간단한 Bearer / 모든 응답은 JSON
+> Base URL: `/api/v1` / 인증: Spring Security(ROLE_USER), 웹훅은 HMAC 서명 / 모든 응답은 JSON
 
 ## 0. 공통 규약
 
@@ -104,7 +104,7 @@
   "receiptUrl": "https://..."
 }
 
-// Response 202 — 승인 미확정 (UNKNOWN) ★ 이 응답의 존재가 차별화 포인트
+// Response 202 — 승인 미확정 (UNKNOWN) ★ 미확정을 성공/실패로 단정하지 않는다
 {
   "paymentId": 123,
   "status": "UNKNOWN",
@@ -246,7 +246,7 @@ sequenceDiagram
     end
 ```
 
-## 7. API 설계 원칙 요약 (README·면접용)
+## 7. API 설계 원칙 요약
 
 1. **모든 쓰기 API는 멱등** — 멱등키 계약이 곧 재시도 안전성의 근거
 2. **미확정(UNKNOWN)을 API 계약에 노출** — 202 + 폴링 안내. 거짓 성공/거짓 실패를 응답하지 않는다

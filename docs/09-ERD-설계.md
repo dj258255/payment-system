@@ -1,6 +1,6 @@
 # 09. ERD 설계 — 테이블 스키마와 설계 결정
 
-> 로드맵 Phase 1~6 기준 코어 스키마. 각 테이블마다 "왜 이렇게 설계했는가"를 함께 기록한다 — 면접에서 테이블을 그려놓고 설명할 수 있는 수준이 목표.
+> 코어 스키마. 각 테이블마다 "왜 이렇게 설계했는가"를 함께 기록한다.
 > DB: MySQL 8.x / 금액: KRW는 소수점이 없으므로 `BIGINT` (통화 확장 대비 `currency` 컬럼만 예약)
 
 ## 0. 전체 ERD
@@ -130,7 +130,7 @@ CREATE TABLE payment_cancels (
 ```
 
 **설계 결정**
-- **orders : payments = 1:N** — 결제 실패 후 재시도하면 payment 레코드가 새로 생긴다. "주문당 성공한 결제는 1건"은 UNIQUE로 못 걸므로(MySQL은 partial unique index 없음) **주문 상태 조건부 UPDATE**(`WHERE status = 'PENDING_PAYMENT'`)로 이중 지불을 차단 — 이 결정 자체가 면접 소재
+- **orders : payments = 1:N** — 결제 실패 후 재시도하면 payment 레코드가 새로 생긴다. "주문당 성공한 결제는 1건"은 UNIQUE로 못 걸므로(MySQL은 partial unique index 없음) **주문 상태 조건부 UPDATE**(`WHERE status = 'PENDING_PAYMENT'`)로 이중 지불을 차단 — 이 결정 자체가 설계 판단
 - **`UNKNOWN` 상태가 스키마에 존재** — 카카오페이 3-상태 모델(04 문서)을 상태머신에 1급 시민으로 반영. `unknown_reason`으로 진입 원인 추적
 - **`balance_amount`**: 부분취소 누적 관리. `cancel_amount ≤ balance_amount` 검증 + 차감을 조건부 UPDATE로
 - **payment_history는 감사(audit)의 최소 단위**: triggered_by로 "누가 이 전이를 일으켰나"(웹훅인지 배치인지 어드민인지)를 남긴다 — 전자금융거래법 기록 보존(08 문서)의 기반

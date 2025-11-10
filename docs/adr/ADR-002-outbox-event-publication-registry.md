@@ -33,4 +33,4 @@ Outbox를 직접 구현하지 않고 **Spring Modulith의 Event Publication Regi
 
 - 외부 Kafka로의 발행은 Modulith 이벤트를 **브릿지**로 다시 내보내야 한다(`spring-modulith-events-kafka`). Phase 3에서 도입.
 - 이벤트 페이로드는 **Zero-Payload 지향**(식별자+행위+시각) — 순서 역전·스키마 결합 문제를 피한다(배민 사례).
-- 직접 구현한 outbox가 아니므로, 면접에선 "왜 직접 안 짰나 = 검증된 구현 + 학습은 원리 이해로 대체"를 설명할 수 있어야 한다. 원리는 03 문서에 정리.
+- 직접 구현한 outbox가 아니므로, "검증된 구현을 쓰되 원리는 이해한다"는 판단을 남긴다. 원리는 03 문서에 정리.
