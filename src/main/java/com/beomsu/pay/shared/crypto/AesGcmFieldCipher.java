@@ -30,8 +30,12 @@ public class AesGcmFieldCipher implements FieldCipher {
     private final SecretKeySpec key;
     private final SecureRandom random = new SecureRandom();
 
-    public AesGcmFieldCipher(
-            @Value("${app.crypto.key:0123456789abcdef0123456789abcdef}") String keyString) {
+    // 키는 코드에 두지 않는다 — 설정/환경변수({@code app.crypto.key})로만 주입한다.
+    // 미설정 시 기동 실패시켜, 공개된 기본 키로 배포되는 사고를 원천 차단한다.
+    public AesGcmFieldCipher(@Value("${app.crypto.key}") String keyString) {
+        if (keyString == null || keyString.isBlank()) {
+            throw new IllegalStateException("app.crypto.key 미설정 — 암호화 키를 환경변수/시크릿으로 주입해야 합니다.");
+        }
         byte[] keyBytes = keyString.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         if (keyBytes.length != 32) {
             throw new IllegalStateException("AES-256 키는 32바이트여야 합니다(현재 " + keyBytes.length + ").");
