@@ -21,6 +21,10 @@ public final class BlindIndex {
         if (value == null) {
             return null;
         }
+        // 약한 secret은 해시 예측·역산 위험을 키운다 — 최소 강도를 강제한다.
+        if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 16) {
+            throw new IllegalArgumentException("블라인드 인덱스 secret은 16바이트 이상이어야 합니다.");
+        }
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
