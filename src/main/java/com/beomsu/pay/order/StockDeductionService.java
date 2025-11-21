@@ -32,6 +32,15 @@ public class StockDeductionService {
         }
     }
 
+    /** 전액 취소 시 재고 복원 — 차감했던 수량을 되돌린다. */
+    @Transactional
+    public void restore(long productId, int qty) {
+        if (qty <= 0) {
+            throw new OrderException("INVALID_REQUEST", "복원 수량은 1 이상이어야 합니다: " + qty);
+        }
+        stockRepository.restore(productId, qty);
+    }
+
     /** 비관적 락 — 행을 잠그고 차감. */
     @Transactional
     public void deductPessimistic(long productId, int qty) {

@@ -79,6 +79,17 @@ public class PointService {
         historyRepository.save(PointHistory.of(userId, PointHistoryType.REFUND, amount, orderNo));
     }
 
+    /**
+     * 이미 환불된 몫을 제외한, 취소 시 환불 가능한 포인트. 이 주문의 USE 합에서 REFUND 합을 뺀다.
+     * 음수면(방어) 0으로 보정한다.
+     */
+    @Transactional(readOnly = true)
+    public long refundableAmount(String orderNo) {
+        long used = historyRepository.sumAmountByOrderNoAndType(orderNo, PointHistoryType.USE);
+        long refunded = historyRepository.sumAmountByOrderNoAndType(orderNo, PointHistoryType.REFUND);
+        return Math.max(0, used - refunded);
+    }
+
     /** 잔액 조회 — 계정이 없으면 0. */
     @Transactional(readOnly = true)
     public long balance(long userId) {

@@ -24,4 +24,9 @@ interface StockRepository extends JpaRepository<Stock, Long> {
     @Query("update Stock s set s.quantity = s.quantity - :qty "
             + "where s.productId = :id and s.quantity >= :qty")
     int deductConditionally(@Param("id") Long id, @Param("qty") int qty);
+
+    /** 재고 가산 — 전액 취소 시 차감했던 수량을 되돌린다. 조건 없이 원자적 UPDATE. */
+    @Modifying(clearAutomatically = true)
+    @Query("update Stock s set s.quantity = s.quantity + :qty where s.productId = :id")
+    int restore(@Param("id") Long id, @Param("qty") int qty);
 }
