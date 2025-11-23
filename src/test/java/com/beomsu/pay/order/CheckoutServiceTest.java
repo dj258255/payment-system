@@ -24,6 +24,7 @@ class CheckoutServiceTest {
     private StockDeductionService stockDeductionService;
     private ProductRepository productRepository;
     private PointService pointService;
+    private CompensationService compensationService;
     private CheckoutService service;
 
     @BeforeEach
@@ -33,8 +34,11 @@ class CheckoutServiceTest {
         stockDeductionService = mock(StockDeductionService.class);
         productRepository = mock(ProductRepository.class);
         pointService = mock(PointService.class);
+        compensationService = mock(CompensationService.class);
+        // 기본값: 재고 차감 성공. 재고 부족 케이스는 개별 테스트에서 false로 재정의한다.
+        when(stockDeductionService.tryDeduct(anyLong(), anyInt())).thenReturn(true);
         service = new CheckoutService(paymentService, orderRepository, stockDeductionService,
-                productRepository, pointService);
+                productRepository, pointService, compensationService);
     }
 
     /** 10,000 x 2 = 20,000 짜리 단일 항목 주문. */
@@ -58,9 +62,10 @@ class CheckoutServiceTest {
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
-        verify(stockDeductionService).deductConditional(100L, 2); // 조건부 UPDATE 전략(ADR-004)
+        verify(stockDeductionService).tryDeduct(100L, 2); // 조건부 UPDATE 전략(ADR-004), 예외 없는 boolean
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
         verifyNoInteractions(pointService); // pointAmount=0 → 포인트 경로는 완전히 우회
+        verifyNoInteractions(compensationService); // 정상 차감이므로 보상 없음
     }
 
     @Test
@@ -74,7 +79,7 @@ class CheckoutServiceTest {
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT); // 상태 전이도 없음
         verify(paymentService, never()).confirm(anyString(), anyString(), any(Money.class));
-        verify(stockDeductionService, never()).deductConditional(anyLong(), anyInt());
+        verify(stockDeductionService, never()).tryDeduct(anyLong(), anyInt());
     }
 
     @Test
@@ -88,7 +93,7 @@ class CheckoutServiceTest {
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_IN_PROGRESS);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.UNKNOWN);
-        verify(stockDeductionService, never()).deductConditional(anyLong(), anyInt());
+        verify(stockDeductionService, never()).tryDeduct(anyLong(), anyInt());
     }
 
     @Test
@@ -102,19 +107,64 @@ class CheckoutServiceTest {
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.ABORTED);
-        verify(stockDeductionService, never()).deductConditional(anyLong(), anyInt());
+        verify(stockDeductionService, never()).tryDeduct(anyLong(), anyInt());
     }
 
     @Test
-    @DisplayName("승인은 성공했으나 재고가 부족하면 OUT_OF_STOCK 예외 (Phase 2 보상 대상)")
-    void confirmApprovedButOutOfStock() {
-        Order order = orderOf(100L, 3);
+    @DisplayName("승인 성공 + 재고 부족(순수 카드): 예외 없이 망취소 보상 태스크 적재 + 주문 FAILED")
+    void confirmApprovedButOutOfStockEnqueuesCompensation() {
+        Order order = orderOf(100L, 3); // total 30,000
         when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
-        doThrow(OrderException.outOfStock(100L)).when(stockDeductionService).deductConditional(100L, 3);
+        when(stockDeductionService.tryDeduct(100L, 3)).thenReturn(false); // 품절 경합
 
-        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(30_000), 0, 1L))
-                .isInstanceOf(OrderException.class)
-                .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("OUT_OF_STOCK"));
+        // 예외를 던지지 않고 결과를 반환한다(트랜잭션을 깨끗이 커밋시키기 위해).
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(30_000), 0, 1L);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
+        verify(compensationService).enqueueNetworkCancel(order.getOrderNo(), 30_000L,
+                "재고 부족: 카드 승인 후 자동 망취소");
+        verify(stockDeductionService, never()).restore(anyLong(), anyInt()); // 차감된 게 없어 원복 불필요
+        verify(pointService, never()).restore(anyLong(), anyLong(), anyString()); // 포인트 미사용
+        assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
+    }
+
+    @Test
+    @DisplayName("승인 성공 + 복합결제 재고 부족: 선점 포인트 복원 + 망취소 적재 + 주문 FAILED")
+    void confirmCompositeOutOfStockRestoresPointAndEnqueues() {
+        Order order = orderOf(100L, 2); // total 20,000
+        when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
+        when(stockDeductionService.tryDeduct(100L, 2)).thenReturn(false);
+
+        // 카드 14,000 + 포인트 6,000 = 20,000
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 1L);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
+        verify(pointService).restore(1L, 6_000, order.getOrderNo());   // 선점 포인트 복원(내부·확실)
+        verify(compensationService).enqueueNetworkCancel(order.getOrderNo(), 14_000L,
+                "재고 부족: 카드 승인 후 자동 망취소");                 // 카드 승인액만 망취소
+        assertThat(result.orderStatus()).isEqualTo(OrderStatus.FAILED);
+    }
+
+    @Test
+    @DisplayName("승인 성공 + 부분 차감 후 재고 부족: 앞서 차감된 아이템만 재고 원복")
+    void confirmPartialDeductionRestoresDeductedItems() {
+        // 두 항목 주문: 첫 항목 차감 성공(10), 둘째 항목 부족(20)
+        Order order = Order.create(1L, List.of(
+                OrderItem.of(10L, "상품A", 10_000, 1),
+                OrderItem.of(20L, "상품B", 10_000, 1)));
+        when(orderRepository.findByOrderNo(order.getOrderNo())).thenReturn(Optional.of(order));
+        when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
+        when(stockDeductionService.tryDeduct(10L, 1)).thenReturn(true);
+        when(stockDeductionService.tryDeduct(20L, 1)).thenReturn(false);
+
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
+        verify(stockDeductionService).restore(10L, 1);              // 부분 차감분 원복
+        verify(stockDeductionService, never()).restore(20L, 1);     // 둘째는 차감 안 됨
+        verify(compensationService).enqueueNetworkCancel(order.getOrderNo(), 20_000L,
+                "재고 부족: 카드 승인 후 자동 망취소");
+        assertThat(result.orderStatus()).isEqualTo(OrderStatus.FAILED);
     }
 
     @Test
@@ -141,7 +191,7 @@ class CheckoutServiceTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(pointService).use(1L, 6_000, order.getOrderNo());          // 포인트 선점(카드보다 먼저)
         verify(paymentService).confirm(eq(order.getOrderNo()), eq("pk-1"), eq(Money.of(14_000)));
-        verify(stockDeductionService).deductConditional(100L, 2);
+        verify(stockDeductionService).tryDeduct(100L, 2);
         verify(pointService, never()).restore(anyLong(), anyLong(), anyString()); // 성공이므로 보상 없음
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
     }
@@ -157,7 +207,7 @@ class CheckoutServiceTest {
 
         verify(pointService).use(1L, 6_000, order.getOrderNo());
         verify(pointService).restore(1L, 6_000, order.getOrderNo());       // 보상 트랜잭션
-        verify(stockDeductionService, never()).deductConditional(anyLong(), anyInt());
+        verify(stockDeductionService, never()).tryDeduct(anyLong(), anyInt());
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.ABORTED);
     }
@@ -186,7 +236,7 @@ class CheckoutServiceTest {
 
         verify(pointService).use(1L, 20_000, order.getOrderNo());
         verify(paymentService, never()).confirm(anyString(), anyString(), any(Money.class));
-        verify(stockDeductionService).deductConditional(100L, 2);
+        verify(stockDeductionService).tryDeduct(100L, 2);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
     }

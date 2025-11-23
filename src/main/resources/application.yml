@@ -58,3 +58,7 @@ app:
     password: ${APP_ADMIN_PASSWORD:admin-local-only}
   user:
     password: ${APP_USER_PASSWORD:user-local-only}
+  # 보상(망취소) 재시도 스케줄러 — 기본 off(테스트/부트 부작용 방지). 운영에서 env로 켠다.
+  compensation:
+    enabled: ${APP_COMPENSATION_ENABLED:false}
+    interval-ms: 5000

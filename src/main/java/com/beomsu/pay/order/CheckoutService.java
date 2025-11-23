@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -28,6 +29,7 @@ public class CheckoutService {
     private final StockDeductionService stockDeductionService;
     private final ProductRepository productRepository;
     private final PointService pointService;
+    private final CompensationService compensationService;
 
     /**
      * 주문 생성 — totalAmount를 확정 저장한다(이후 금액 위변조 검증의 기준값). 재고는 차감하지 않는다.
@@ -115,11 +117,40 @@ public class CheckoutService {
         // 6. 결과 분기
         if (cardApproved) {
             // 재고 차감 (ADR-003: 승인 성공 시점 차감). 전략은 조건부 UPDATE(ADR-004: 부하테스트에서 최속).
-            // 차감 실패(품절 경합)는 예외 → Phase 2의 망취소/보상 트랜잭션으로 승격.
+            //
+            // 카드 승인은 PG(외부)에서 이미 일어나 DB 롤백으로 되돌릴 수 없다. 그래서 재고 부족을 예외로
+            // 던져 트랜잭션을 통째로 롤백하면 "돈은 나갔는데 주문은 사라진" 불일치가 남는다. 대신
+            // tryDeduct(예외 없는 boolean)로 차감하고, 부족하면 트랜잭션을 깨끗이 커밋시킨 채 보상한다.
+            List<OrderItem> deducted = new ArrayList<>();
+            boolean allDeducted = true;
             for (OrderItem item : order.getItems()) {
-                stockDeductionService.deductConditional(item.getProductId(), item.getQuantity());
+                if (stockDeductionService.tryDeduct(item.getProductId(), item.getQuantity())) {
+                    deducted.add(item);
+                } else {
+                    allDeducted = false;
+                    break;
+                }
             }
-            order.markPaid();
+            if (allDeducted) {
+                order.markPaid();
+            } else {
+                // 승인 후 재고 부족 → 자동 보상(망취소). 예외를 던지지 않아 트랜잭션은 깨끗이 커밋된다.
+                for (OrderItem d : deducted) {
+                    stockDeductionService.restore(d.getProductId(), d.getQuantity()); // 부분 차감분 원복
+                }
+                if (pointAmount > 0) {
+                    pointService.restore(order.getUserId(), pointAmount, orderNo); // 선점 포인트 복원(내부·확실)
+                }
+                if (cardAmount.amount() > 0) {
+                    // 외부·불확실한 PG 취소는 durable 보상 태스크로 적재해 스케줄러가 재시도로 망취소한다.
+                    compensationService.enqueueNetworkCancel(orderNo, cardAmount.amount(),
+                            "재고 부족: 카드 승인 후 자동 망취소");
+                }
+                order.markFailed();
+                return new CheckoutResult(orderNo, order.getStatus(),
+                        (result != null ? result.status() : PaymentStatus.DONE),
+                        "재고가 부족해 결제를 취소 처리했습니다. 승인된 카드는 자동으로 취소됩니다.");
+            }
         } else if (result.isUnknown()) {
             // 미확정: 카드 결과를 확정할 수 없다 → 선점한 포인트를 복원(보상)하고 주문은 PAYMENT_IN_PROGRESS로 유지.
             if (pointAmount > 0) {
