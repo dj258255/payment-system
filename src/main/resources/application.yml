@@ -54,6 +54,11 @@ logging:
 app:
   crypto:
     key: ${APP_CRYPTO_KEY:devlocalkey_0123456789abcdef0123}   # AES-256 = 32바이트, 운영은 KMS/env
+  jwt:
+    # HS256 대칭 서명 키. 로컬/테스트 편의로 32바이트 이상 기본값을 두되, 운영은 env로 오버라이드.
+    # 런타임에 길이(<32바이트)를 검증해 약한 키로 뜨는 것을 막는다(JwtConfig fail-fast).
+    secret: ${APP_JWT_SECRET:local-dev-only-please-override-with-32byte-min-secret-key}
+    expiry-minutes: ${APP_JWT_EXPIRY_MINUTES:60}
   admin:
     password: ${APP_ADMIN_PASSWORD:admin-local-only}
   user:

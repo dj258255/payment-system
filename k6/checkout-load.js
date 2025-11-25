@@ -1,10 +1,6 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import encoding from 'k6/encoding';
 import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
-
-// 주문/결제 엔드포인트는 ROLE_USER 인증 필요. 데모 유저 "1"(=userId). userId는 principal에서 얻는다.
-const AUTH = 'Basic ' + encoding.b64encode(`1:${__ENV.USER_PASSWORD || 'user-local-only'}`);
 
 /**
  * 체크아웃 부하테스트 — 주문 생성 → 결제 승인 흐름을 실제 사용자 시나리오로 두들긴다.
@@ -15,7 +11,7 @@ const AUTH = 'Basic ' + encoding.b64encode(`1:${__ENV.USER_PASSWORD || 'user-loc
  *   3. k6 run k6/checkout-load.js
  *
  * FakePgClient(비-prod)가 승인을 성공 처리하므로 실제 PG 키 없이 부하를 준다.
- * thresholds를 위반하면(예: p95 > 300ms) k6가 실패로 종료 → 성능 회귀를 CI에서 잡는다.
+ * thresholds를 위반하면(예: p95 > 1500ms) k6가 실패로 종료 → 성능 회귀를 CI에서 잡는다.
  */
 
 const BASE = __ENV.BASE_URL || 'http://localhost:8080';
@@ -33,20 +29,37 @@ export const options = {
       ],
     },
   },
-  // 인증은 무상태 HTTP Basic + BCrypt라 요청마다 비밀번호를 재검증한다(BCrypt는 의도적으로 느림).
-  // 실서비스는 토큰/세션으로 요청당 재해싱을 피한다 — 임계치는 그 인증 비용을 감안한 값.
+  // 인증은 로그인 1회로 JWT를 발급받고, 이후 요청은 대칭키 서명 검증만 한다(요청당 BCrypt 제거).
+  // 무상태 HTTP Basic이 요청마다 비밀번호를 BCrypt로 재검증하던 병목(min ~110ms)을 없앤 뒤의 값.
+  // 임계치는 회귀 안전망으로 유지한다.
   thresholds: {
     http_req_failed: ['rate<0.01'],            // 오류율 1% 미만
     http_req_duration: ['p(95)<1500', 'p(99)<3000'],
   },
 };
 
-export default function () {
+// setup: 로그인 1회로 토큰을 얻어 모든 VU가 재사용한다(주문/결제 요청당 BCrypt 없음).
+// 데모 유저 "1"(=userId). userId는 클라이언트가 아니라 토큰 subject(=principal)에서 얻는다.
+export function setup() {
+  const res = http.post(`${BASE}/api/v1/auth/login`, JSON.stringify({
+    username: '1',
+    password: __ENV.USER_PASSWORD || 'user-local-only',
+  }), {
+    headers: { 'Content-Type': 'application/json' },
+    tags: { name: 'login' },
+  });
+  check(res, { 'login 200': (r) => r.status === 200 });
+  return { token: res.json('token') };
+}
+
+export default function (data) {
+  const auth = `Bearer ${data.token}`;
+
   // 1) 주문 생성 — 클라이언트는 productId·quantity만 보낸다(가격·소유자는 서버 권위)
   const orderRes = http.post(`${BASE}/api/v1/orders`, JSON.stringify({
     items: [{ productId: 1, quantity: 1 }],
   }), {
-    headers: { 'Content-Type': 'application/json', Authorization: AUTH },
+    headers: { 'Content-Type': 'application/json', Authorization: auth },
     tags: { name: 'order' },
   });
 
@@ -64,7 +77,7 @@ export default function () {
     headers: {
       'Content-Type': 'application/json',
       'Idempotency-Key': uuidv4(),
-      Authorization: AUTH,
+      Authorization: auth,
     },
     tags: { name: 'confirm' },
   });
