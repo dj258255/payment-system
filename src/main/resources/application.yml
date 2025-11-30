@@ -28,6 +28,10 @@ spring:
     enabled: true
     baseline-on-migrate: true
 
+  # Kafka 외부화용. 기본은 빈 값 → 브로커 없이도 앱이 뜬다. 운영/데모는 KAFKA_BOOTSTRAP로 주입.
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:}
+
   # Spring Modulith Event Publication Registry (= Transactional Outbox) 를 JPA로 영속화
   modulith:
     events:
@@ -35,6 +39,11 @@ spring:
         schema-initialization:
           enabled: false         # event_publication은 Flyway(V1)가 생성한다
       republish-outstanding-events-on-restart: true   # 미완료 이벤트 재시도
+      externalization:
+        # 기본 off. 브로커가 없으면 @Externalized 이벤트를 Kafka로 내보내지 않는다
+        # → 브로커 없이 부팅/테스트가 깨지지 않고, Outbox 기반 인프로세스 소비는 그대로 동작한다.
+        # 운영/데모에서 kafka 프로파일로 켠다(아래 --- kafka 문서 참고).
+        enabled: false
 
 management:
   endpoints:
@@ -67,3 +76,24 @@ app:
   compensation:
     enabled: ${APP_COMPENSATION_ENABLED:false}
     interval-ms: 5000
+
+---
+# kafka 프로파일: 브로커가 있을 때만 활성화한다(예: SPRING_PROFILES_ACTIVE=kafka).
+# 외부화를 켜고, 유실 방지(acks=all)·중복 억제(멱등 producer)를 갖춘 producer를 구성한다.
+# 이 문서를 활성화하지 않으면(기본) 위의 externalization.enabled=false가 유지되어 브로커 없이도 뜬다.
+spring:
+  config:
+    activate:
+      on-profile: kafka
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all                    # 유실 방지 — 모든 in-sync 복제본이 받아야 성공
+      properties:
+        enable.idempotence: true   # 멱등 producer — 재시도로 인한 중복 발행 억제
+  modulith:
+    events:
+      externalization:
+        enabled: true              # @Externalized 이벤트를 Kafka로 발행(Outbox가 유실 방지, at-least-once)
