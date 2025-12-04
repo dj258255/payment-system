@@ -99,3 +99,43 @@ JWT Bearer**(로그인 시 BCrypt 1회, 이후 서명 검증만)로 교체하고
 docker compose up -d && ./gradlew bootRun          # 스키마·시드 자동 준비(V1~V4)
 USER_PASSWORD=user-local-only k6 run k6/checkout-load.js
 ```
+
+## 6. 카오스 테스트 — 실제 네트워크 장애로 복원력을 검증한다
+
+성능이 "빠른가"라면, 복원력은 "장애가 나도 정합성이 깨지지 않는가"다. 서킷브레이커·타임아웃=UNKNOWN·
+멱등 같은 복원력 설계를 **코드로 주장만** 하지 않고 **장애를 주입해** 확인한다. 두 층위로 나눴다.
+
+### (1) 서킷브레이커 단위 테스트 — 컨테이너 없이 결정적으로
+
+`ResilientPgClientTest`는 장애를 주입하는 `PgClient` 더블을 `new ResilientPgClient(faulty)`로 감싸,
+resilience4j 데코레이터의 동작을 순수 단위로 못박는다(부팅·컨테이너 없음, 기본 스위트 포함).
+
+- **승인은 재시도하지 않는다**: faulty delegate가 예외를 던져도 delegate를 **딱 1번** 호출하고
+  결과는 `TIMEOUT`(=UNKNOWN). 멱등키 없는 승인 재시도는 이중결제라서, 실패로 단정하지 않고 미확정으로 돌린다.
+- **서킷 오픈 폴백**: 반복 실패로 서킷이 OPEN되면, 이후 승인은 delegate를 **아예 호출하지 않고**
+  즉시 `TIMEOUT`으로 폴백한다(호출 횟수가 더 늘지 않음을 검증 → PG 장애가 우리 스레드를 고갈시키지 않음).
+- **조회는 재시도한다**: 읽기라 안전하므로 몇 번 실패 후 성공하면 재시도로 흡수한다(호출 > 1).
+  단, 재시도는 **무한이 아니라** maxAttempts(3)에서 멈추고 예외를 전파해 복구 배치가 다음 주기에 다시 잡는다.
+
+### (2) Toxiproxy 네트워크 카오스 — 실제 장애를 주입해 정합성 확인
+
+`MySqlChaosTest`(`@Tag("chaos")`)는 MySQL 컨테이너와 Toxiproxy 컨테이너를 같은 네트워크에 띄우고
+앱을 부팅한다. 앱의 `spring.datasource.url`을 **Toxiproxy 프록시 주소**로 주입해 모든 DB 트래픽이
+장애 구간을 통과하게 만든 뒤:
+
+1. 정상 상태에서 체크아웃(주문 생성 → 승인) 1건 성공.
+2. `latency(UPSTREAM, 5s)` toxic 주입 — JDBC `socketTimeout`(3s)·Hikari `connectionTimeout`(2s)을
+   짧게 둬, 장애가 **무한 hang이 아니라 타임아웃 예외(5xx)로 깨끗하게** 끝나는지(부분 커밋 없음) 확인.
+3. toxic 제거 후 **같은 Idempotency-Key로 재시도** → 첫 응답이 그대로 재반환되어
+   **이중 결제/이중 차감이 없음**(멱등이 장애를 건너 생존)을 확인.
+
+### 실행법과 기본 스위트 제외 이유
+
+```bash
+./gradlew test        # 기본: 카오스 제외(excludeTags 'chaos'), 컨테이너 안 뜸 — 빠르고 결정적
+./gradlew chaosTest   # 카오스만: 컨테이너 2개 + 부트 필요, 전용 환경에서 수동 실행
+```
+
+카오스 테스트는 컨테이너 2개 + 앱 부팅이 필요해 무겁고, 머신에 따라 부팅이 불안정하다. CI 기본
+스위트의 **결정성과 속도**를 지키려고 `@Tag("chaos")`로 분리해 기본 `test`에서 제외하고, 네트워크가
+준비된 전용 환경에서만 `chaosTest`로 돌린다.

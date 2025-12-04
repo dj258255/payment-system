@@ -11,7 +11,7 @@
 - **MySQL 8.4** + JPA(도메인 모델) + QueryDSL, **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화 — 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito, H2(동시성 실측), **233 tests** + Spring Modulith 경계 검증
+- 테스트: JUnit5 + Mockito, H2(동시성 실측), **235 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
 
 ## 아키텍처 — 모듈형 모놀리스
 

@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ResilientPgClientTest {
 
@@ -99,5 +100,32 @@ class ResilientPgClientTest {
 
         assertThat(result.isApproved()).isTrue();
         assertThat(flaky.queryCalls.get()).isEqualTo(3); // 2회 실패 + 1회 성공
+    }
+
+    @Test
+    @DisplayName("조회 재시도는 무한하지 않다 — maxAttempts(3) 소진 후 예외를 전파한다")
+    void queryRetryIsBounded() {
+        FlakyPgClient flaky = new FlakyPgClient();
+        flaky.queryFailuresRemaining = 99;         // 계속 실패 (재시도로도 못 넘김)
+        ResilientPgClient client = new ResilientPgClient(flaky);
+
+        // 재시도가 무한 루프가 아니라 정해진 횟수만 시도하고 포기한다(복구 배치가 다음 주기에 다시 잡는다).
+        assertThatThrownBy(() -> client.query("pk"))
+                .isInstanceOf(RuntimeException.class);
+        assertThat(flaky.queryCalls.get()).isEqualTo(3); // maxAttempts=3 만큼만 시도
+    }
+
+    @Test
+    @DisplayName("정상 PG에서는 승인이 그대로 성공하고 델리게이트를 정확히 1번 호출한다 — 기준선")
+    void approveSucceedsWithoutOverhead() {
+        FlakyPgClient healthy = new FlakyPgClient();   // approveError 없음 → 항상 성공
+        ResilientPgClient client = new ResilientPgClient(healthy);
+
+        PgApproveResult result = client.approve(new PgApproveCommand("pk", "order-1", 10_000));
+
+        assertThat(result.outcome()).isEqualTo(PgOutcome.SUCCESS);
+        assertThat(result.method()).isEqualTo("CARD");
+        assertThat(healthy.approveCalls.get()).isEqualTo(1);
+        assertThat(client.circuitBreaker().getState()).isEqualTo(CircuitBreaker.State.CLOSED);
     }
 }
