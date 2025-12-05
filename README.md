@@ -1,5 +1,7 @@
 # pay — Spring Modulith 결제 시스템
 
+[![CI](https://github.com/dj258255/payment-system/actions/workflows/ci.yml/badge.svg)](https://github.com/dj258255/payment-system/actions/workflows/ci.yml)
+
 실 서비스 운영을 상정해 만든 결제 백엔드. 결제의 정상 경로보다 **실패·정합성 처리**에 무게를 뒀다 —
 타임아웃/중복/장애 같은 사건이 실제로 일어난다고 전제하고, 각 사건을 상태로 보존하고 확정하는 구조로 설계했다.
 
@@ -9,7 +11,7 @@
 - **MySQL 8.4** + JPA(도메인 모델) + QueryDSL, **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito, H2(동시성 실측), **179 tests**
+- 테스트: JUnit5 + Mockito, H2(동시성 실측), **223 tests** + Spring Modulith 경계 검증
 
 ## 아키텍처 — 모듈형 모놀리스
 
