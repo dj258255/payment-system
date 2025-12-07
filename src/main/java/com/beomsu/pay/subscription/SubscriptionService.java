@@ -70,6 +70,9 @@ public class SubscriptionService {
                 case SOFT_DECLINE -> handleSoftDecline(subscription, today);
                 case HARD_DECLINE -> handleHardDecline(subscription);
             }
+            // dunning 상태 전이(renew/recover/enterGrace/hold)를 명시적으로 영속한다. OSIV off
+            // 환경에서 detached 엔티티는 dirty-checking 자동 flush가 일어나지 않으므로 저장을 명시한다(flush 강제).
+            subscriptionRepository.saveAndFlush(subscription);
         }
         return targets.size();
     }
@@ -136,6 +139,9 @@ public class SubscriptionService {
                 subscription.getCurrentPeriodStart(), subscription.getNextBillingDate(), changeDate);
 
         subscription.changePlan(newAmount);
+        // 상태 전이(플랜 변경)를 명시적으로 영속한다. OSIV off 환경에서 detached 엔티티는
+        // dirty-checking 자동 flush가 일어나지 않으므로 저장을 명시한다(flush 강제).
+        subscriptionRepository.saveAndFlush(subscription);
         log.debug("플랜 변경: sub={} {}원 → {}원, proration={}원",
                 subscriptionId, oldAmount, newAmount, proration);
         return proration;

@@ -45,6 +45,10 @@ class PaymentServiceTest {
         assertThat(result.status()).isEqualTo(PaymentStatus.DONE);
         assertThat(result.method()).isEqualTo("CARD");
         verify(events).publishEvent(any(PaymentConfirmedEvent.class));
+        // 승인 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
+        ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
+        verify(repository, atLeastOnce()).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getStatus()).isEqualTo(PaymentStatus.DONE);
         // 관측성: 결과별 카운터가 증가한다 (Grafana 결제 성공률의 소스)
         assertThat(meterRegistry.counter("payment.confirm", "outcome", "success").count()).isEqualTo(1.0);
     }
@@ -84,11 +88,32 @@ class PaymentServiceTest {
         service.cancel(1L, Money.of(3_000), "부분 변심");
 
         assertThat(done.getStatus()).isEqualTo(PaymentStatus.PARTIAL_CANCELED);
+        // 취소 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
+        verify(repository).saveAndFlush(done);
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
         verify(events).publishEvent(captor.capture());
         assertThat(captor.getValue()).isInstanceOfSatisfying(PaymentCanceledEvent.class, ce -> {
             assertThat(ce.fullyCanceled()).isFalse();
             assertThat(ce.cancelAmount()).isEqualTo(3_000);
         });
+    }
+
+    @Test
+    @DisplayName("주문번호 취소 시 취소 상태 전이가 명시 saveAndFlush로 영속된다")
+    void cancelByOrderNoPersistsWithSave() {
+        Payment done = Payment.initiate("order-5", Money.of(10_000));
+        done.startApproval("pk-5");
+        done.approve("CARD");
+        when(repository.findFirstByOrderNoAndStatusIn(any(), any()))
+                .thenReturn(Optional.of(done));
+
+        service.cancelByOrderNo("order-5", Money.of(10_000), "전액 변심");
+
+        assertThat(done.getStatus()).isEqualTo(PaymentStatus.CANCELED);
+        verify(repository).saveAndFlush(done);
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue()).isInstanceOfSatisfying(PaymentCanceledEvent.class,
+                ce -> assertThat(ce.fullyCanceled()).isTrue());
     }
 }

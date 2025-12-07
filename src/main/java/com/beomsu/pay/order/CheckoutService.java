@@ -147,6 +147,7 @@ public class CheckoutService {
                             "재고 부족: 카드 승인 후 자동 망취소");
                 }
                 order.markFailed();
+                orderRepository.saveAndFlush(order); // 상태 전이를 명시적으로 영속(아래 saveOrderState 주석 참고, flush 강제)
                 return new CheckoutResult(orderNo, order.getStatus(),
                         (result != null ? result.status() : PaymentStatus.DONE),
                         "재고가 부족해 결제를 취소 처리했습니다. 승인된 카드는 자동으로 취소됩니다.");
@@ -163,6 +164,11 @@ public class CheckoutService {
             }
             order.revertToPending();
         }
+
+        // 주문 상태 전이(startPayment/markPaid/revertToPending)를 명시적으로 영속한다.
+        // OSIV off + 트랜잭션 내 readOnly 조회로 세션 flush가 MANUAL이 되어 dirty-checking 자동
+        // flush가 일어나지 않으므로, 승인 결과가 DB에 확정되도록 저장을 명시한다(flush 강제).
+        orderRepository.saveAndFlush(order);
 
         // 전액 포인트 결제는 PG 결과가 없으므로 DONE으로 간주해 응답한다.
         PaymentStatus paymentStatus = (result != null) ? result.status() : PaymentStatus.DONE;

@@ -61,6 +61,8 @@ class SubscriptionServiceTest {
         assertThat(processed).isEqualTo(1);
         assertThat(sub.getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
         assertThat(sub.getNextBillingDate()).isEqualTo(TODAY.plusMonths(1));
+        // dunning 상태 전이(renew)가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
+        verify(subscriptionRepository).saveAndFlush(sub);
         assertThat(capturedDunning().getResult()).isEqualTo(BillingResult.SUCCESS);
         assertThat(capturedDunning().getNextRetryAt()).isNull();
     }
@@ -162,5 +164,7 @@ class SubscriptionServiceTest {
 
         assertThat(proration).isEqualTo(10_000);
         assertThat(sub.getPlanAmount()).isEqualTo(30_000);
+        // 플랜 변경 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
+        verify(subscriptionRepository).saveAndFlush(sub);
     }
 }

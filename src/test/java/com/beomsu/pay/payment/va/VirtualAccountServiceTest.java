@@ -45,6 +45,8 @@ class VirtualAccountServiceTest {
 
         assertThat(va.getStatus()).isEqualTo(VaStatus.DONE);
         assertThat(va.getDepositedAt()).isNotNull();
+        // 입금 확정 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
+        verify(repository).saveAndFlush(va);
     }
 
     @Test
@@ -58,6 +60,7 @@ class VirtualAccountServiceTest {
 
         assertThat(va.getStatus()).isEqualTo(VaStatus.WAITING_FOR_DEPOSIT);
         assertThat(va.getDepositedAt()).isNull();
+        verify(repository, never()).save(any()); // 상태 불변이므로 저장도 없음
     }
 
     @Test
@@ -72,6 +75,7 @@ class VirtualAccountServiceTest {
 
         assertThat(processed).isEqualTo(1);
         assertThat(va.getStatus()).isEqualTo(VaStatus.EXPIRED);
+        verify(repository).saveAndFlush(va); // 만료 상태 전이 명시 영속
     }
 
     @Test
@@ -87,6 +91,7 @@ class VirtualAccountServiceTest {
         assertThat(processed).isEqualTo(1);
         assertThat(va.getStatus()).isEqualTo(VaStatus.DONE);
         assertThat(va.getDepositedAt()).isNotNull();
+        verify(repository).saveAndFlush(va); // 레이스 입금 확정 상태 전이 명시 영속
     }
 
     @Test
@@ -100,5 +105,7 @@ class VirtualAccountServiceTest {
 
         assertThat(va.getStatus()).isEqualTo(VaStatus.WAITING_FOR_DEPOSIT);
         assertThat(va.getDepositedAt()).isNull();
+        // 역전이 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
+        verify(repository).saveAndFlush(va);
     }
 }
