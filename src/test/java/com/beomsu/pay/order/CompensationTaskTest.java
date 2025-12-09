@@ -71,4 +71,25 @@ class CompensationTaskTest {
         t.markDone();
         assertThat(t.getStatus()).isEqualTo(CompensationStatus.DONE);
     }
+
+    @Test
+    @DisplayName("reopen: 소진(FAILED) 태스크를 재무장 — PENDING + retryCount 0 + nextAttemptAt 갱신")
+    void reopenRearmsFailedTask() {
+        CompensationTask t = task();
+        Instant far = Instant.now().plusSeconds(3600);
+        for (int i = 0; i < 5; i++) {
+            t.recordFailure("실패", far);
+        }
+        assertThat(t.getStatus()).isEqualTo(CompensationStatus.FAILED);
+        assertThat(t.getNextAttemptAt()).isEqualTo(far); // 소진 시엔 nextAttemptAt이 미래로 남는다
+
+        t.reopen();
+
+        assertThat(t.getStatus()).isEqualTo(CompensationStatus.PENDING);
+        assertThat(t.getRetryCount()).isEqualTo(0);
+        assertThat(t.isExhausted()).isFalse();
+        // 즉시 시도 가능하게 nextAttemptAt이 now로 당겨진다(미래 예약이 사라짐).
+        assertThat(t.getNextAttemptAt()).isBefore(far);
+        assertThat(t.getNextAttemptAt()).isBeforeOrEqualTo(Instant.now());
+    }
 }
