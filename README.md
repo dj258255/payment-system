@@ -24,6 +24,7 @@ com.beomsu.pay
 ├── payment        승인/취소/멱등/상태머신, PG 연동(3-상태), 망취소, 웹훅, 가상계좌
 ├── ledger         복식부기 원장 (차변=대변 불변식)
 ├── settlement     Spring Batch 정산
+├── escrow         자금 보류(에스크로) — 구매확정 전까지 HELD, 확정 시 RELEASED/취소 시 REFUNDED
 ├── reconciliation 대사 (내부 vs PG 파일 4분류)
 ├── notification   결제 이벤트 소비 (멱등 컨슈머 + DLQ)
 ├── point          포인트 원장 (복합결제)
