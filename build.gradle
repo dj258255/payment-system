@@ -87,10 +87,11 @@ dependencyManagement {
 }
 
 tasks.named('test') {
-    // 기본 스위트는 결정적·빠름을 유지한다: 컨테이너·앱 부팅이 필요한 카오스 테스트(@Tag("chaos"))는 제외.
-    // 순수 단위 테스트(서킷브레이커 포함) + 경량 슬라이스만 돌아 CI가 빠르고 재현 가능하다.
+    // 기본 스위트는 결정적·빠름을 유지한다: 컨테이너·앱 부팅이 필요한 카오스(@Tag("chaos"))·통합
+    // (@Tag("integration")) 테스트는 제외. 순수 단위 테스트(서킷브레이커 포함) + 경량 슬라이스만 돌아
+    // CI가 빠르고 재현 가능하다.
     useJUnitPlatform {
-        excludeTags 'chaos'
+        excludeTags 'chaos', 'integration'
     }
 }
 
@@ -99,6 +100,17 @@ tasks.register('chaosTest', Test) {
     group = 'verification'
     useJUnitPlatform {
         includeTags 'chaos'
+    }
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    shouldRunAfter('test')
+}
+
+tasks.register('integrationTest', Test) {
+    description = '실 MySQL(Testcontainers)로 승인/취소가 DB에 확정되는지 검증 — Docker 필요, CI에서 실행'
+    group = 'verification'
+    useJUnitPlatform {
+        includeTags 'integration'
     }
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath

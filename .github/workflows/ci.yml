@@ -41,3 +41,32 @@ jobs:
           path: build/reports/tests/test
           if-no-files-found: ignore
           retention-days: 7
+
+  # 실 MySQL(Testcontainers) 위에서 승인/취소가 DB에 확정되는지 검증하는 통합 테스트.
+  # 로컬에선 컨테이너 부팅이 무겁고 hang 이력이 있어 기본 스위트에서 제외하고, Docker가 있는 CI에서만 돈다.
+  integration-test:
+    name: integration test (real DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run integration tests (Testcontainers)
+        run: ./gradlew integrationTest --console=plain
+
+      - name: Upload integration report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-report
+          path: build/reports/tests/integrationTest
+          if-no-files-found: ignore
+          retention-days: 7
