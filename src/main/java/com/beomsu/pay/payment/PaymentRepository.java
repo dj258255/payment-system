@@ -18,4 +18,7 @@ interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     /** 취소용: 주문의 성공한(취소 가능한) 결제 1건. 재시도로 ABORTED 등이 섞여 있어도 성공 건만 고른다. */
     Optional<Payment> findFirstByOrderNoAndStatusIn(String orderNo, List<PaymentStatus> statuses);
+
+    /** 조회용: 주문의 최신 결제 시도 1건. 재시도로 여러 건이 있어도 현재 상태를 대표한다. */
+    Optional<Payment> findFirstByOrderNoOrderByRequestedAtDesc(String orderNo);
 }

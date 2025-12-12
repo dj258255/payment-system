@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 결제 애플리케이션 서비스 — payment 모듈의 공개 진입점.
@@ -104,6 +105,50 @@ public class PaymentService {
         return paymentRepository.findFirstByOrderNoAndStatusIn(orderNo, CANCELABLE)
                 .map(Payment::getBalanceAmount)
                 .orElse(0L);
+    }
+
+    // --- 조회(read-only) 지원: order 모듈의 조회 오케스트레이션이 소유권 검증 후 호출한다 ---
+
+    /**
+     * 결제의 주문번호 — 소유권 검증용. 결제↔주문 매핑은 order가 소유하므로, order가 이 orderNo로
+     * 주문을 로드해 {@code verifyOwner}로 IDOR을 막은 뒤에만 상세 조회로 넘어간다. 없으면 empty(404).
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> orderNoOf(long paymentId) {
+        return paymentRepository.findById(paymentId).map(Payment::getOrderNo);
+    }
+
+    /** 결제 상세(이력·취소 포함). 엔티티가 아닌 뷰 record로 반환해 모듈 경계를 지킨다. 없으면 empty. */
+    @Transactional(readOnly = true)
+    public Optional<PaymentDetailView> getDetail(long paymentId) {
+        return paymentRepository.findById(paymentId).map(this::toDetailView);
+    }
+
+    private PaymentDetailView toDetailView(Payment payment) {
+        List<PaymentHistoryView> history = payment.getHistories().stream()
+                .map(h -> new PaymentHistoryView(h.getFromStatus().name(), h.getToStatus().name(),
+                        h.getTriggeredBy().name(), h.getCreatedAt()))
+                .toList();
+        // 별도 취소 엔티티가 없으므로 취소를 상태 이력에서 투영한다: toStatus가 (부분)취소인 전이만 필터.
+        List<PaymentCancelView> cancels = payment.getHistories().stream()
+                .filter(h -> h.getToStatus() == PaymentStatus.CANCELED
+                        || h.getToStatus() == PaymentStatus.PARTIAL_CANCELED)
+                .map(h -> new PaymentCancelView(h.getToStatus().name(), h.getReason(), h.getCreatedAt()))
+                .toList();
+        return new PaymentDetailView(payment.getId(), payment.getOrderNo(),
+                payment.getStatus().name(), payment.getAmount(), payment.getBalanceAmount(),
+                history, cancels);
+    }
+
+    /**
+     * 주문의 대표 결제 상태 — 주문 조회 뷰에 함께 싣는다. 재시도로 결제가 여러 건이면 <b>최신 시도</b>
+     * (requestedAt 내림차순)의 상태를 대표로 삼는다. 이래야 UNKNOWN→DONE 확정 진행을 주문 폴링으로도
+     * 관찰할 수 있다. 결제 시도가 아예 없으면 empty(주문 뷰에서 null/"NONE").
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> paymentStatusByOrderNo(String orderNo) {
+        return paymentRepository.findFirstByOrderNoOrderByRequestedAtDesc(orderNo)
+                .map(p -> p.getStatus().name());
     }
 
     private void cancelPayment(Payment payment, Money cancelAmount, String reason) {
