@@ -66,7 +66,7 @@ class CompensationAdminServiceTest {
         // 재무장이 저장됐고(PENDING·retryCount 0), 즉시 시도가 호출됐다.
         assertThat(t.getStatus()).isEqualTo(CompensationStatus.PENDING);
         assertThat(t.getRetryCount()).isEqualTo(0);
-        verify(repository).save(t);
+        verify(repository).saveAndFlush(t);
         verify(executor).attempt(7L);
         verify(executor, never()).recordFailure(anyLong(), anyString());
     }
@@ -81,7 +81,7 @@ class CompensationAdminServiceTest {
         boolean ok = service.retry(7L);
 
         assertThat(ok).isFalse();
-        verify(repository).save(t);
+        verify(repository).saveAndFlush(t);
         verify(executor).attempt(7L);
         verify(executor).recordFailure(eq(7L), anyString());
     }

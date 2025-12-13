@@ -35,8 +35,8 @@ public class CompensationAdminService {
      *
      * <p>일부러 {@code @Transactional}을 붙이지 않는다 — {@link CompensationService#processPending()}과
      * 같은 결. reopen 저장·시도·실패기록을 executor의 per-task 트랜잭션에 위임해, 한 건의 실패
-     * (rollback-only)가 이 메서드의 트랜잭션 전체를 오염시키지 않게 한다. {@code repository.save}는
-     * 자체 트랜잭션으로 PENDING 재무장을 먼저 커밋해, 이어지는 executor.attempt가 재무장 상태를 본다.
+     * (rollback-only)가 이 메서드의 트랜잭션 전체를 오염시키지 않게 한다. {@code repository.saveAndFlush}는
+     * 자체 트랜잭션으로 PENDING 재무장을 먼저 커밋(flush 강제)해, 이어지는 executor.attempt가 재무장 상태를 본다.
      */
     public boolean retry(Long id) {
         CompensationTask task = repository.findById(id).orElse(null);
@@ -44,7 +44,7 @@ public class CompensationAdminService {
             return false;
         }
         task.reopen();
-        repository.save(task);
+        repository.saveAndFlush(task);
         try {
             executor.attempt(id);
             return true;

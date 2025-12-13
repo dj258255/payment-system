@@ -53,6 +53,8 @@ class PaymentRecoveryServiceTest {
         assertThat(recovered).isEqualTo(1);
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.DONE);
         assertThat(p.getMethod()).isEqualTo("CARD");
+        // 복구 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
+        verify(repository).saveAndFlush(p);
         verify(events).publishEvent(any(PaymentConfirmedEvent.class));
     }
 
@@ -65,6 +67,7 @@ class PaymentRecoveryServiceTest {
         service.recoverUnknownPayments();
 
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.ABORTED);
+        verify(repository).saveAndFlush(p); // 복구 상태 전이 명시 영속
         verify(events, never()).publishEvent(any());
     }
 
@@ -77,5 +80,6 @@ class PaymentRecoveryServiceTest {
         service.recoverUnknownPayments();
 
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.CANCELED);
+        verify(repository).saveAndFlush(p); // 복구 상태 전이 명시 영속
     }
 }

@@ -77,15 +77,24 @@ public class PaymentRecoveryService {
 
     private void resolve(Payment payment) {
         PgQueryResult pg = pgClient.query(payment.getPaymentKey());
+        // 상태 전이를 명시적으로 영속한다. OSIV off 환경에서 detached 엔티티는 dirty-checking 자동
+        // flush가 일어나지 않으므로, 확정 상태가 DB에 반영되도록(APPROVED는 이벤트 발행 전에) 저장한다.
         switch (pg.status()) {
             case APPROVED -> {
                 payment.confirmByRecovery(pg.method());
+                paymentRepository.saveAndFlush(payment);
                 events.publishEvent(new PaymentConfirmedEvent(
                         payment.getOrderNo(), payment.getId(),
                         payment.getAmount(), payment.getApprovedAt()));
             }
-            case NOT_FOUND -> payment.abortByRecovery("복구: PG에 결제 정보 없음(승인 미완료)");
-            case CANCELED -> payment.networkCancel("복구: PG에서 이미 취소됨");
+            case NOT_FOUND -> {
+                payment.abortByRecovery("복구: PG에 결제 정보 없음(승인 미완료)");
+                paymentRepository.saveAndFlush(payment);
+            }
+            case CANCELED -> {
+                payment.networkCancel("복구: PG에서 이미 취소됨");
+                paymentRepository.saveAndFlush(payment);
+            }
         }
     }
 }

@@ -88,6 +88,9 @@ public class CancelService {
                 stockDeductionService.restore(item.getProductId(), item.getQuantity());
             }
             order.cancel();
+            // 상태 전이(CANCELED)를 명시적으로 영속한다. OSIV off 환경에서 detached 엔티티는
+            // dirty-checking 자동 flush가 일어나지 않으므로 저장을 명시한다(flush 강제).
+            orderRepository.saveAndFlush(order);
         }
         // 부분취소는 금액 단위라 수량 단위 재고에 매핑되지 않아 복원하지 않는다. 주문은 PAID 유지.
 

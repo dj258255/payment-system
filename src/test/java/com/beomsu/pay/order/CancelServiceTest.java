@@ -56,6 +56,8 @@ class CancelServiceTest {
         verify(paymentService).cancelByOrderNo(order.getOrderNo(), Money.of(14_000), "고객변심");
         verify(stockDeductionService).restore(100L, 2); // 전액취소 재고 복원
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELED);
+        // 전액취소 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
+        verify(orderRepository).saveAndFlush(order);
         assertThat(result.fullyCanceled()).isTrue();
         assertThat(result.refundedPoint()).isEqualTo(6_000);
         assertThat(result.refundedCard()).isEqualTo(14_000);
@@ -74,6 +76,7 @@ class CancelServiceTest {
         verify(paymentService, never()).cancelByOrderNo(anyString(), any(Money.class), anyString());
         verify(stockDeductionService).restore(100L, 2);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELED);
+        verify(orderRepository).saveAndFlush(order); // 전액취소 상태 전이 명시 영속
         assertThat(result.fullyCanceled()).isTrue();
         assertThat(result.refundedCard()).isZero();
     }
@@ -90,6 +93,7 @@ class CancelServiceTest {
         verify(pointService).refund(1L, 5_000, order.getOrderNo());     // 포인트 잔액 내라 전액 포인트로
         verify(paymentService, never()).cancelByOrderNo(anyString(), any(Money.class), anyString());
         verify(stockDeductionService, never()).restore(anyLong(), anyInt()); // 부분취소 재고 복원 안 함
+        verify(orderRepository, never()).save(any(Order.class)); // 부분취소는 상태 전이가 없어 저장도 없음
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);      // 주문 PAID 유지
         assertThat(result.fullyCanceled()).isFalse();
         assertThat(result.refundedPoint()).isEqualTo(5_000);

@@ -44,7 +44,7 @@ public class PaymentService {
         meterRegistry.counter("payment.confirm", "outcome", result.outcome().name().toLowerCase())
                 .increment();
 
-        return switch (result.outcome()) {
+        ConfirmResult confirmResult = switch (result.outcome()) {
             case SUCCESS -> {
                 payment.approve(result.method());
                 events.publishEvent(new PaymentConfirmedEvent(
@@ -64,6 +64,12 @@ public class PaymentService {
                         null, "결제 결과를 확인하고 있습니다. 잠시 후 다시 확인해 주세요.");
             }
         };
+        // 상태 전이(approve/abort/markUnknown)를 명시적으로 영속한다. 이 payment는 위에서 persist된
+        // '관리(managed)' 엔티티라 save(merge)는 no-op이 되어, dirty-checking 자동 flush가 일어나지 않는
+        // 이 트랜잭션에서는 승인 결과가 확정되지 않는다. 그래서 saveAndFlush로 UPDATE를 강제한다.
+        // (finder로 로드한 detached 엔티티는 save(merge)만으로 확정되지만, 여기선 그 경우가 아니다.)
+        paymentRepository.saveAndFlush(payment);
+        return confirmResult;
     }
 
     private static final List<PaymentStatus> CANCELABLE =
@@ -103,6 +109,10 @@ public class PaymentService {
     private void cancelPayment(Payment payment, Money cancelAmount, String reason) {
         payment.cancel(cancelAmount, TriggeredBy.USER, reason);
         pgClient.cancel(payment.getPaymentKey(), cancelAmount.amount(), reason);
+
+        // 상태 전이(취소)를 명시적으로 영속한다. OSIV off 환경에서 detached 엔티티는 dirty-checking
+        // 자동 flush가 일어나지 않으므로, 이벤트 발행 전에 취소 상태를 DB에 확정한다(flush 강제).
+        paymentRepository.saveAndFlush(payment);
 
         boolean fullyCanceled = payment.getStatus() == PaymentStatus.CANCELED;
         events.publishEvent(new PaymentCanceledEvent(
