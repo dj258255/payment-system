@@ -1,6 +1,7 @@
 package com.beomsu.pay.payment.web;
 
 import com.beomsu.pay.payment.PaymentAdminService;
+import com.beomsu.pay.payment.PaymentSyncView;
 import com.beomsu.pay.payment.UnknownPaymentView;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -38,5 +39,14 @@ class PaymentRecoveryAdminController {
         int recovered = adminService.recover();
         audit.info("미확정 결제 수동 복구 결과 by={} recovered={}", who, recovered);
         return Map.of("recovered", recovered);
+    }
+
+    @PostMapping("/{id}/sync")
+    PaymentSyncView sync(@PathVariable Long id, Principal caller) {
+        String who = caller != null ? caller.getName() : "unknown";
+        audit.info("단건 결제 PG 강제 동기화 요청 by={} paymentId={}", who, id);
+        PaymentSyncView view = adminService.sync(id);
+        audit.info("단건 결제 PG 강제 동기화 결과 by={} paymentId={} status={}", who, id, view.status());
+        return view;
     }
 }

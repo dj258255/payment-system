@@ -76,4 +76,17 @@ public class ReconciliationResult {
     public static ReconciliationResult amountMismatch(String orderNo, long internalAmount, long externalAmount) {
         return new ReconciliationResult(orderNo, ReconResultType.AMOUNT_MISMATCH, internalAmount, externalAmount, ReconStatus.PENDING);
     }
+
+    /**
+     * 수기 확정 — 사람이 예외 큐(PENDING)를 검토한 뒤 종결 처리한다. PENDING이 아니면(이미 종결) 예외.
+     *
+     * <p>누가/왜 확정했는지는 엔티티에 컬럼으로 남기지 않고 어드민 <b>감사 로그</b>로 남긴다
+     * (스키마 변경 최소화). 상태만 MANUALLY_RESOLVED로 전이한다.
+     */
+    public void resolveManually() {
+        if (status != ReconStatus.PENDING) {
+            throw ReconciliationException.notPending(status);
+        }
+        this.status = ReconStatus.MANUALLY_RESOLVED;
+    }
 }

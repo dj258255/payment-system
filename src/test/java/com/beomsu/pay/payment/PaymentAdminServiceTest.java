@@ -6,8 +6,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class PaymentAdminServiceTest {
@@ -27,6 +29,13 @@ class PaymentAdminServiceTest {
         Payment p = Payment.initiate("ord-1", Money.of(14_000));
         p.startApproval("pk-1");
         p.markUnknown("PG 타임아웃");
+        return p;
+    }
+
+    private Payment donePayment() {
+        Payment p = Payment.initiate("ord-1", Money.of(14_000));
+        p.startApproval("pk-1");
+        p.approve("CARD");
         return p;
     }
 
@@ -55,5 +64,34 @@ class PaymentAdminServiceTest {
 
         assertThat(recovered).isEqualTo(3);
         verify(recoveryService).recoverUnknownPayments();
+    }
+
+    @Test
+    @DisplayName("sync: 복구 서비스에 위임(PG 조회)하고 재조회한 확정 상태를 반환한다")
+    void syncDelegatesToRecoveryAndReturnsRefreshedStatus() {
+        long paymentId = 42L;
+        // 첫 조회는 UNKNOWN(방치 상태), resolveByPaymentKey가 PG 조회로 확정한 뒤
+        // 두 번째 조회는 DONE — 재조회로 최신 상태를 응답함을 검증한다.
+        when(paymentRepository.findById(paymentId))
+                .thenReturn(Optional.of(unknownPayment()), Optional.of(donePayment()));
+
+        PaymentSyncView view = service.sync(paymentId);
+
+        assertThat(view.orderNo()).isEqualTo("ord-1");
+        assertThat(view.status()).isEqualTo("DONE");
+        verify(recoveryService).resolveByPaymentKey("pk-1");
+        verify(paymentRepository, times(2)).findById(paymentId);
+    }
+
+    @Test
+    @DisplayName("sync: 없는 결제 id면 PAYMENT_NOT_FOUND")
+    void syncThrowsWhenNotFound() {
+        long paymentId = 999L;
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.sync(paymentId))
+                .isInstanceOf(PaymentException.class)
+                .satisfies(e -> assertThat(((PaymentException) e).code()).isEqualTo("PAYMENT_NOT_FOUND"));
+        verify(recoveryService, never()).resolveByPaymentKey(anyString());
     }
 }

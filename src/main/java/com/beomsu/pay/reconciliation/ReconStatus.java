@@ -10,5 +10,7 @@ public enum ReconStatus {
     /** 자동 종결 — MATCHED */
     AUTO_RESOLVED,
     /** 사람 확인 필요 — INTERNAL_ONLY / EXTERNAL_ONLY / AMOUNT_MISMATCH */
-    PENDING
+    PENDING,
+    /** 사람 확인 후 수기 확정 — 어드민이 PENDING 예외 큐를 검토해 종결 처리 */
+    MANUALLY_RESOLVED
 }

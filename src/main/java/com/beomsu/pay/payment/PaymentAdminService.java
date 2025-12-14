@@ -33,4 +33,25 @@ public class PaymentAdminService {
     public int recover() {
         return recoveryService.recoverUnknownPayments();
     }
+
+    /**
+     * 단건 결제를 PG 조회로 즉시 확정(강제 동기화)한다.
+     *
+     * <p>웹훅 누락으로 특정 결제가 UNKNOWN/IN_PROGRESS에 방치됐을 때, 배치 전체 복구를 기다리지 않고
+     * 그 한 건만 PG에 조회해 확정한다. 실제 조회·상태전이·영속은 배치 복구와 동일한
+     * {@link PaymentRecoveryService#resolveByPaymentKey(String)}에 위임한다(이미 확정된 건이면 멱등 no-op).
+     * 위임이 상태를 바꾸고 flush하므로, 그 뒤 같은 트랜잭션에서 <b>다시 읽어</b> 확정된 최신 상태를 응답한다.
+     */
+    @Transactional
+    public PaymentSyncView sync(long paymentId) {
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new PaymentException("PAYMENT_NOT_FOUND",
+                        "결제를 찾을 수 없습니다: " + paymentId));
+        recoveryService.resolveByPaymentKey(payment.getPaymentKey());
+        Payment synced = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new PaymentException("PAYMENT_NOT_FOUND",
+                        "결제를 찾을 수 없습니다: " + paymentId));
+        return new PaymentSyncView(synced.getId(), synced.getOrderNo(),
+                synced.getStatus().name(), "PG 조회로 상태를 동기화했습니다");
+    }
 }
