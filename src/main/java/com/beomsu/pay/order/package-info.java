@@ -7,8 +7,12 @@
  *
  * <p>복합결제(포인트+카드) 오케스트레이션을 위해 point 모듈에 의존한다 — 포인트 선점/복원은
  * order의 체크아웃 흐름이 조율하는 내부 Saga의 한 단계다.
+ *
+ * <p>구매확정(에스크로 릴리스)의 진입점도 order가 소유한다 — 릴리스는 구매자 본인만 할 수 있어야
+ * 하고(IDOR 방지), 소유권 검증(userId ↔ 주문)의 기준값을 order가 갖기 때문이다. 소유권을 검증한
+ * 뒤에만 escrow 모듈에 릴리스를 위임하므로 escrow에 의존한다(escrow는 order에 의존하지 않아 순환 없음).
  */
 @org.springframework.modulith.ApplicationModule(
-        allowedDependencies = { "shared", "payment", "point" }
+        allowedDependencies = { "shared", "payment", "point", "escrow" }
 )
 package com.beomsu.pay.order;

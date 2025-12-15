@@ -22,6 +22,8 @@ spring:
     redis:
       host: localhost
       port: 6379
+      repositories:
+        enabled: false          # Redis는 캐시·분산락 용도만 — JPA 리포지토리를 Redis가 넘보는 store-detection 경고 제거
 
   # 스키마는 Flyway가 관리한다 (원장 append-only 보호를 위해 JPA는 validate만)
   flyway:
@@ -76,6 +78,14 @@ app:
   compensation:
     enabled: ${APP_COMPENSATION_ENABLED:false}
     interval-ms: 5000
+  # 에스크로(자금 보류) — 결제금을 구매확정 전까지 HELD로 잡아둔다.
+  escrow:
+    # 자동 구매확정까지의 보류 기간(일). 이 기간 무응답이면 자동 릴리스 대상이 된다.
+    hold-period-days: ${APP_ESCROW_HOLD_DAYS:7}
+    # 자동 릴리스 스케줄러 — 기본 off(테스트/부트 부작용 방지). 운영에서 env로 켠다.
+    auto-release:
+      enabled: ${APP_ESCROW_AUTO_RELEASE_ENABLED:false}
+      interval-ms: 60000
 
 ---
 # kafka 프로파일: 브로커가 있을 때만 활성화한다(예: SPRING_PROFILES_ACTIVE=kafka).
