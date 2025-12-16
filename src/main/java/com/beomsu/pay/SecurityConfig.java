@@ -24,7 +24,8 @@ import org.springframework.security.web.SecurityFilterChain;
  * <p>접근 제어:
  * <ul>
  *   <li>{@code POST /api/v1/auth/login} → 개방(로그인, 여기서만 BCrypt 1회 검증 후 JWT 발급)</li>
- *   <li>{@code /api/v1/admin/**} → ROLE_ADMIN (DLQ 재처리 등 운영 액션)</li>
+ *   <li>{@code /api/v1/admin/**} → ROLE_ADMIN (DLQ 재처리 등 운영 액션). 강제취소 maker-checker
+ *       시연을 위해 2번째 어드민({@code admin2})을 둔다 — 요청자≠승인자를 강제하려면 서로 다른 어드민이 필요.</li>
  *   <li>{@code /api/v1/orders/**}, {@code /api/v1/payments/confirm} → ROLE_USER 인증.
  *       userId는 인증된 principal에서 얻어 <b>주문 소유권을 검증</b>한다(IDOR 방지).</li>
  *   <li>{@code /api/v1/webhooks/**} → 개방(HMAC 서명으로 자체 인증)</li>
@@ -96,12 +97,16 @@ public class SecurityConfig {
             PasswordEncoder encoder) {
         UserDetails admin = User.withUsername(adminUsername)
                 .password(encoder.encode(adminPassword)).roles("ADMIN").build();
+        // maker-checker용 2번째 어드민: 강제취소는 요청자≠승인자를 강제하므로, admin이 요청하고
+        // admin2가 승인하는 2인 흐름을 실제로 시연하려면 서로 다른 어드민이 필요하다.
+        UserDetails admin2 = User.withUsername("admin2")
+                .password(encoder.encode(adminPassword)).roles("ADMIN").build();
         // 데모 사용자: username이 곧 userId (principal.getName() → Long.parseLong)
         UserDetails user1 = User.withUsername("1")
                 .password(encoder.encode(userPassword)).roles("USER").build();
         UserDetails user2 = User.withUsername("2")
                 .password(encoder.encode(userPassword)).roles("USER").build();
-        return new InMemoryUserDetailsManager(admin, user1, user2);
+        return new InMemoryUserDetailsManager(admin, admin2, user1, user2);
     }
 
     @Bean
