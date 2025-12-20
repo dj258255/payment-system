@@ -4,9 +4,11 @@ import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
@@ -48,10 +50,20 @@ public class JwtConfig {
         return new NimbusJwtEncoder(new ImmutableSecret<>(secretKey));
     }
 
+    /**
+     * 디코더는 기본 validator(만료·서명)에 더해 {@link RevocationValidator}(denylist 폐기 검사)를
+     * per-request로 실행한다. {@link TokenStore}는 {@code StringRedisTemplate}만 의존하므로
+     * (JwtConfig ← TokenStore ← RedisTemplate) 순환이 없다. 빈 메서드 파라미터로 주입받아
+     * 단위 테스트에서 목 TokenStore로 손쉽게 대체할 수 있게 한다.
+     */
     @Bean
-    JwtDecoder jwtDecoder() {
-        return NimbusJwtDecoder.withSecretKey(secretKey)
+    JwtDecoder jwtDecoder(TokenStore tokenStore) {
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(secretKey)
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefault(),          // 만료·nbf 등 기본 검증
+                new RevocationValidator(tokenStore)));   // + denylist 폐기 검사
+        return decoder;
     }
 }

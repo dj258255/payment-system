@@ -24,8 +24,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 로그인 엔드포인트 슬라이스 테스트 — 자격증명 검증 결과에 따른 200/401을 확인한다.
- * AuthenticationManager/JwtService는 목으로 대체(BCrypt 실제 검증은 SecurityConfig 통합 밖).
+ * 로그인/갱신 엔드포인트 슬라이스 테스트 — 자격증명 검증 결과에 따른 200/401, 응답 필드를 확인한다.
+ * AuthenticationManager/AuthTokenService는 목으로 대체(BCrypt·Redis 실제 동작은 슬라이스 밖).
  */
 @WebMvcTest(AuthController.class)
 @Import(SecurityConfig.class)
@@ -38,27 +38,28 @@ class AuthControllerTest {
     AuthenticationManager authenticationManager;
 
     @MockitoBean
-    JwtService jwtService;
+    AuthTokenService authTokenService;
 
     @MockitoBean
     JwtDecoder jwtDecoder;
 
     @Test
-    @DisplayName("올바른 자격증명 → 200 + token/tokenType 필드")
+    @DisplayName("올바른 자격증명 → 200 + token(access)/refreshToken 둘 다")
     void loginSucceeds() throws Exception {
         var authenticated = new UsernamePasswordAuthenticationToken(
                 "1", null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
         when(authenticationManager.authenticate(any())).thenReturn(authenticated);
-        when(jwtService.issue(eq("1"), any())).thenReturn("issued-token");
-        when(jwtService.expirySeconds()).thenReturn(3600L);
+        when(authTokenService.login(eq("1"), any()))
+                .thenReturn(new AuthTokenService.TokenPair("access-token", "refresh-token", 1800L));
 
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(APPLICATION_JSON)
                         .content("{\"username\":\"1\",\"password\":\"user-local-only\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").value("issued-token"))
+                .andExpect(jsonPath("$.token").value("access-token"))          // 하위호환: token = access
+                .andExpect(jsonPath("$.refreshToken").value("refresh-token"))  // 추가 필드
                 .andExpect(jsonPath("$.tokenType").value("Bearer"))
-                .andExpect(jsonPath("$.expiresInSeconds").value(3600));
+                .andExpect(jsonPath("$.expiresInSeconds").value(1800));
     }
 
     @Test
@@ -70,6 +71,32 @@ class AuthControllerTest {
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(APPLICATION_JSON)
                         .content("{\"username\":\"1\",\"password\":\"wrong\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("유효한 refresh → 200 + 회전된 새 access/refresh")
+    void refreshSucceeds() throws Exception {
+        when(authTokenService.refresh(eq("refresh-token")))
+                .thenReturn(new AuthTokenService.TokenPair("new-access", "new-refresh", 1800L));
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"refresh-token\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").value("new-access"))
+                .andExpect(jsonPath("$.refreshToken").value("new-refresh"));
+    }
+
+    @Test
+    @DisplayName("무효/폐기된 refresh → 401 Unauthorized")
+    void refreshRejectsInvalidToken() throws Exception {
+        when(authTokenService.refresh(any()))
+                .thenThrow(new AuthException("유효하지 않은 refresh 토큰입니다."));
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"gone\"}"))
                 .andExpect(status().isUnauthorized());
     }
 }
