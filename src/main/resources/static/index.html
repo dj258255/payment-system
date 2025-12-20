@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pay · 결제 시스템 데모 콘솔</title>
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#141a26; --panel2:#1b2233; --line:#26304a;
+    --txt:#e6ebf5; --dim:#8b97b0; --accent:#5b8cff; --accent2:#8a6bff;
+    --green:#2ecc71; --amber:#f2b641; --red:#ff5c6a; --cyan:#33d6d0;
+    --mono:"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#182136 0,var(--bg) 55%);
+    color:var(--txt);font:15px/1.5 -apple-system,"Segoe UI",Roboto,"Apple SD Gothic Neo",sans-serif;min-height:100vh}
+  header{display:flex;align-items:center;gap:14px;padding:18px 26px;border-bottom:1px solid var(--line);
+    background:rgba(11,15,23,.75);backdrop-filter:blur(8px);position:sticky;top:0;z-index:10}
+  .logo{font-weight:800;font-size:20px;letter-spacing:-.02em}
+  .logo b{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .tag{font-size:12px;color:var(--dim);border:1px solid var(--line);border-radius:20px;padding:3px 10px}
+  header .spacer{flex:1}
+  .who{font-size:13px;color:var(--dim)}
+  .who b{color:var(--txt)}
+  .wrap{max-width:1120px;margin:0 auto;padding:24px 26px 60px}
+  .tabs{display:flex;gap:8px;margin-bottom:22px}
+  .tab{cursor:pointer;padding:9px 16px;border-radius:10px;border:1px solid var(--line);color:var(--dim);
+    background:var(--panel);font-weight:600;font-size:14px;transition:.15s}
+  .tab.on{color:#fff;border-color:var(--accent);background:#233156}
+  .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:18px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin-bottom:18px}
+  .card h2{margin:0 0 4px;font-size:15px;letter-spacing:.01em}
+  .card .sub{color:var(--dim);font-size:12.5px;margin-bottom:14px}
+  .step{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);margin:0 0 10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+  .step i{width:20px;height:20px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);display:grid;place-items:center;color:var(--accent);font-style:normal;font-size:11px}
+  button{cursor:pointer;font:inherit;font-weight:600;color:#fff;border:none;border-radius:10px;padding:10px 14px;
+    background:linear-gradient(180deg,#3d6bff,#2f57e0);transition:.15s;font-size:13.5px}
+  button:hover{filter:brightness(1.08)}
+  button:disabled{opacity:.4;cursor:not-allowed;filter:none}
+  button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--txt)}
+  button.warn{background:linear-gradient(180deg,#ff6b78,#e14655)}
+  button.small{padding:6px 10px;font-size:12.5px}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .prods{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:6px}
+  .prod{border:1px solid var(--line);border-radius:12px;padding:12px;cursor:pointer;background:var(--panel2);transition:.15s}
+  .prod.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+  .prod .nm{font-weight:600;font-size:13.5px}
+  .prod .pr{color:var(--cyan);font-family:var(--mono);font-size:13px;margin-top:4px}
+  input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:9px 11px;font:inherit;font-size:13.5px;width:110px}
+  label{font-size:12.5px;color:var(--dim)}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:12px;font-weight:700;
+    padding:3px 9px;border-radius:20px;border:1px solid var(--line)}
+  .b-green{color:var(--green);border-color:#1e5a3a;background:#0f2419}
+  .b-amber{color:var(--amber);border-color:#5a4a1e;background:#241f0f}
+  .b-red{color:var(--red);border-color:#5a2029;background:#240f13}
+  .b-cyan{color:var(--cyan);border-color:#1e5758;background:#0f2323}
+  .b-dim{color:var(--dim)}
+  .result{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+  .kv{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .kv .k{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}
+  .log{background:#070a11;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-family:var(--mono);
+    font-size:12px;line-height:1.55;color:#c7d2e8;max-height:420px;overflow:auto;white-space:pre-wrap}
+  .log .req{color:var(--accent)} .log .ok{color:var(--green)} .log .err{color:var(--red)} .log .dim{color:var(--dim)}
+  .adminlist{font-family:var(--mono);font-size:12px;color:#c7d2e8;max-height:260px;overflow:auto}
+  .adminlist table{width:100%;border-collapse:collapse}
+  .adminlist th{text-align:left;color:var(--dim);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase}
+  .adminlist td{padding:6px 8px;border-bottom:1px solid #1b2233}
+  .hint{font-size:12px;color:var(--dim);margin-top:8px}
+  .pill{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:2px 7px;font-family:var(--mono)}
+  .hidden{display:none}
+  .mk-note{font-size:12px;color:var(--amber);margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">pay<b>·</b></div>
+  <span class="tag">Spring Modulith 결제 시스템</span>
+  <span class="tag">데모 콘솔</span>
+  <div class="spacer"></div>
+  <div class="who" id="who">로그인 안 됨</div>
+</header>
+
+<div class="wrap">
+  <div class="tabs">
+    <div class="tab on" data-tab="flow">결제 플로우</div>
+    <div class="tab" data-tab="admin">운영 콘솔</div>
+  </div>
+
+  <!-- ============ 결제 플로우 ============ -->
+  <section id="flow">
+    <div class="grid">
+      <div>
+        <div class="card">
+          <div class="step"><i>1</i> 로그인</div>
+          <h2>인증 (JWT)</h2>
+          <div class="sub">로그인 시 BCrypt 1회 검증 후 토큰 발급 — 이후 요청은 서명 검증만.</div>
+          <div class="row">
+            <button onclick="login('1','user-local-only')">사용자로 로그인</button>
+            <button class="ghost" onclick="login('admin','admin-local-only')">관리자로 로그인</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="step"><i>2</i> 주문 생성</div>
+          <h2>상품 선택 → 주문</h2>
+          <div class="sub">가격은 클라이언트가 아니라 서버 카탈로그에서 확정(금액 위변조 차단).</div>
+          <div class="prods" id="prods"></div>
+          <div class="row" style="margin-top:10px">
+            <label>수량</label><input id="qty" type="number" value="1" min="1">
+            <button onclick="createOrder()" id="btnOrder" disabled>주문 생성</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="step"><i>3</i> 결제 승인</div>
+          <h2>결제 & 후속 액션</h2>
+          <div class="sub">멱등키로 "따닥" 중복 방지. 승인 성공 시 재고 차감 + 에스크로 HELD.</div>
+          <div class="row">
+            <button onclick="confirmPay()" id="btnPay" disabled>결제 승인</button>
+            <button class="ghost" onclick="purchaseConfirm()" id="btnPC" disabled>구매확정(에스크로 릴리스)</button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <label>취소액</label><input id="cancelAmt" type="number" value="10000">
+            <button class="warn" onclick="cancel()" id="btnCancel" disabled>취소</button>
+            <span class="hint">전액=주문금액 → CANCELED / 부분 → PARTIAL_CANCELED</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h2>현재 주문 상태</h2>
+          <div class="sub" id="curOrder">주문 없음</div>
+          <div class="result">
+            <div class="kv"><div class="k">주문</div><span id="stOrder" class="badge b-dim">—</span></div>
+            <div class="kv"><div class="k">결제</div><span id="stPay" class="badge b-dim">—</span></div>
+            <div class="kv"><div class="k">에스크로</div><span id="stEscrow" class="badge b-dim">—</span></div>
+          </div>
+          <div class="hint" id="balHint"></div>
+        </div>
+        <div class="card">
+          <h2>요청 / 응답 로그</h2>
+          <div class="sub">실제 API 호출을 그대로 보여줍니다.</div>
+          <div class="log" id="log"><span class="dim">// 여기에 요청·응답이 기록됩니다</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 운영 콘솔 ============ -->
+  <section id="admin" class="hidden">
+    <div class="card">
+      <div class="sub">관리자(ROLE_ADMIN) 전용. 상단에서 <b>관리자로 로그인</b> 후 사용하세요. 모든 상태 변경은 감사 로그로 남습니다.</div>
+    </div>
+    <div class="grid">
+      <div>
+        <div class="card">
+          <h2>미확정(UNKNOWN) 결제 복구</h2>
+          <div class="sub">웹훅 누락 등으로 방치된 결제를 PG 조회로 확정.</div>
+          <div class="row">
+            <button class="small" onclick="adm('GET','/api/v1/admin/payments/unknown','unk')">미확정 목록</button>
+            <button class="small ghost" onclick="adm('POST','/api/v1/admin/payments/recover','unk')">전체 복구 실행</button>
+          </div>
+          <div class="adminlist" id="unk"></div>
+        </div>
+        <div class="card">
+          <h2>보상 태스크(망취소)</h2>
+          <div class="sub">승인 후 재고 부족 시 자동 망취소. 소진(FAILED) 건 재시도.</div>
+          <div class="row">
+            <button class="small" onclick="adm('GET','/api/v1/admin/compensations?status=FAILED','comp')">FAILED 목록</button>
+            <button class="small ghost" onclick="adm('GET','/api/v1/admin/compensations?status=DONE','comp')">DONE 목록</button>
+          </div>
+          <div class="adminlist" id="comp"></div>
+        </div>
+        <div class="card">
+          <h2>정산 대사 불일치</h2>
+          <div class="sub">사람 확인 필요(PENDING) 건 조회 + 수기 확정.</div>
+          <div class="row">
+            <button class="small" onclick="adm('GET','/api/v1/admin/reconciliations/mismatches','recon')">불일치 목록</button>
+          </div>
+          <div class="adminlist" id="recon"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h2>강제취소 · 2인 승인(maker-checker)</h2>
+          <div class="sub">요청자와 승인자가 반드시 달라야 실행. 데모: 관리자 로그인 상태로 요청→목록→(다른 관리자) 승인.</div>
+          <div class="row">
+            <label>결제ID</label><input id="fcPid" type="number" value="1" style="width:80px">
+            <label>금액</label><input id="fcAmt" type="number" value="10000">
+            <button class="small warn" onclick="fcRequest()">강제취소 요청</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button class="small" onclick="adm('GET','/api/v1/admin/force-cancels?status=REQUESTED','fc')">승인 대기 목록</button>
+            <label>요청ID</label><input id="fcRid" type="number" value="1" style="width:70px">
+            <button class="small ghost" onclick="fcApprove()">승인=실행</button>
+          </div>
+          <div class="mk-note" id="fcNote"></div>
+          <div class="adminlist" id="fc"></div>
+        </div>
+        <div class="card">
+          <h2>FDS 사후 탐지 심사 큐</h2>
+          <div class="sub">결제 완료 이벤트를 비동기 평가 → REVIEW/BLOCK을 큐에 적재. 거부 시 카드 블랙리스트.</div>
+          <div class="row">
+            <button class="small" onclick="adm('GET','/api/v1/admin/fraud-reviews?status=PENDING','fraud')">심사 대기</button>
+            <label>심사ID</label><input id="frId" type="number" value="1" style="width:70px">
+            <button class="small ghost" onclick="frAct('approve')">승인</button>
+            <button class="small warn" onclick="frAct('reject')">거부+블랙리스트</button>
+          </div>
+          <div class="adminlist" id="fraud"></div>
+        </div>
+        <div class="card">
+          <h2>DLQ (실패 이벤트)</h2>
+          <div class="sub">멱등 컨슈머가 실패를 흡수한 데드레터. 재처리 가능.</div>
+          <div class="row"><button class="small" onclick="adm('GET','/api/v1/admin/dead-letters','dlq')">DLQ 목록</button></div>
+          <div class="adminlist" id="dlq"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+const PRODUCTS=[{id:1,name:'테스트 상품 A',price:10000},{id:2,name:'테스트 상품 B',price:5000},{id:3,name:'한정판 상품',price:30000}];
+let token=null, role=null, sel=1, order=null, lastPaymentAmount=0;
+
+const $=id=>document.getElementById(id);
+function uuid(){return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c=='x'?r:(r&0x3|0x8)).toString(16)})}
+function logLine(cls,txt){const el=$('log');el.innerHTML+='\n<span class="'+cls+'">'+txt.replace(/</g,'&lt;')+'</span>';el.scrollTop=el.scrollHeight}
+async function api(method,path,body){
+  logLine('req','→ '+method+' '+path);
+  const h={'Content-Type':'application/json'};
+  if(token) h['Authorization']='Bearer '+token;
+  if(method!=='GET') h['Idempotency-Key']=uuid();
+  let res;
+  try{res=await fetch(path,{method,headers:h,body:body?JSON.stringify(body):undefined});}
+  catch(e){logLine('err','✗ 네트워크 오류 '+e);throw e}
+  const text=await res.text(); let data;try{data=text?JSON.parse(text):null}catch{data=text}
+  logLine(res.ok?'ok':'err',(res.ok?'✓ ':'✗ ')+res.status+' '+(typeof data==='object'?JSON.stringify(data):data));
+  return {ok:res.ok,status:res.status,data};
+}
+// tabs
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');
+  $('flow').classList.toggle('hidden',t.dataset.tab!=='flow');
+  $('admin').classList.toggle('hidden',t.dataset.tab!=='admin');
+});
+// products
+$('prods').innerHTML=PRODUCTS.map(p=>`<div class="prod${p.id===sel?' sel':''}" data-id="${p.id}" onclick="pick(${p.id})"><div class="nm">${p.name}</div><div class="pr">₩${p.price.toLocaleString()}</div></div>`).join('');
+function pick(id){sel=id;document.querySelectorAll('.prod').forEach(e=>e.classList.toggle('sel',+e.dataset.id===id))}
+
+function badge(el,val){
+  const map={PAID:'b-green',DONE:'b-green',RELEASED:'b-green',HELD:'b-cyan',
+    PENDING_PAYMENT:'b-amber',PAYMENT_IN_PROGRESS:'b-amber',IN_PROGRESS:'b-amber',UNKNOWN:'b-amber',PARTIAL_CANCELED:'b-amber',
+    CANCELED:'b-red',REFUNDED:'b-red',FAILED:'b-red',ABORTED:'b-red'};
+  el.className='badge '+(map[val]||'b-dim');el.textContent=val||'—';
+}
+async function login(u,p){
+  const r=await api('POST','/api/v1/auth/login',{username:u,password:p});
+  if(r.ok){token=r.data.token;role=u==='admin'?'관리자':'사용자';
+    $('who').innerHTML='<b>'+role+'</b> 로그인됨 · 토큰 발급';
+    $('btnOrder').disabled=false;}
+}
+async function createOrder(){
+  const r=await api('POST','/api/v1/orders',{items:[{productId:sel,quantity:+$('qty').value}]});
+  if(r.ok){order=r.data;lastPaymentAmount=r.data.totalAmount;
+    $('curOrder').innerHTML='주문번호 <span class="pill">'+order.orderNo+'</span> · ₩'+order.totalAmount.toLocaleString();
+    $('cancelAmt').value=order.totalAmount;
+    badge($('stOrder'),'PENDING_PAYMENT');badge($('stPay'),'—');badge($('stEscrow'),'—');
+    $('btnPay').disabled=false;$('btnCancel').disabled=true;$('btnPC').disabled=true;$('balHint').textContent='';}
+}
+async function confirmPay(){
+  const r=await api('POST','/api/v1/payments/confirm',{paymentKey:'pk-'+uuid(),orderNo:order.orderNo,amount:lastPaymentAmount,pointAmount:0});
+  if(r.ok){badge($('stOrder'),r.data.orderStatus);badge($('stPay'),r.data.paymentStatus);
+    $('btnCancel').disabled=false;$('btnPC').disabled=false;
+    setTimeout(refresh,600);}
+}
+async function cancel(){
+  const r=await api('POST','/api/v1/orders/'+order.orderNo+'/cancel',{cancelAmount:+$('cancelAmt').value,reason:'데모 취소'});
+  if(r.ok) setTimeout(refresh,600);
+}
+async function purchaseConfirm(){
+  const r=await api('POST','/api/v1/orders/'+order.orderNo+'/confirm-purchase');
+  if(r.ok) setTimeout(refresh,800);
+}
+async function refresh(){
+  if(!order) return;
+  const r=await api('GET','/api/v1/orders/'+order.orderNo);
+  if(r.ok){badge($('stOrder'),r.data.status);badge($('stPay'),r.data.paymentStatus||'—');
+    // 에스크로 상태는 주문 상태로 근사 표시(HELD는 승인 직후 이벤트로 비동기 생성)
+    if(r.data.status==='PAID'&&r.data.paymentStatus==='DONE') badge($('stEscrow'),'HELD');
+    if(r.data.status==='CANCELED') badge($('stEscrow'),'REFUNDED');
+  }
+}
+// admin
+async function adm(method,path,target){
+  const r=await api(method,path);
+  renderList(target,r.data);
+}
+function renderList(target,data){
+  const el=$(target);if(!el)return;
+  if(data==null){el.innerHTML='<div class="hint">(응답 없음)</div>';return}
+  if(!Array.isArray(data)){el.innerHTML='<pre style="white-space:pre-wrap;color:#c7d2e8">'+JSON.stringify(data,null,1)+'</pre>';return}
+  if(data.length===0){el.innerHTML='<div class="hint">(비어 있음)</div>';return}
+  const cols=Object.keys(data[0]).slice(0,5);
+  el.innerHTML='<table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+
+    data.map(row=>'<tr>'+cols.map(c=>'<td>'+fmt(row[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+}
+function fmt(v){if(v==null)return '<span class="b-dim">null</span>';const s=String(v);
+  const map={PAID:'green',DONE:'green',EXECUTED:'green',REQUESTED:'amber',PENDING:'amber',FAILED:'red',REJECTED:'red',CANCELED:'red'};
+  return map[s]?'<span class="badge b-'+map[s]+'">'+s+'</span>':s.length>22?s.slice(0,22)+'…':s}
+async function fcRequest(){
+  const r=await api('POST','/api/v1/admin/payments/'+$('fcPid').value+'/force-cancel',{cancelAmount:+$('fcAmt').value,reason:'분쟁 정정'});
+  if(r.ok){$('fcRid').value=r.data.id;$('fcNote').textContent='요청 생성됨(id='+r.data.id+', 요청자='+r.data.requestedBy+'). 다른 관리자로 로그인해 승인하세요.';}
+  renderList('fc',r.data);
+}
+async function fcApprove(){
+  const r=await api('POST','/api/v1/admin/force-cancels/'+$('fcRid').value+'/approve');
+  $('fcNote').textContent = r.ok ? '승인=실행 완료 (EXECUTED)' : '⚠ '+(r.data&&r.data.message||r.status)+' — 요청자 본인은 승인 불가(maker-checker)';
+  renderList('fc',r.data);
+}
+async function frAct(act){
+  const r=await api('POST','/api/v1/admin/fraud-reviews/'+$('frId').value+'/'+act);
+  renderList('fraud',r.data);
+}
+</script>
+</body>
+</html>
