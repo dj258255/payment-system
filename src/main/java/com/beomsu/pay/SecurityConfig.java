@@ -59,6 +59,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/webhooks/**").permitAll()      // HMAC 자체 인증
                         .requestMatchers("/api/v1/orders/**", "/api/v1/payments/**").hasRole("USER")
+                        // 선착순 대기열: 로그인 사용자만 줄 서기(멤버=인증 principal userId). 결제 경로와는
+                        // 결합하지 않는 독립 프리미티브(입장/상태/이탈)이지만 참가자 식별을 위해 인증은 요구한다.
+                        .requestMatchers("/api/v1/queue/**").hasRole("USER")
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .anyRequest().permitAll())

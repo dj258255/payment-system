@@ -87,6 +87,10 @@ app:
   compensation:
     enabled: ${APP_COMPENSATION_ENABLED:false}
     interval-ms: 5000
+  # 선착순 대기열(Redis ZSET) — 순간 트래픽 폭증 시 DB 유입을 제어한다.
+  queue:
+    # 앞에서부터 이 인원(rank < admit-limit)만 "입장"시켜 결제로 보낸다 — DB 유입 제어의 상한.
+    admit-limit: ${APP_QUEUE_ADMIT_LIMIT:100}
   # 에스크로(자금 보류) — 결제금을 구매확정 전까지 HELD로 잡아둔다.
   escrow:
     # 자동 구매확정까지의 보류 기간(일). 이 기간 무응답이면 자동 릴리스 대상이 된다.
