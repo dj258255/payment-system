@@ -70,7 +70,17 @@ logging:
 # 아래 값은 로컬 개발 전용 기본값(env가 우선). 코드에는 키를 두지 않는다.
 app:
   crypto:
-    key: ${APP_CRYPTO_KEY:devlocalkey_0123456789abcdef0123}   # AES-256 = 32바이트, 운영은 KMS/env
+    key: ${APP_CRYPTO_KEY:devlocalkey_0123456789abcdef0123}   # (단일 키·AesGcmFieldCipher용) AES-256=32바이트, 운영은 KMS/env
+    # 필드 암호화 방식: envelope(기본, DEK/KEK) | simple(단일 키 AesGcm).
+    # envelope은 데이터를 매번 새 DEK로 암호화하고 그 DEK를 KEK(마스터키)로 감싸(wrap) 함께 저장한다.
+    # → 키 로테이션 시 데이터 전체 재암호화 없이 작은 DEK만 새 KEK로 재-wrap한다(EnvelopeFieldCipher.rewrapToCurrent).
+    # 운영에서는 아래 kek를 실 KMS(AWS KMS/Vault)로 옮겨 keyFor 구현만 교체한다(마스터키를 프로세스 밖에 보관).
+    # 주의: envelope 암호문은 wrap된 DEK를 함께 실어 단일 키보다 길다 → 민감 컬럼 길이를 넉넉히 잡을 것.
+    mode: ${APP_CRYPTO_MODE:envelope}
+    kek:
+      current: ${APP_KEK_CURRENT:v1}                          # 현재 wrap에 쓸 KEK 버전
+      v1: ${APP_KEK_V1:kek-v1-local-0000000000000000000}      # 필수, AES-256=32바이트. 운영은 env/KMS
+      v2: ${APP_KEK_V2:}                                       # 옵션(로테이션 데모). 있으면 등록, current를 v2로 올릴 수 있다
   jwt:
     # HS256 대칭 서명 키. 로컬/테스트 편의로 32바이트 이상 기본값을 두되, 운영은 env로 오버라이드.
     # 런타임에 길이(<32바이트)를 검증해 약한 키로 뜨는 것을 막는다(JwtConfig fail-fast).
