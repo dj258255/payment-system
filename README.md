@@ -5,6 +5,22 @@
 실 서비스 운영을 상정해 만든 결제 백엔드. 결제의 정상 경로보다 **실패·정합성 처리**에 무게를 뒀다 —
 타임아웃/중복/장애 같은 사건이 실제로 일어난다고 전제하고, 각 사건을 상태로 보존하고 확정하는 구조로 설계했다.
 
+## 데모 콘솔
+
+`docker compose up -d && ./gradlew bootRun` 후 `http://localhost:8080/` 에서 전 흐름을 눌러볼 수 있는 데모 콘솔을 함께 제공한다(Spring이 정적 서빙, same-origin이라 별도 프론트 서버·CORS 불필요).
+
+**결제 플로우** — 로그인(JWT) → 주문 생성 → 결제 승인 → 취소/구매확정. 응답이 아니라 실제 API 호출·상태를 그대로 보여준다.
+
+![결제 플로우 데모](docs/images/demo-checkout.png)
+
+**운영 콘솔(ROLE_ADMIN)** — 미확정 결제 복구, 보상 태스크 재처리, 정산 대사, 강제취소 2인 승인, FDS 사후 심사, DLQ.
+
+![운영 콘솔 데모](docs/images/demo-admin.png)
+
+**강제취소 · 2인 승인(maker-checker)** — 요청자와 승인자가 반드시 달라야 실행된다. 요청자 본인이 승인하면 `MAKER_CHECKER_VIOLATION`으로 막힌다.
+
+![maker-checker 본인 승인 차단](docs/images/demo-maker-checker.png)
+
 ## 기술 스택
 
 - **Java 21**, **Spring Boot 3.4**, **Spring Modulith 1.3**
