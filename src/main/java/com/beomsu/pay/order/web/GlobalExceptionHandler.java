@@ -34,6 +34,9 @@ public class GlobalExceptionHandler {
                  "INVALID_FRAUD_REVIEW_STATE",
                  "IDEMPOTENT_REQUEST_PROCESSING" -> HttpStatus.CONFLICT;                     // 409
             case "IDEMPOTENCY_KEY_REUSED" -> HttpStatus.UNPROCESSABLE_ENTITY;                // 422
+            // 대기열 게이트: 요청 자체는 유효하나 지금은 받아줄 수 없다(줄 서면 됨) → 403(권한 문제)이
+            // 아니라 429가 의미에 맞다. 클라이언트는 enter → status 폴링 후 재시도하면 된다.
+            case "QUEUE_PASS_REQUIRED" -> HttpStatus.TOO_MANY_REQUESTS;                      // 429
             default -> HttpStatus.BAD_REQUEST;                                               // 400 (INVALID_* 포함)
         };
     }

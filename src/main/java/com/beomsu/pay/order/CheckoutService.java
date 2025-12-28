@@ -4,8 +4,9 @@ import com.beomsu.pay.payment.ConfirmResult;
 import com.beomsu.pay.payment.PaymentService;
 import com.beomsu.pay.payment.PaymentStatus;
 import com.beomsu.pay.point.PointService;
+import com.beomsu.pay.queue.QueueService;
 import com.beomsu.pay.shared.Money;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,7 +22,6 @@ import java.util.List;
  */
 @Service
 @Transactional
-@RequiredArgsConstructor
 public class CheckoutService {
 
     private final PaymentService paymentService;
@@ -30,6 +30,29 @@ public class CheckoutService {
     private final ProductRepository productRepository;
     private final PointService pointService;
     private final CompensationService compensationService;
+    private final QueueService queueService;
+    private final List<Long> gateProductIds;
+    private final String gateEventId;
+
+    public CheckoutService(PaymentService paymentService,
+                           OrderRepository orderRepository,
+                           StockDeductionService stockDeductionService,
+                           ProductRepository productRepository,
+                           PointService pointService,
+                           CompensationService compensationService,
+                           QueueService queueService,
+                           @Value("${app.queue.gate.product-ids:}") List<Long> gateProductIds,
+                           @Value("${app.queue.gate.event-id:drop}") String gateEventId) {
+        this.paymentService = paymentService;
+        this.orderRepository = orderRepository;
+        this.stockDeductionService = stockDeductionService;
+        this.productRepository = productRepository;
+        this.pointService = pointService;
+        this.compensationService = compensationService;
+        this.queueService = queueService;
+        this.gateProductIds = gateProductIds;
+        this.gateEventId = gateEventId;
+    }
 
     /**
      * 주문 생성 — totalAmount를 확정 저장한다(이후 금액 위변조 검증의 기준값). 재고는 차감하지 않는다.
@@ -38,6 +61,15 @@ public class CheckoutService {
      * 이래야 금액 위변조 검증의 기준값 자체를 신뢰할 수 있다.
      */
     public CreateOrderResult createOrder(long userId, List<OrderLine> lines) {
+        // 대기열 게이트(옵트인): 이벤트 상품만 서버가 대기열 입장을 강제한다(권고→강제).
+        // 게이트 목록이 비어 있으면(기본) 이 블록은 스트림 한 번 안 돌고 건너뛴다 — 대상 없으면 무비용,
+        // 기존 주문 경로는 100% 불변. 주문 생성이 서버 최초 쓰기 지점이라 여기서 막아야
+        // DB(주문 INSERT)·이후 결제까지 아무 비용이 들지 않는다.
+        if (!gateProductIds.isEmpty()
+                && lines.stream().anyMatch(l -> gateProductIds.contains(l.productId()))
+                && !queueService.hasEntryPass(gateEventId, String.valueOf(userId))) {
+            throw new OrderException("QUEUE_PASS_REQUIRED", "선착순 대기열 입장 후 주문할 수 있습니다.");
+        }
         List<OrderItem> items = lines.stream()
                 .map(l -> {
                     Product product = productRepository.findById(l.productId())

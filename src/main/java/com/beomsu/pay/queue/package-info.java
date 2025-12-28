@@ -11,10 +11,12 @@
  * 몇 명"을 돌려주고, 그 rank가 admit-limit보다 작으면 입장이다. DB를 쓰지 않으므로(Redis 전용)
  * Flyway 마이그레이션도 없다.
  *
- * <p><b>크리티컬 경로(체크아웃)와는 결합하지 않는다.</b> 대기열은 입장/상태/이탈만 제공하는 독립
- * 프리미티브이고, "입장이 확인되면 결제로 진행"은 클라이언트 흐름이 조율한다 — 실제 결제 승인 API를
- * 대기열이 게이팅하지 않는다(결제 경로에 Redis 의존을 심지 않는다). 그래서 어떤 결제/주문 모듈에도
- * 의존하지 않으며, Spring 인프라({@code StringRedisTemplate})만 사용한다(모듈 의존 없음).
+ * <p><b>크리티컬 경로(체크아웃)와는 기본 독립이다.</b> 대기열은 입장/상태/이탈만 제공하는
+ * 프리미티브이고, "입장이 확인되면 결제로 진행"은 클라이언트 흐름이 조율한다. 단, <b>게이트 상품</b>
+ * ({@code app.queue.gate.product-ids})으로 지정된 상품에 한해서는 order 모듈이 주문 생성 시
+ * 입장권({@code hasEntryPass})을 서버가 강제한다(권고→강제, 옵트인). 대상 목록이 비어 있으면(기본)
+ * 결제 경로는 대기열을 전혀 참조하지 않는다. 의존 방향은 order→queue 단방향이고, queue는 여전히
+ * 어떤 모듈에도 의존하지 않으며 Spring 인프라({@code StringRedisTemplate})만 사용한다.
  */
 @org.springframework.modulith.ApplicationModule(
         allowedDependencies = {}

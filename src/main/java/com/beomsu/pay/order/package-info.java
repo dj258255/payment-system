@@ -11,8 +11,11 @@
  * <p>구매확정(에스크로 릴리스)의 진입점도 order가 소유한다 — 릴리스는 구매자 본인만 할 수 있어야
  * 하고(IDOR 방지), 소유권 검증(userId ↔ 주문)의 기준값을 order가 갖기 때문이다. 소유권을 검증한
  * 뒤에만 escrow 모듈에 릴리스를 위임하므로 escrow에 의존한다(escrow는 order에 의존하지 않아 순환 없음).
+ *
+ * <p>게이트 상품(선착순 이벤트 대상)의 주문 생성 시 대기열 입장권을 서버가 강제 검증하기 위해
+ * queue 모듈에 의존한다 — queue는 아무 모듈에도 의존하지 않으므로(allowedDependencies={}) 순환 없음.
  */
 @org.springframework.modulith.ApplicationModule(
-        allowedDependencies = { "shared", "payment", "point", "escrow" }
+        allowedDependencies = { "shared", "payment", "point", "escrow", "queue" }
 )
 package com.beomsu.pay.order;

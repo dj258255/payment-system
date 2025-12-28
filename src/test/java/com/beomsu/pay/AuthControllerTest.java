@@ -43,6 +43,11 @@ class AuthControllerTest {
     @MockitoBean
     JwtDecoder jwtDecoder;
 
+    // SecurityConfig가 시큐리티 체인에 RateLimitFilter를 끼우며 요구하는 협력자 — 슬라이스에선 목.
+    // (auth 경로는 rate limit 대상이 아니라 목의 기본 동작으로 충분하다)
+    @MockitoBean
+    RateLimiter rateLimiter;
+
     @Test
     @DisplayName("올바른 자격증명 → 200 + token(access)/refreshToken 둘 다")
     void loginSucceeds() throws Exception {

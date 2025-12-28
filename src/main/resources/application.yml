@@ -13,6 +13,13 @@ spring:
     username: pay
     password: pay
     driver-class-name: com.mysql.cj.jdbc.Driver
+    # 폭주 시 매달리지 않고 빠르게 실패 — 지연이 마비로 번지는 걸 차단.
+    # connection-timeout 기본 30초는 폭주 시 요청 스레드가 커넥션을 기다리며 줄줄이 매달려
+    # 전면 마비로 번진다. 3초 안에 못 얻으면 에러로 빠르게 떨궈 스레드를 즉시 회수한다.
+    hikari:
+      maximum-pool-size: 20
+      connection-timeout: 3000     # 폭주 시 30초 대기 대신 3초 빠른 실패
+      validation-timeout: 2000
 
   jpa:
     hibernate:
@@ -52,6 +59,13 @@ spring:
         # → 브로커 없이 부팅/테스트가 깨지지 않고, Outbox 기반 인프로세스 소비는 그대로 동작한다.
         # 운영/데모에서 kafka 프로파일로 켠다(아래 --- kafka 문서 참고).
         enabled: false
+
+# 폭주 시 스레드 무한 증식 대신 상한 — 초과 유입은 컨테이너 수용 큐에서 대기·거절되어
+# 힙/컨텍스트 스위칭 폭발로 번지지 않는다(기본 200 → 100, DB 풀 20과 균형).
+server:
+  tomcat:
+    threads:
+      max: 100
 
 management:
   endpoints:
@@ -97,10 +111,26 @@ app:
   compensation:
     enabled: ${APP_COMPENSATION_ENABLED:false}
     interval-ms: 5000
+  # API 유입 제어(rate limit) — "감당 못 할 요청은 바깥 층에서 싸게 거절한다(429)".
+  # 대상: POST /api/v1/orders, POST /api/v1/payments/confirm (RateLimitFilter, 시큐리티 체인 내
+  # Bearer 인증 뒤). 고정 윈도우(1초) INCR — 경계 순간 최대 2배 통과는 단순성의 대가로 수용.
+  ratelimit:
+    enabled: ${APP_RATELIMIT_ENABLED:true}       # k6 전/후 비교용 스위치 — false면 필터가 전부 통과
+    per-user-per-sec: ${APP_RATELIMIT_PER_USER:5}   # 사용자당 초당 허용(스크립트·이중클릭 억제)
+    global-per-sec: ${APP_RATELIMIT_GLOBAL:100}     # 경로당 전체 초당 허용(DB로 가는 총량 캡)
+
   # 선착순 대기열(Redis ZSET) — 순간 트래픽 폭증 시 DB 유입을 제어한다.
   queue:
     # 앞에서부터 이 인원(rank < admit-limit)만 "입장"시켜 결제로 보낸다 — DB 유입 제어의 상한.
     admit-limit: ${APP_QUEUE_ADMIT_LIMIT:100}
+    # 입장권(admit:{eventId}:{userId}) TTL — admitted 판정 순간 발급되고, 이 시간 안에 주문까지
+    # 마쳐야 한다. 만료되면 다시 status 폴링으로 재발급받으면 된다(줄에 있으면 즉시).
+    pass-ttl-seconds: ${APP_QUEUE_PASS_TTL:600}
+    # 대기열 게이트(옵트인): 아래 상품이 주문에 포함되면 서버가 입장권을 강제한다(권고→강제).
+    # 기본 빈 목록 = 게이트 비활성 — 기존 주문 경로 100% 불변, 대상 없으면 무비용.
+    gate:
+      event-id: ${APP_QUEUE_GATE_EVENT:drop}       # 입장권을 검사할 이벤트 ID
+      product-ids: ${APP_QUEUE_GATE_PRODUCTS:}     # 쉼표 구분 productId 목록(예: "1,2")
   # 에스크로(자금 보류) — 결제금을 구매확정 전까지 HELD로 잡아둔다.
   escrow:
     # 자동 구매확정까지의 보류 기간(일). 이 기간 무응답이면 자동 릴리스 대상이 된다.
