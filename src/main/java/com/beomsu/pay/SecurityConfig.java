@@ -52,7 +52,10 @@ public class SecurityConfig {
                 // JWT 무상태 인증 — 서버 세션을 만들지 않는다
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()   // 로그인(BCrypt 1회)
+                        // 로그인(BCrypt 1회)·갱신(refresh 자체가 소유 증명)은 개방,
+                        // 로그아웃은 현재 access를 폐기하므로 인증 필요.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/webhooks/**").permitAll()      // HMAC 자체 인증
                         .requestMatchers("/api/v1/orders/**", "/api/v1/payments/**").hasRole("USER")
