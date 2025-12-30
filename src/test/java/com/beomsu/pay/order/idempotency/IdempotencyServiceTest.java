@@ -4,9 +4,11 @@ import com.beomsu.pay.order.CheckoutResult;
 import com.beomsu.pay.order.OrderStatus;
 import com.beomsu.pay.payment.PaymentStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.CannotAcquireLockException;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -29,13 +31,15 @@ class IdempotencyServiceTest {
 
     private IdempotencyRepository repository;
     private ObjectMapper mapper;
+    private SimpleMeterRegistry meterRegistry;
     private IdempotencyService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(IdempotencyRepository.class);
         mapper = new ObjectMapper().findAndRegisterModules();
-        service = new IdempotencyService(repository, mapper);
+        meterRegistry = new SimpleMeterRegistry();
+        service = new IdempotencyService(repository, mapper, meterRegistry);
     }
 
     private CheckoutResult cached() {
@@ -122,5 +126,75 @@ class IdempotencyServiceTest {
                 .isInstanceOf(IdempotencyException.class)
                 .satisfies(e -> assertThat(((IdempotencyException) e).code())
                         .isEqualTo("INVALID_IDEMPOTENCY_KEY"));
+    }
+
+    // --- 데드락(transient) 재시도 ---
+
+    private double retryCount() {
+        return meterRegistry.counter("idempotency.deadlock.retry").count();
+    }
+
+    @Test
+    @DisplayName("데드락 2회 후 성공: 재시도로 흡수하고 결과 반환 + DONE 저장 + 레코드 미삭제")
+    void deadlockTwiceThenSucceeds() {
+        AtomicInteger calls = new AtomicInteger();
+        when(repository.findByIdempotencyKeyAndApiPathAndHttpMethod(KEY, PATH, "POST"))
+                .thenReturn(Optional.empty());
+        when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        Supplier<CheckoutResult> action = () -> {
+            if (calls.incrementAndGet() <= 2) {
+                throw new CannotAcquireLockException("Deadlock found when trying to get lock");
+            }
+            return cached();
+        };
+
+        CheckoutResult result = service.execute(KEY, PATH, "POST", REQUEST, CheckoutResult.class, action);
+
+        assertThat(calls.get()).isEqualTo(3);
+        assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
+        assertThat(retryCount()).isEqualTo(2.0);
+        verify(repository).save(argThat(IdempotencyRecord::isDone));
+        verify(repository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("데드락 3회 전부 실패: 예외 전파 + 레코드 삭제(클라이언트 재시도 가능) + 카운터 2회")
+    void deadlockExhaustsRetries() {
+        AtomicInteger calls = new AtomicInteger();
+        when(repository.findByIdempotencyKeyAndApiPathAndHttpMethod(KEY, PATH, "POST"))
+                .thenReturn(Optional.empty());
+        when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        Supplier<CheckoutResult> action = () -> {
+            calls.incrementAndGet();
+            throw new CannotAcquireLockException("Deadlock found when trying to get lock");
+        };
+
+        assertThatThrownBy(() -> service.execute(KEY, PATH, "POST", REQUEST, CheckoutResult.class, action))
+                .isInstanceOf(CannotAcquireLockException.class);
+
+        assertThat(calls.get()).isEqualTo(3);
+        assertThat(retryCount()).isEqualTo(2.0);          // 마지막 시도 전까지만 카운트
+        verify(repository).delete(any(IdempotencyRecord.class));
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("일반 RuntimeException: 재시도 없이 즉시 전파 + 레코드 삭제 (기존 동작 불변)")
+    void nonDeadlockFailureIsNotRetried() {
+        AtomicInteger calls = new AtomicInteger();
+        when(repository.findByIdempotencyKeyAndApiPathAndHttpMethod(KEY, PATH, "POST"))
+                .thenReturn(Optional.empty());
+        when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        Supplier<CheckoutResult> action = () -> {
+            calls.incrementAndGet();
+            throw new IllegalStateException("일반 실패");
+        };
+
+        assertThatThrownBy(() -> service.execute(KEY, PATH, "POST", REQUEST, CheckoutResult.class, action))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(calls.get()).isEqualTo(1);
+        assertThat(retryCount()).isZero();
+        verify(repository).delete(any(IdempotencyRecord.class));
     }
 }
