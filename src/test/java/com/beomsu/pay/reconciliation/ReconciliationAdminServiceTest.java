@@ -4,22 +4,60 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
 class ReconciliationAdminServiceTest {
 
     private ReconciliationResultRepository repository;
+    private PgSettlementCsvParser parser;
+    private ReconciliationService reconciliationService;
     private ReconciliationAdminService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(ReconciliationResultRepository.class);
-        service = new ReconciliationAdminService(repository);
+        parser = mock(PgSettlementCsvParser.class);
+        reconciliationService = mock(ReconciliationService.class);
+        service = new ReconciliationAdminService(repository, parser, reconciliationService);
+    }
+
+    @Test
+    @DisplayName("run: 파서로 외부 기록을 뽑아 대사 엔진에 위임하고 결과를 타입별로 집계한다")
+    void runDelegatesToParserAndReconcileThenAggregates() {
+        // 파서는 2건 파싱 + 1건 스킵을 보고한다.
+        InputStream in = new ByteArrayInputStream("dummy".getBytes(StandardCharsets.UTF_8));
+        when(parser.parse(any())).thenReturn(new PgSettlementCsvParser.ParseResult(
+                List.of(new ExternalRecord("ord-1", 10_000), new ExternalRecord("ord-2", 20_000)), 1));
+        // 대사 엔진은 임의의 4분류 결과 목록을 돌려준다(엔진 로직은 여기서 검증 대상 아님).
+        when(reconciliationService.reconcile(anyList())).thenReturn(List.of(
+                ReconciliationResult.matched("ord-1", 10_000),
+                ReconciliationResult.amountMismatch("ord-2", 20_000, 19_000),
+                ReconciliationResult.internalOnly("ord-3", 5_000),
+                ReconciliationResult.externalOnly("ord-4", 7_000)));
+
+        ReconRunSummary summary = service.run(in);
+
+        assertThat(summary.external()).isEqualTo(2);   // 파싱된 외부 기록 수
+        assertThat(summary.skipped()).isEqualTo(1);
+        assertThat(summary.matched()).isEqualTo(1);
+        assertThat(summary.internalOnly()).isEqualTo(1);
+        assertThat(summary.externalOnly()).isEqualTo(1);
+        assertThat(summary.amountMismatch()).isEqualTo(1);
+        // pending = 사람 확인 필요 = internalOnly + externalOnly + amountMismatch
+        assertThat(summary.pending()).isEqualTo(3);
+
+        verify(parser).parse(in);
+        verify(reconciliationService).reconcile(anyList());
     }
 
     @Test
