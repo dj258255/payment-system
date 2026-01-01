@@ -56,6 +56,8 @@ com.beomsu.pay
 
 이벤트 발행은 Spring Modulith의 Event Publication Registry(= Transactional Outbox)로 신뢰성을 보장한다
 ([ADR-002](docs/adr/ADR-002-outbox-event-publication-registry.md)).
+결제 이벤트는 Kafka로도 외부화되며, 별도 프로세스 소비자 데모는 [`consumer-app/`](consumer-app/README.md) 참고
+([ADR-005](docs/adr/ADR-005-event-externalization-kafka.md)).
 
 ## 핵심 설계
 

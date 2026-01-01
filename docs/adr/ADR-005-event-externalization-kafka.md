@@ -42,3 +42,7 @@ public record PaymentCanceledEvent(String orderNo, Long paymentId, long cancelAm
 - **전역 순서는 보장하지 않는다.** 주문 단위 순서만 보존한다(파티션 키=orderNo). 서로 다른 주문 간 순서는 소비자가 의존하면 안 된다.
 - at-least-once이므로 **중복 발행 가능** → 소비자는 반드시 멱등. (ADR-002의 processed_events 결과 소비 원칙과 동일.)
 - 어떤 이벤트를 외부화할지는 애노테이션으로 **명시적 선택** — 모든 도메인 이벤트를 무분별하게 내보내지 않는다(스키마 결합 최소화).
+
+## 실증
+
+- 프로세스 밖 소비자 실증: 별도 프로세스 앱 [`consumer-app/`](../../consumer-app/README.md)(독립 Gradle 프로젝트)이 `payment.confirmed`/`payment.canceled`를 구독한다 — 도메인 코드 무수정.

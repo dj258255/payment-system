@@ -1,0 +1,35 @@
+// 의도적으로 **독립 Gradle 프로젝트**다 — 루트 settings.gradle에 include하지 않는다.
+// 메인 앱의 빌드/CI/테스트에 어떤 영향도 주지 않기 위한 결정이며,
+// 실행은 루트 wrapper로 `./gradlew -p consumer-app bootRun` 한다.
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.4.2'          // 메인 프로젝트와 동일 버전
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.beomsu'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)        // 메인 프로젝트와 동일 toolchain
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // 웹서버 없는 경량 워커 — starter-web 대신 core starter만
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.kafka:spring-kafka'
+    implementation 'com.fasterxml.jackson.core:jackson-databind'   // 버전은 Boot BOM이 관리
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
