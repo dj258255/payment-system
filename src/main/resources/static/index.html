@@ -126,6 +126,24 @@
             <span class="hint">전액=주문금액 → CANCELED / 부분 → PARTIAL_CANCELED</span>
           </div>
         </div>
+
+        <div class="card">
+          <div class="step"><i>0</i> 선착순 대기열</div>
+          <h2>대기열 입장 (Redis ZSET)</h2>
+          <div class="sub">순간 트래픽을 줄 세워 DB 유입을 제어 — 도착순(FIFO)으로 앞에서 admit-limit명만 "입장" 후 결제로. 결제 경로와는 독립.</div>
+          <div class="row">
+            <label>이벤트</label><input id="qEvent" value="drop-2026" style="width:120px">
+            <button onclick="qEnter()" id="btnQEnter" disabled>입장</button>
+            <button class="ghost" onclick="qStatus()" id="btnQStatus" disabled>순번 조회</button>
+            <button class="warn" onclick="qLeave()" id="btnQLeave" disabled>이탈</button>
+          </div>
+          <div class="result" style="margin-top:10px">
+            <div class="kv"><div class="k">순번</div><span id="qPos" class="badge b-dim">—</span></div>
+            <div class="kv"><div class="k">앞선 인원</div><span id="qAhead" class="badge b-dim">—</span></div>
+            <div class="kv"><div class="k">입장</div><span id="qAdmit" class="badge b-dim">—</span></div>
+          </div>
+          <div class="hint" id="qHint"></div>
+        </div>
       </div>
 
       <div>
@@ -260,8 +278,18 @@ async function login(u,p){
   const r=await api('POST','/api/v1/auth/login',{username:u,password:p});
   if(r.ok){token=r.data.token;role=u==='admin'?'관리자':'사용자';
     $('who').innerHTML='<b>'+role+'</b> 로그인됨 · 토큰 발급';
-    $('btnOrder').disabled=false;}
+    $('btnOrder').disabled=false;
+    $('btnQEnter').disabled=false;$('btnQStatus').disabled=false;$('btnQLeave').disabled=false;}
 }
+function renderQueue(p){
+  $('qPos').className='badge '+(p.position<0?'b-dim':'b-cyan');$('qPos').textContent=p.position<0?'대기열 없음':p.position+'번';
+  $('qAhead').className='badge b-dim';$('qAhead').textContent=p.waitingAhead<0?'—':p.waitingAhead+'명';
+  const el=$('qAdmit');if(p.position<0){el.className='badge b-dim';el.textContent='—';}else{el.className='badge '+(p.admitted?'b-green':'b-amber');el.textContent=p.admitted?'입장':'대기';}
+  $('qHint').textContent='전체 '+p.total+'명 대기 · '+(p.position<0?'':(p.admitted?'입장 가능 → 결제 진행':'대기 중 → 순번 조회를 폴링'));
+}
+async function qEnter(){const r=await api('POST','/api/v1/queue/'+$('qEvent').value+'/enter');if(r.ok)renderQueue(r.data);}
+async function qStatus(){const r=await api('GET','/api/v1/queue/'+$('qEvent').value+'/status');if(r.ok)renderQueue(r.data);}
+async function qLeave(){const r=await api('POST','/api/v1/queue/'+$('qEvent').value+'/leave');if(r.ok){$('qPos').className='badge b-dim';$('qPos').textContent='—';$('qAhead').textContent='—';$('qAdmit').className='badge b-dim';$('qAdmit').textContent='—';$('qHint').textContent='이탈 완료 — 뒷사람 순번이 당겨집니다';}}
 async function createOrder(){
   const r=await api('POST','/api/v1/orders',{items:[{productId:sel,quantity:+$('qty').value}]});
   if(r.ok){order=r.data;lastPaymentAmount=r.data.totalAmount;
