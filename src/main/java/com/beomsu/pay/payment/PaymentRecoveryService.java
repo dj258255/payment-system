@@ -23,8 +23,8 @@ import java.util.List;
  *   <li>PG에 없으면 → 승인이 실제로 안 된 것 → ABORTED</li>
  *   <li>이미 취소됨 → CANCELED로 반영</li>
  * </ul>
- * 스케줄러가 {@code payment.recovery.enabled=true}일 때 이 로직을 주기 실행한다(운영). 테스트는
- * {@link #recoverUnknownPayments()}를 직접 호출한다.
+ * {@link PaymentRecoveryScheduler}가 {@code app.recovery.enabled=true}일 때 이 로직을 주기 실행한다(운영).
+ * 테스트는 {@link #recoverUnknownPayments()}를 직접 호출한다.
  */
 @Service
 @RequiredArgsConstructor

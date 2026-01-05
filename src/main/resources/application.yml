@@ -111,6 +111,35 @@ app:
   compensation:
     enabled: ${APP_COMPENSATION_ENABLED:false}
     interval-ms: 5000
+
+  # 아래 배치들은 로직만 있고 주기 호출자가 없던 것들 — 스케줄러를 붙여 주기 실행하고, outbox
+  # 완료 이벤트도 주기 정리한다. 모두 기본 off(@ConditionalOnProperty 게이트로 테스트/부트 무영향).
+  # 운영에서 env로 켠다(각 스케줄러는 짝이 되는 @EnableScheduling 게이트도 같은 프로퍼티로 함께 켜진다).
+
+  # 미확정(UNKNOWN) 결제 복구 스케줄러 → PaymentRecoveryService.recoverUnknownPayments()
+  recovery:
+    enabled: ${APP_RECOVERY_ENABLED:false}
+    interval-ms: 60000
+  # 가상계좌 만료 배치 스케줄러 → VirtualAccountService.expireOverdue(now)
+  va:
+    expiry:
+      enabled: ${APP_VA_EXPIRY_ENABLED:false}
+      interval-ms: 60000
+  # 구독 정기결제(dunning) 스케줄러 → SubscriptionService.runBillingCycle(today). 청구 주기라 기본 1시간.
+  dunning:
+    enabled: ${APP_DUNNING_ENABLED:false}
+    interval-ms: 3600000
+  # 주문 만료 배치 스케줄러 → OrderExpiryService.expireOverdue(now) (PENDING_PAYMENT+만료시각 경과 → EXPIRED)
+  order:
+    expiry:
+      enabled: ${APP_ORDER_EXPIRY_ENABLED:false}
+      interval-ms: 60000
+  # Modulith Outbox(event_publication) 완료 이벤트 정리 스케줄러 → 무한 성장 방지. 기본 1시간 주기, 7일 보존.
+  outbox:
+    cleanup:
+      enabled: ${APP_OUTBOX_CLEANUP_ENABLED:false}
+      interval-ms: 3600000
+      retention-days: ${APP_OUTBOX_RETENTION_DAYS:7}
   # API 유입 제어(rate limit) — "감당 못 할 요청은 바깥 층에서 싸게 거절한다(429)".
   # 대상: POST /api/v1/orders, POST /api/v1/payments/confirm (RateLimitFilter, 시큐리티 체인 내
   # Bearer 인증 뒤). 고정 윈도우(1초) INCR — 경계 순간 최대 2배 통과는 단순성의 대가로 수용.
