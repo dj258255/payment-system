@@ -15,7 +15,9 @@ import java.util.Map;
  *
  * <p>클라이언트 흐름(참고): {@code POST enter} → 응답의 {@code admitted}가 false면 {@code GET status}를
  * 폴링하며 순번이 앞으로 오길 기다린다 → {@code admitted}가 true가 되면 그때 결제 API로 진행하고,
- * 결제가 끝나면 {@code POST leave}로 줄에서 빠진다. 결제 승인 API 자체는 대기열에 결합돼 있지 않다.
+ * 결제가 끝나면 {@code POST leave}로 줄에서 빠진다. 결제 경로와는 <b>기본 독립</b>이지만, 게이트
+ * 상품({@code app.queue.gate.product-ids})에 한해서는 주문 생성 시 서버가 입장권을 강제한다(옵트인) —
+ * admitted 판정 순간 발급되는 입장권이 없으면 주문이 거절된다.
  */
 @RestController
 @RequestMapping("/api/v1/queue")

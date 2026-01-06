@@ -4,6 +4,7 @@ import com.beomsu.pay.payment.ConfirmResult;
 import com.beomsu.pay.payment.PaymentService;
 import com.beomsu.pay.payment.PaymentStatus;
 import com.beomsu.pay.point.PointService;
+import com.beomsu.pay.queue.QueueService;
 import com.beomsu.pay.shared.Money;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,12 +20,15 @@ import static org.mockito.Mockito.*;
 
 class CheckoutServiceTest {
 
+    private static final String GATE_EVENT = "drop";
+
     private PaymentService paymentService;
     private OrderRepository orderRepository;
     private StockDeductionService stockDeductionService;
     private ProductRepository productRepository;
     private PointService pointService;
     private CompensationService compensationService;
+    private QueueService queueService;
     private CheckoutService service;
 
     @BeforeEach
@@ -35,10 +39,17 @@ class CheckoutServiceTest {
         productRepository = mock(ProductRepository.class);
         pointService = mock(PointService.class);
         compensationService = mock(CompensationService.class);
+        queueService = mock(QueueService.class);
         // 기본값: 재고 차감 성공. 재고 부족 케이스는 개별 테스트에서 false로 재정의한다.
         when(stockDeductionService.tryDeduct(anyLong(), anyInt())).thenReturn(true);
-        service = new CheckoutService(paymentService, orderRepository, stockDeductionService,
-                productRepository, pointService, compensationService);
+        // 기본: 게이트 목록 빈(비활성) — 대기열 강제 없는 기존 동작. 게이트 케이스는 gatedService()로.
+        service = serviceWithGate(List.of());
+    }
+
+    private CheckoutService serviceWithGate(List<Long> gateProductIds) {
+        return new CheckoutService(paymentService, orderRepository, stockDeductionService,
+                productRepository, pointService, compensationService,
+                queueService, gateProductIds, GATE_EVENT);
     }
 
     /** 10,000 x 2 = 20,000 짜리 단일 항목 주문. */
@@ -300,5 +311,62 @@ class CheckoutServiceTest {
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("PRODUCT_NOT_FOUND"));
         verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    // --- 대기열 게이트(옵트인): 게이트 상품은 입장권 없이 주문할 수 없다 ---
+
+    @Test
+    @DisplayName("게이트 상품 + 입장권 없음: QUEUE_PASS_REQUIRED — 카탈로그 조회·주문 저장 전에 차단")
+    void gatedProductWithoutPassRejected() {
+        CheckoutService gated = serviceWithGate(List.of(100L));
+        when(queueService.hasEntryPass(GATE_EVENT, "1")).thenReturn(false);
+
+        assertThatThrownBy(() -> gated.createOrder(1L, List.of(new OrderLine(100L, 1))))
+                .isInstanceOf(OrderException.class)
+                .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("QUEUE_PASS_REQUIRED"));
+
+        // 서버 최초 쓰기 지점에서 막았다 — DB 조회/INSERT 비용 0.
+        verifyNoInteractions(productRepository);
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("게이트 상품 + 입장권 있음: 정상 주문 생성")
+    void gatedProductWithPassCreatesOrder() {
+        CheckoutService gated = serviceWithGate(List.of(100L));
+        when(queueService.hasEntryPass(GATE_EVENT, "1")).thenReturn(true);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(productRepository.findById(100L)).thenReturn(Optional.of(Product.of(100L, "한정판", 50_000)));
+
+        CreateOrderResult result = gated.createOrder(1L, List.of(new OrderLine(100L, 1)));
+
+        assertThat(result.totalAmount()).isEqualTo(50_000);
+        verify(queueService).hasEntryPass(GATE_EVENT, "1");
+        verify(orderRepository).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("게이트 활성이라도 비대상 상품 주문은 입장권 검증 없이 진행")
+    void nonGatedProductSkipsPassCheck() {
+        CheckoutService gated = serviceWithGate(List.of(999L));  // 게이트 대상은 999뿐
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(productRepository.findById(100L)).thenReturn(Optional.of(Product.of(100L, "상품A", 10_000)));
+
+        gated.createOrder(1L, List.of(new OrderLine(100L, 1)));
+
+        verify(queueService, never()).hasEntryPass(anyString(), anyString());
+        verify(orderRepository).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("게이트 목록 빈 경우(기본): 대기열 검증 자체가 없다 — 기존 동작 100% 불변")
+    void emptyGateListNeverChecksPass() {
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(productRepository.findById(100L)).thenReturn(Optional.of(Product.of(100L, "상품A", 10_000)));
+
+        service.createOrder(1L, List.of(new OrderLine(100L, 1)));   // 기본 service = 게이트 비활성
+
+        verifyNoInteractions(queueService);                         // hasEntryPass never
+        verify(orderRepository).save(any(Order.class));
     }
 }

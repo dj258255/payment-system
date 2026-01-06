@@ -15,6 +15,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -44,7 +45,11 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter)
+    SecurityFilterChain filterChain(HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter,
+                                    RateLimiter rateLimiter,
+                                    @Value("${app.ratelimit.enabled:true}") boolean rateLimitEnabled,
+                                    @Value("${app.ratelimit.per-user-per-sec:5}") int perUserPerSec,
+                                    @Value("${app.ratelimit.global-per-sec:100}") int globalPerSec)
             throws Exception {
         http
                 // 세션 없는 API + HMAC 웹훅이라 CSRF 토큰은 부적합 → 비활성화
@@ -67,7 +72,12 @@ public class SecurityConfig {
                         .anyRequest().permitAll())
                 // Bearer 토큰의 HS256 서명만 검증(요청당 BCrypt 없음)
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
-                        jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
+                        jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
+                // 유입 제어(rate limit): Bearer 인증 "뒤"에 끼워 principal(userId)로 per-user 키를
+                // 만든다. 필터를 빈으로 등록하지 않고 여기서 직접 생성한다 — 빈이면 서블릿 컨테이너가
+                // 자동으로 한 번 더 등록해 같은 요청에 이중 적용되기 때문(RateLimitFilter 주석 참고).
+                .addFilterAfter(new RateLimitFilter(rateLimiter, rateLimitEnabled, perUserPerSec, globalPerSec),
+                        BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 
