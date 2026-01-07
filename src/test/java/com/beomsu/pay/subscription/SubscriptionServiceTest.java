@@ -1,5 +1,6 @@
 package com.beomsu.pay.subscription;
 
+import com.beomsu.pay.shared.crypto.BlindIndexer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -7,6 +8,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -16,6 +18,9 @@ import static org.mockito.Mockito.*;
 class SubscriptionServiceTest {
 
     private static final LocalDate TODAY = LocalDate.of(2026, 7, 5);
+
+    // 실제 BlindIndexer(순수 HMAC — 부트 없음). 빌링키 인덱스 계산/조회 위임을 실물로 검증한다.
+    private static final BlindIndexer BLIND_INDEXER = new BlindIndexer("blind-index-test-secret-000000000");
 
     private FakeBillingGateway gateway;
     private SubscriptionRepository subscriptionRepository;
@@ -29,7 +34,8 @@ class SubscriptionServiceTest {
         subscriptionRepository = mock(SubscriptionRepository.class);
         billingKeyRepository = mock(BillingKeyRepository.class);
         dunningAttemptRepository = mock(DunningAttemptRepository.class);
-        service = new SubscriptionService(gateway, subscriptionRepository, billingKeyRepository, dunningAttemptRepository);
+        service = new SubscriptionService(gateway, subscriptionRepository, billingKeyRepository,
+                dunningAttemptRepository, BLIND_INDEXER);
     }
 
     private Subscription activeSub() {
@@ -150,6 +156,23 @@ class SubscriptionServiceTest {
         assertThat(captor.getValue().getBillingKey()).isEqualTo("billing-1");
         // customerKey는 UUID(무작위) — 예측 가능한 값이 아니어야 한다
         assertThat(captor.getValue().getCustomerKey()).hasSize(36);
+        // 빌링키는 암호화 저장되므로, 저장 시 블라인드 인덱스를 함께 계산해 넣어야 조회·유니크가 산다.
+        assertThat(captor.getValue().getBillingKeyIndex()).isEqualTo(BLIND_INDEXER.index("billing-1"));
+    }
+
+    @Test
+    @DisplayName("findByBillingKey: 원문을 블라인드 인덱스로 해시해 findByBillingKeyIndex로 위임 조회한다")
+    void findByBillingKeyDelegatesToIndex() {
+        String raw = "billing-1";
+        String index = BLIND_INDEXER.index(raw);
+        BillingKey stored = BillingKey.of(raw, index, "cust-uuid", 1L);
+        when(billingKeyRepository.findByBillingKeyIndex(index)).thenReturn(Optional.of(stored));
+
+        Optional<BillingKey> found = service.findByBillingKey(raw);
+
+        // 원문이 아니라 결정적 인덱스로 조회해야 한다(암호문은 비결정적이라 값 조회 불가).
+        verify(billingKeyRepository).findByBillingKeyIndex(index);
+        assertThat(found).containsSame(stored);
     }
 
     @Test

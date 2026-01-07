@@ -129,9 +129,10 @@ class EnvelopeFieldCipherTest {
     }
 
     @Test
-    @DisplayName("envelope 형식이 아니면(프리픽스 없음) 복호화 예외")
-    void nonEnvelopeRejected() {
-        assertThatThrownBy(() -> cipher.decrypt("not-an-envelope"))
-                .isInstanceOf(IllegalStateException.class);
+    @DisplayName("레거시 평문 하위호환: env: 프리픽스가 없으면 복호화가 값을 그대로 반환한다")
+    void legacyPlaintextPassthrough() {
+        // 암호화 적용 이전에 저장된 평문 행을 읽을 때 예외 없이 원문을 돌려준다.
+        assertThat(cipher.decrypt("110-1234-567890")).isEqualTo("110-1234-567890");
+        assertThat(cipher.decrypt("not-an-envelope")).isEqualTo("not-an-envelope");
     }
 }

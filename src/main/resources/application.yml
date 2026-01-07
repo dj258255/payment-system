@@ -95,6 +95,10 @@ app:
       current: ${APP_KEK_CURRENT:v1}                          # 현재 wrap에 쓸 KEK 버전
       v1: ${APP_KEK_V1:kek-v1-local-0000000000000000000}      # 필수, AES-256=32바이트. 운영은 env/KMS
       v2: ${APP_KEK_V2:}                                       # 옵션(로테이션 데모). 있으면 등록, current를 v2로 올릴 수 있다
+    # 블라인드 인덱스(HMAC-SHA256) secret — 암호화된 빌링키의 동등 조회·유니크를 대체한다.
+    # 같은 빌링키는 항상 같은 인덱스가 되어 findByBillingKeyIndex로 찾는다. 16바이트 이상(BlindIndexer fail-fast).
+    # 운영은 반드시 env/시크릿 매니저로 주입한다(아래는 로컬 개발 전용 기본값).
+    blind-index-secret: ${APP_BLIND_INDEX_SECRET:blind-index-local-secret-0000000000}
   jwt:
     # HS256 대칭 서명 키. 로컬/테스트 편의로 32바이트 이상 기본값을 두되, 운영은 env로 오버라이드.
     # 런타임에 길이(<32바이트)를 검증해 약한 키로 뜨는 것을 막는다(JwtConfig fail-fast).
