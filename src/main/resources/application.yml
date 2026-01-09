@@ -111,6 +111,12 @@ app:
     password: ${APP_ADMIN_PASSWORD:admin-local-only}
   user:
     password: ${APP_USER_PASSWORD:user-local-only}
+  # 이상거래탐지(FDS) 설정.
+  fds:
+    velocity:
+      # velocity 카운터를 공유 Redis로 셀지 여부. 기본 true(RedisVelocityCounter @Primary) — 다중
+      # 인스턴스에서 카운트가 정확하다. false면 InMemoryVelocityCounter로 폴백(단일 인스턴스·테스트용).
+      redis: ${APP_FDS_VELOCITY_REDIS:true}
   # 보상(망취소) 재시도 스케줄러 — 기본 off(테스트/부트 부작용 방지). 운영에서 env로 켠다.
   compensation:
     enabled: ${APP_COMPENSATION_ENABLED:false}
@@ -172,6 +178,12 @@ app:
     auto-release:
       enabled: ${APP_ESCROW_AUTO_RELEASE_ENABLED:false}
       interval-ms: 60000
+
+# 웹훅 서명 검증(HMAC-SHA256) 시크릿. 아래는 로컬 개발 전용 기본값(16바이트 이상)이고, 운영은
+# 반드시 env/시크릿 매니저로 오버라이드한다. 미설정/약한 키면 기동을 실패시킨다(WebhookSignatureVerifier fail-fast).
+payment:
+  webhook:
+    secret: ${PAYMENT_WEBHOOK_SECRET:local-webhook-secret-please-override-32b}
 
 ---
 # kafka 프로파일: 브로커가 있을 때만 활성화한다(예: SPRING_PROFILES_ACTIVE=kafka).
