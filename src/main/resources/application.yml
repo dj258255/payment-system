@@ -152,7 +152,10 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # Modulith 외부화는 이벤트를 이미 JSON byte[]로 직렬화해 넘긴다. JsonSerializer를 쓰면
+      # 그 byte[]가 다시 JSON(base64 문자열)으로 감싸져 이중 인코딩된다(소비자 실검증에서 발견).
+      # ByteArraySerializer로 그대로 실어야 와이어에 깨끗한 JSON이 나간다.
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
       acks: all                    # 유실 방지 — 모든 in-sync 복제본이 받아야 성공
       properties:
         enable.idempotence: true   # 멱등 producer — 재시도로 인한 중복 발행 억제
