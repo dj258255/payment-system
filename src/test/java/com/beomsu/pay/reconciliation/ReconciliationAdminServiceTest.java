@@ -4,6 +4,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -14,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class ReconciliationAdminServiceTest {
@@ -61,22 +67,24 @@ class ReconciliationAdminServiceTest {
     }
 
     @Test
-    @DisplayName("listMismatches: PENDING 예외 큐만 조회해 뷰로 매핑한다")
+    @DisplayName("listMismatches: PENDING 예외 큐만 조회해 페이지 뷰로 매핑한다")
     void listMismatchesMapsPendingToView() {
         ReconciliationResult mismatch = ReconciliationResult.amountMismatch("ord-1", 10_000, 9_000);
-        when(repository.findByStatus(ReconStatus.PENDING)).thenReturn(List.of(mismatch));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(repository.findByStatus(eq(ReconStatus.PENDING), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(mismatch), pageable, 1));
 
-        List<ReconMismatchView> views = service.listMismatches();
+        Page<ReconMismatchView> views = service.listMismatches(pageable);
 
         assertThat(views).hasSize(1);
-        ReconMismatchView v = views.get(0);
+        ReconMismatchView v = views.getContent().get(0);
         assertThat(v.orderNo()).isEqualTo("ord-1");
         assertThat(v.result()).isEqualTo(ReconResultType.AMOUNT_MISMATCH);
         assertThat(v.internalAmount()).isEqualTo(10_000);
         assertThat(v.externalAmount()).isEqualTo(9_000);
         // 조회는 PENDING 상태만 대상으로 한다(AUTO_RESOLVED는 제외).
-        verify(repository).findByStatus(ReconStatus.PENDING);
-        verify(repository, never()).findByStatus(ReconStatus.AUTO_RESOLVED);
+        verify(repository).findByStatus(eq(ReconStatus.PENDING), any(Pageable.class));
+        verify(repository, never()).findByStatus(eq(ReconStatus.AUTO_RESOLVED), any(Pageable.class));
     }
 
     @Test

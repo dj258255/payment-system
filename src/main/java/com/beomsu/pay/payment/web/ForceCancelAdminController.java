@@ -6,10 +6,13 @@ import com.beomsu.pay.payment.ForceCancelView;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
-import java.util.List;
 
 /**
  * 강제취소 maker-checker 운영 어드민 REST 컨트롤러.
@@ -58,8 +61,9 @@ class ForceCancelAdminController {
 
     /** 상태별 목록(기본 REQUESTED = 미결 건). */
     @GetMapping("/force-cancels")
-    List<ForceCancelView> list(@RequestParam(defaultValue = "REQUESTED") ForceCancelStatus status) {
-        return service.list(status);
+    Page<ForceCancelView> list(@RequestParam(defaultValue = "REQUESTED") ForceCancelStatus status,
+                               @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
+        return service.list(status, pageable);
     }
 
     record ForceCancelRequestBody(long cancelAmount, String reason) {

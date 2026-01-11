@@ -6,10 +6,13 @@ import com.beomsu.pay.fraud.FraudReviewView;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
-import java.util.List;
 
 /**
  * FDS 심사 큐 백오피스 어드민 REST 컨트롤러.
@@ -29,8 +32,9 @@ class FraudReviewAdminController {
 
     /** 상태별 심사 항목 목록(기본 PENDING = 미결 건). */
     @GetMapping
-    List<FraudReviewView> list(@RequestParam(defaultValue = "PENDING") FraudReviewStatus status) {
-        return adminService.list(status);
+    Page<FraudReviewView> list(@RequestParam(defaultValue = "PENDING") FraudReviewStatus status,
+                               @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
+        return adminService.list(status, pageable);
     }
 
     /** 승인(정상 거래로 확인). */

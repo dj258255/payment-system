@@ -10,6 +10,12 @@ import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
  *   2. 상품/재고 시드: products(1, 'A', 10000), stock(1, 넉넉히)
  *   3. k6 run k6/checkout-load.js
  *
+ * 성능 측정 시 rate limiter를 끄고 돌린다:
+ *   APP_RATELIMIT_ENABLED=false ./gradlew bootRun
+ * 이 스크립트는 데모 유저 1명이 주문→승인을 반복하므로, rate limiter(기본 on, per-user 5/s)에
+ * 걸려 429가 섞이면 처리량·지연 측정이 왜곡된다. 순수 처리 성능을 보려면 rate limit을 끈다.
+ * (반대로 spike-test는 rate limit을 켠 채 돌려 폭주의 몇 %를 429로 쳐내는지=shed를 측정한다.)
+ *
  * FakePgClient(비-prod)가 승인을 성공 처리하므로 실제 PG 키 없이 부하를 준다.
  * thresholds를 위반하면(예: p95 > 1500ms) k6가 실패로 종료 → 성능 회귀를 CI에서 잡는다.
  */

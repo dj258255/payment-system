@@ -5,6 +5,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.Optional;
@@ -171,14 +175,15 @@ class ForceCancelServiceTest {
     // ---- list ----
 
     @Test
-    @DisplayName("list: 상태별 요청을 뷰로 매핑")
+    @DisplayName("list: 상태별 요청 페이지를 뷰로 매핑")
     void listMapsViews() {
-        when(repository.findByStatus(ForceCancelStatus.REQUESTED))
-                .thenReturn(List.of(requestedBy("admin")));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(repository.findByStatus(eq(ForceCancelStatus.REQUESTED), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(requestedBy("admin")), pageable, 1));
 
-        List<ForceCancelView> views = service.list(ForceCancelStatus.REQUESTED);
+        Page<ForceCancelView> views = service.list(ForceCancelStatus.REQUESTED, pageable);
 
         assertThat(views).hasSize(1);
-        assertThat(views.get(0).status()).isEqualTo("REQUESTED");
+        assertThat(views.getContent().get(0).status()).isEqualTo("REQUESTED");
     }
 }

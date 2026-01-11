@@ -5,11 +5,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class PaymentAdminServiceTest {
@@ -40,15 +47,17 @@ class PaymentAdminServiceTest {
     }
 
     @Test
-    @DisplayName("listUnknown: UNKNOWN 결제를 뷰로 매핑한다")
+    @DisplayName("listUnknown: UNKNOWN 결제 페이지를 뷰로 매핑한다")
     void listUnknownMapsToView() {
         Payment p = unknownPayment();
-        when(paymentRepository.findByStatus(PaymentStatus.UNKNOWN)).thenReturn(List.of(p));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(paymentRepository.findByStatus(eq(PaymentStatus.UNKNOWN), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(p), pageable, 1));
 
-        List<UnknownPaymentView> views = service.listUnknown();
+        Page<UnknownPaymentView> views = service.listUnknown(pageable);
 
         assertThat(views).hasSize(1);
-        UnknownPaymentView v = views.get(0);
+        UnknownPaymentView v = views.getContent().get(0);
         assertThat(v.orderNo()).isEqualTo("ord-1");
         assertThat(v.amount()).isEqualTo(14_000);
         assertThat(v.status()).isEqualTo(PaymentStatus.UNKNOWN);

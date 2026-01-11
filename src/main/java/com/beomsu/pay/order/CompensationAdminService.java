@@ -1,10 +1,10 @@
 package com.beomsu.pay.order;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 /**
  * 보상 태스크 운영 어드민 — 소진(FAILED)된 태스크를 조회하고 수동 재시도한다.
@@ -20,13 +20,12 @@ public class CompensationAdminService {
     private final CompensationTaskRepository repository;
     private final CompensationExecutor executor;
 
-    /** 상태별 보상 태스크 목록(운영은 주로 FAILED를 본다). */
+    /** 상태별 보상 태스크 페이지(운영은 주로 FAILED를 본다). */
     @Transactional(readOnly = true)
-    public List<CompensationTaskView> list(CompensationStatus status) {
-        return repository.findByStatus(status).stream()
+    public Page<CompensationTaskView> list(CompensationStatus status, Pageable pageable) {
+        return repository.findByStatus(status, pageable)
                 .map(t -> new CompensationTaskView(t.getId(), t.getOrderNo(), t.getAmount(),
-                        t.getStatus(), t.getRetryCount(), t.getLastError(), t.getNextAttemptAt()))
-                .toList();
+                        t.getStatus(), t.getRetryCount(), t.getLastError(), t.getNextAttemptAt()));
     }
 
     /**

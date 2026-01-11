@@ -4,6 +4,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -11,6 +15,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class FraudReviewAdminServiceTest {
@@ -35,16 +41,18 @@ class FraudReviewAdminServiceTest {
     }
 
     @Test
-    @DisplayName("list(PENDING): 상태로 조회해 뷰로 매핑(카드 키는 마스킹)")
+    @DisplayName("list(PENDING): 상태로 페이지 조회해 뷰로 매핑(카드 키는 마스킹)")
     void listMapsViews() {
-        when(repository.findByStatus(FraudReviewStatus.PENDING)).thenReturn(List.of(flagged()));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(repository.findByStatus(eq(FraudReviewStatus.PENDING), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(flagged()), pageable, 1));
 
-        List<FraudReviewView> views = service.list(FraudReviewStatus.PENDING);
+        Page<FraudReviewView> views = service.list(FraudReviewStatus.PENDING, pageable);
 
         assertThat(views).hasSize(1);
-        assertThat(views.get(0).orderNo()).isEqualTo("ord-1");
-        assertThat(views.get(0).status()).isEqualTo("PENDING");
-        assertThat(views.get(0).cardKey()).isEqualTo("card****-xyz"); // 앞4·뒤4 마스킹
+        assertThat(views.getContent().get(0).orderNo()).isEqualTo("ord-1");
+        assertThat(views.getContent().get(0).status()).isEqualTo("PENDING");
+        assertThat(views.getContent().get(0).cardKey()).isEqualTo("card****-xyz"); // 앞4·뒤4 마스킹
     }
 
     @Test

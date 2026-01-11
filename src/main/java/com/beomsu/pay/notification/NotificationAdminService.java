@@ -1,10 +1,10 @@
 package com.beomsu.pay.notification;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 /**
  * DLQ 백오피스 어드민 — 죽은 메시지를 조회하고 재처리한다.
@@ -24,12 +24,11 @@ public class NotificationAdminService {
     private final NotificationSender sender;
 
     @Transactional(readOnly = true)
-    public List<DeadLetterView> listDeadLetters() {
-        return deadLetters.findAll().stream()
+    public Page<DeadLetterView> listDeadLetters(Pageable pageable) {
+        return deadLetters.findAll(pageable)
                 .map(d -> new DeadLetterView(d.getId(), d.getEventType(), d.getEventKey(),
                         d.getOrderNo(), d.getPaymentId(), d.getAmount(), d.getFailReason(),
-                        d.getRetryCount(), d.getCreatedAt()))
-                .toList();
+                        d.getRetryCount(), d.getCreatedAt()));
     }
 
     /** DLQ 항목을 재처리한다. 성공하면 제거+완료 마킹, 실패하면 재시도 횟수만 올린다. */

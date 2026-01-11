@@ -2,6 +2,8 @@ package com.beomsu.pay.reconciliation;
 
 import com.beomsu.pay.reconciliation.PgSettlementCsvParser.ParseResult;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,12 +51,11 @@ public class ReconciliationAdminService {
                 matched, internalOnly, externalOnly, amountMismatch, pending);
     }
 
-    /** 사람 확인이 필요한 불일치(PENDING) 목록. */
+    /** 사람 확인이 필요한 불일치(PENDING) 페이지. */
     @Transactional(readOnly = true)
-    public List<ReconMismatchView> listMismatches() {
-        return repository.findByStatus(ReconStatus.PENDING).stream()
-                .map(ReconciliationAdminService::toView)
-                .toList();
+    public Page<ReconMismatchView> listMismatches(Pageable pageable) {
+        return repository.findByStatus(ReconStatus.PENDING, pageable)
+                .map(ReconciliationAdminService::toView);
     }
 
     /**

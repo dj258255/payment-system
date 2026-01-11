@@ -2,10 +2,10 @@ package com.beomsu.pay.payment;
 
 import com.beomsu.pay.shared.Money;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 /**
  * 강제취소 maker-checker 운영 서비스 — 요청(maker)·승인(checker)·거부·조회를 오케스트레이션한다.
@@ -65,12 +65,11 @@ public class ForceCancelService {
         return ForceCancelView.of(req);
     }
 
-    /** 상태별 강제취소 요청 목록(운영 관측용). */
+    /** 상태별 강제취소 요청 페이지(운영 관측용). */
     @Transactional(readOnly = true)
-    public List<ForceCancelView> list(ForceCancelStatus status) {
-        return repository.findByStatus(status).stream()
-                .map(ForceCancelView::of)
-                .toList();
+    public Page<ForceCancelView> list(ForceCancelStatus status, Pageable pageable) {
+        return repository.findByStatus(status, pageable)
+                .map(ForceCancelView::of);
     }
 
     private ForceCancelRequest load(long requestId) {

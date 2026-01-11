@@ -1,10 +1,10 @@
 package com.beomsu.pay.fraud;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 /**
  * FDS 심사 큐 운영 어드민 서비스 — 심사 항목 조회·승인·거부를 오케스트레이션한다.
@@ -21,12 +21,11 @@ public class FraudReviewAdminService {
     private final FraudReviewRepository repository;
     private final FraudService fraudService;
 
-    /** 상태별 심사 항목 목록(기본 PENDING = 미결 건). */
+    /** 상태별 심사 항목 페이지(기본 PENDING = 미결 건). */
     @Transactional(readOnly = true)
-    public List<FraudReviewView> list(FraudReviewStatus status) {
-        return repository.findByStatus(status).stream()
-                .map(FraudReviewView::from)
-                .toList();
+    public Page<FraudReviewView> list(FraudReviewStatus status, Pageable pageable) {
+        return repository.findByStatus(status, pageable)
+                .map(FraudReviewView::from);
     }
 
     /** 승인 — PENDING → APPROVED(정상 거래로 확인). */
