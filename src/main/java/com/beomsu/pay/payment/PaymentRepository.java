@@ -3,6 +3,7 @@ package com.beomsu.pay.payment;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 import java.time.Instant;
 import java.util.List;
@@ -11,6 +12,10 @@ import java.util.Optional;
 interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     Optional<Payment> findByPaymentKey(String paymentKey);
+
+    /** SLO 게이지용 — 가장 오래된 UNKNOWN(미확정) 결제의 요청 시각. 미확정이 없으면 empty. */
+    @Query("select min(p.requestedAt) from Payment p where p.status = com.beomsu.pay.payment.PaymentStatus.UNKNOWN")
+    Optional<Instant> findOldestUnknownRequestedAt();
 
     /** 복구 배치용: 특정 상태로 일정 시각 이전부터 머문 결제(미확정 방치 건). */
     List<Payment> findByStatusAndRequestedAtBefore(PaymentStatus status, Instant threshold);

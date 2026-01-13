@@ -49,3 +49,35 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  # 관측성 스택 — monitoring 프로필로만 기동한다(기본 up에는 포함되지 않음).
+  #   docker compose --profile monitoring up -d prometheus grafana
+  # 앱은 호스트 8080에서 bootRun으로 띄우고, prometheus가 host.docker.internal:8080을 스크레이프한다.
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: ["monitoring"]
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+    extra_hosts:
+      # 리눅스 호환 — host.docker.internal이 호스트를 가리키게 한다.
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: ["monitoring"]
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/dashboard.json:/var/lib/grafana/dashboards/dashboard.json:ro
+    depends_on:
+      - prometheus

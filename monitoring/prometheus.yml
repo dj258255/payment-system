@@ -3,6 +3,10 @@
 global:
   scrape_interval: 15s
 
+# 결제 SLO 알림 룰
+rule_files:
+  - "alert-rules.yml"
+
 scrape_configs:
   - job_name: 'pay'
     metrics_path: '/actuator/prometheus'
