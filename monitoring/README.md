@@ -22,7 +22,9 @@ Actuator + Micrometer → Prometheus → Grafana.
 docker compose --profile monitoring up -d prometheus grafana
 ```
 
-- Grafana: http://localhost:3000 (익명 Admin 로그인 — 데이터소스·대시보드 자동 프로비저닝)
+- Grafana: http://localhost:3000 (익명 Viewer — 대시보드 조회 전용. 데이터소스·대시보드는 프로비저닝으로
+  자동 등록되므로 익명 사용자가 Admin일 필요가 없다. Admin이면 익명 사용자가 데이터소스를 추가해
+  내부 서비스로 SSRF 피벗이 가능해지므로 Viewer로 최소화한다. 포트도 127.0.0.1 전용 바인딩.)
 - Prometheus: http://localhost:9090
 - 알림 룰 상태: http://localhost:9090/alerts
 
