@@ -236,6 +236,17 @@
         </div>
       </div>
     </div>
+    <div class="card">
+      <h2>정산 (수수료·부가세·지급예정일)</h2>
+      <div class="sub">일 단위 집계 → 수수료 2.7% + 수수료 VAT 10% → 지급예정일(정산일+2영업일, 주말 skip). 집계된 정산(CREATED)을 지급 확정(PAID_OUT)한다. 구매확정(CONFIRMED)된 항목만 집계 대상.</div>
+      <div class="row">
+        <button class="small ghost" onclick="settleRun()">오늘 정산 실행</button>
+        <button class="small" onclick="settleList()">정산 목록</button>
+        <label>정산ID</label><input id="stlId" type="number" value="1" style="width:70px">
+        <button class="small" onclick="settlePayout()">지급 확정</button>
+      </div>
+      <div class="adminlist" id="settle"></div>
+    </div>
   </section>
 </div>
 
@@ -336,7 +347,7 @@ function renderList(target,data){
     data.map(row=>'<tr>'+cols.map(c=>'<td>'+fmt(row[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
 }
 function fmt(v){if(v==null)return '<span class="b-dim">null</span>';const s=String(v);
-  const map={PAID:'green',DONE:'green',EXECUTED:'green',REQUESTED:'amber',PENDING:'amber',FAILED:'red',REJECTED:'red',CANCELED:'red'};
+  const map={PAID:'green',DONE:'green',EXECUTED:'green',PAID_OUT:'green',SETTLED:'green',CONFIRMED:'green',REQUESTED:'amber',PENDING:'amber',CREATED:'amber',FAILED:'red',REJECTED:'red',CANCELED:'red'};
   return map[s]?'<span class="badge b-'+map[s]+'">'+s+'</span>':s.length>22?s.slice(0,22)+'…':s}
 async function fcRequest(){
   const r=await api('POST','/api/v1/admin/payments/'+$('fcPid').value+'/force-cancel',{cancelAmount:+$('fcAmt').value,reason:'분쟁 정정'});
@@ -351,6 +362,29 @@ async function fcApprove(){
 async function frAct(act){
   const r=await api('POST','/api/v1/admin/fraud-reviews/'+$('frId').value+'/'+act);
   renderList('fraud',r.data);
+}
+// 정산: 목록은 Page → content 배열을 정산 전용 컬럼으로 렌더(수수료·VAT·지급액·지급예정일까지 보이게)
+function renderSettle(data){
+  const rows=Array.isArray(data)?data:(data?[data]:[]);
+  const el=$('settle');if(!el)return;
+  if(!rows.length){el.innerHTML='<div class="hint">(정산 없음 — 오늘 정산 실행)</div>';return}
+  const cols=['id','settlementDate','grossAmount','feeAmount','feeVatAmount','netAmount','status','payoutDate'];
+  el.innerHTML='<table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+
+    rows.map(row=>'<tr>'+cols.map(c=>'<td>'+fmt(row[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+}
+async function settleList(){
+  const r=await api('GET','/api/v1/admin/settlements');
+  renderSettle(r.ok&&r.data?r.data.content:null);
+}
+async function settleRun(){
+  const today=new Date().toISOString().slice(0,10); // UTC yyyy-mm-dd — confirmedDate 기준일과 정렬
+  const r=await api('POST','/api/v1/admin/settlements/run?date='+today);
+  if(r.status===204){$('settle').innerHTML='<div class="hint">(재실행이거나 정산 대상 없음 — 204)</div>';return}
+  settleList();
+}
+async function settlePayout(){
+  await api('POST','/api/v1/admin/settlements/'+$('stlId').value+'/payout');
+  settleList();
 }
 </script>
 </body>

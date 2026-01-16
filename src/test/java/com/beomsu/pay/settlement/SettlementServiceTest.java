@@ -34,7 +34,8 @@ class SettlementServiceTest {
         itemRepository = mock(SettlementItemRepository.class);
         settlementRepository = mock(SettlementRepository.class);
         meterRegistry = new SimpleMeterRegistry();
-        service = new SettlementService(itemRepository, settlementRepository, meterRegistry);
+        // feeBps=270(2.7%), payoutDays=2 — application.yml 기본값과 동일하게 주입.
+        service = new SettlementService(itemRepository, settlementRepository, meterRegistry, 270L, 2);
     }
 
     /** CONFIRMED 상태의 항목을 만든다(적재 후 에스크로 릴리스 반영된 상태). */
@@ -96,11 +97,11 @@ class SettlementServiceTest {
     }
 
     @Test
-    @DisplayName("정산 배치: CONFIRMED만 합계 → 3% 수수료(내림) → net 저장 + 항목 SETTLED")
+    @DisplayName("정산 배치: CONFIRMED만 합계 → 2.7% 수수료+부가세(내림) → net 저장 + 항목 SETTLED")
     void settleAggregatesFeeAndMarksItems() {
         when(settlementRepository.existsBySettlementDate(DATE)).thenReturn(false);
-        SettlementItem item1 = confirmedItem(1L, "order-1", 10_000);
-        SettlementItem item2 = confirmedItem(2L, "order-2", 20_000);
+        SettlementItem item1 = confirmedItem(1L, "order-1", 40_000);
+        SettlementItem item2 = confirmedItem(2L, "order-2", 60_000);
         when(itemRepository.findByStatusAndConfirmedDate(SettlementItemStatus.CONFIRMED, DATE))
                 .thenReturn(List.of(item1, item2));
         when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -110,16 +111,37 @@ class SettlementServiceTest {
         ArgumentCaptor<Settlement> captor = ArgumentCaptor.forClass(Settlement.class);
         verify(settlementRepository).save(captor.capture());
         Settlement saved = captor.getValue();
-        assertThat(saved.getGrossAmount()).isEqualTo(30_000);   // 10,000 + 20,000
-        assertThat(saved.getFeeAmount()).isEqualTo(900);        // 30,000 * 3% = 900
-        assertThat(saved.getNetAmount()).isEqualTo(29_100);     // 30,000 - 900
+        // 검산: gross=100,000, feeBps=270 → fee=2700, feeVat=270, net=97030
+        assertThat(saved.getGrossAmount()).isEqualTo(100_000);  // 40,000 + 60,000
+        assertThat(saved.getFeeAmount()).isEqualTo(2_700);      // 100,000 * 270 / 10000
+        assertThat(saved.getFeeVatAmount()).isEqualTo(270);     // fee / 10
+        assertThat(saved.getNetAmount()).isEqualTo(97_030);     // gross - fee - feeVat
         assertThat(saved.getItemCount()).isEqualTo(2);
         assertThat(saved.getSettlementDate()).isEqualTo(DATE);
+        // 지급예정일 = 정산일 + 2영업일. DATE(2026-07-05, 일요일) → 화(07-07)
+        assertThat(saved.getPayoutDate()).isEqualTo(BusinessDays.plusBusinessDays(DATE, 2));
         assertThat(settlement).isSameAs(saved);
 
         // 집계된 항목은 SETTLED로 전이
         assertThat(item1.getStatus()).isEqualTo(SettlementItemStatus.SETTLED);
         assertThat(item2.getStatus()).isEqualTo(SettlementItemStatus.SETTLED);
+    }
+
+    @Test
+    @DisplayName("수수료 검산: gross=100,000 → fee 2700, feeVat 270, net 97030")
+    void settleFeeModelExactValues() {
+        when(settlementRepository.existsBySettlementDate(DATE)).thenReturn(false);
+        SettlementItem item = confirmedItem(1L, "order-1", 100_000);
+        when(itemRepository.findByStatusAndConfirmedDate(SettlementItemStatus.CONFIRMED, DATE))
+                .thenReturn(List.of(item));
+        when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Settlement saved = service.settle(DATE);
+
+        assertThat(saved.getGrossAmount()).isEqualTo(100_000);
+        assertThat(saved.getFeeAmount()).isEqualTo(2_700);
+        assertThat(saved.getFeeVatAmount()).isEqualTo(270);
+        assertThat(saved.getNetAmount()).isEqualTo(97_030);
     }
 
     @Test
