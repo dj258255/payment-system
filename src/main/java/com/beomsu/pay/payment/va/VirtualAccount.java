@@ -1,6 +1,7 @@
 package com.beomsu.pay.payment.va;
 
 import com.beomsu.pay.payment.PaymentException;
+import com.beomsu.pay.shared.crypto.EncryptedStringConverter;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -35,7 +36,13 @@ public class VirtualAccount {
     @Column(nullable = false, length = 10)
     private String bankCode;
 
-    @Column(nullable = false, length = 30)
+    /**
+     * 계좌번호 — 민감정보라 저장 시 envelope 암호화(@Convert)한다. 값으로 조회하지 않으므로(orderNo·
+     * paymentKey로만 찾음) 블라인드 인덱스 없이 단순 암호화만 적용한다. 암호문은 평문보다 훨씬 길어
+     * 컬럼 길이를 255로 잡는다.
+     */
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(nullable = false, length = 255)
     private String accountNumber;
 
     @Column(nullable = false)

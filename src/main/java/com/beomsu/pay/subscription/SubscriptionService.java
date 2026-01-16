@@ -1,5 +1,6 @@
 package com.beomsu.pay.subscription;
 
+import com.beomsu.pay.shared.crypto.BlindIndexer;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -39,6 +41,7 @@ public class SubscriptionService {
     private final SubscriptionRepository subscriptionRepository;
     private final BillingKeyRepository billingKeyRepository;
     private final DunningAttemptRepository dunningAttemptRepository;
+    private final BlindIndexer blindIndexer;
 
     /**
      * 구독 개시. 빌링키를 저장하고(customerKey는 UUID로 발급 — 예측 불가한 이중 키), ACTIVE 구독을
@@ -47,11 +50,22 @@ public class SubscriptionService {
     public Subscription subscribe(long userId, String billingKey, long planAmount, LocalDate startDate) {
         // customerKey는 반드시 무작위 UUID — 이메일·자동증가 ID 금지(이중 키 구조 보안).
         String customerKey = UUID.randomUUID().toString();
-        billingKeyRepository.save(BillingKey.of(billingKey, customerKey, userId));
+        // 빌링키는 암호화 저장되므로, 조회·유니크를 위한 블라인드 인덱스를 함께 계산해 넘긴다.
+        String billingKeyIndex = blindIndexer.index(billingKey);
+        billingKeyRepository.save(BillingKey.of(billingKey, billingKeyIndex, customerKey, userId));
 
         LocalDate nextBillingDate = startDate.plusMonths(BILLING_PERIOD_MONTHS);
         Subscription subscription = Subscription.create(userId, billingKey, planAmount, startDate, nextBillingDate);
         return subscriptionRepository.save(subscription);
+    }
+
+    /**
+     * 원문 빌링키로 저장된 빌링키를 조회한다. 빌링키 컬럼은 암호화(비결정적)라 값으로 직접 WHERE를
+     * 걸 수 없으므로, 원문을 블라인드 인덱스로 해시해 결정적 인덱스 컬럼으로 조회한다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<BillingKey> findByBillingKey(String billingKey) {
+        return billingKeyRepository.findByBillingKeyIndex(blindIndexer.index(billingKey));
     }
 
     /**

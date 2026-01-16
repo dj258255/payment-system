@@ -1,5 +1,6 @@
 package com.beomsu.pay.subscription;
 
+import com.beomsu.pay.shared.crypto.EncryptedStringConverter;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -28,8 +29,14 @@ public class Subscription {
     @Column(nullable = false)
     private long userId;
 
-    /** 청구에 사용할 빌링키(참조 문자열) — {@link BillingKey#getBillingKey()}. */
-    @Column(nullable = false, length = 200)
+    /**
+     * 청구에 사용할 빌링키(참조 문자열) — {@link BillingKey#getBillingKey()}. 민감정보라 저장 시
+     * envelope 암호화(@Convert)한다. 값으로 조회하지 않으므로(userId·status·nextBillingDate로만 조회)
+     * 블라인드 인덱스는 불필요. 청구 시 {@code getBillingKey()}는 컨버터가 자동 복호화한 원문을 돌려준다.
+     * 암호문에 맞춰 컬럼 길이를 600으로 넓혔다.
+     */
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(nullable = false, length = 600)
     private String billingKey;
 
     /** 주기당 청구 금액(원). 플랜 변경 시 {@link #changePlan}로 갱신. */

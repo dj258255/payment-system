@@ -87,6 +87,11 @@ public class EnvelopeFieldCipher implements FieldCipher {
         if (ciphertext == null) {
             return null;
         }
+        // 레거시 평문 행 하위호환 — env: 프리픽스가 없으면 암호화 이전에 저장된 평문으로 보고 그대로 반환한다.
+        // 새로 저장되는 값은 항상 env:로 암호화되므로, 이 분기는 마이그레이션 이전 행을 읽을 때만 탄다.
+        if (!ciphertext.startsWith(PREFIX)) {
+            return ciphertext;
+        }
         Parsed p = parse(ciphertext);
         try {
             // 버전으로 KEK를 찾아 DEK를 복원(unwrap) → 데이터 복호화.
