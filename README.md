@@ -118,8 +118,9 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
   스케일을 값 타입에 담아 확장한다.
 - **시크릿**: JWT·필드 암호화·웹훅 서명 키 등은 로컬 개발용 기본값을 제공하되, 미설정/약한 키면
   기동을 실패시킨다(fail-fast). 운영에서는 반드시 환경변수/시크릿 매니저(KMS/Vault)로 주입한다.
-- **멀티 PG**: `RoutingPgClient`(다중 PG failover)는 구현돼 있으나 아직 배선하지 않았다 —
-  현재 경로는 Toss 단일 PG다. 실서비스라면 원 결제 PG 라우팅을 붙여 배선한다.
+- **멀티 PG**: `RoutingPgClient`(다중 PG failover)를 `app.pg.routing.enabled=true`로 켜면 opt-in
+  배선된다(가중치 순 시도, 장애 시 failover, TIMEOUT은 이중결제 방지로 failover 안 함). 기본은 단일
+  PG(Toss)다. 취소·조회의 원 결제 PG 라우팅은 `PgClient`에 provider 힌트를 넣는 후속 과제로 남겼다.
 - **가상계좌·구독**: 서비스 계층까지 구현한 데모로, 외부 HTTP 발급 표면(엔드포인트)은 두지 않았다.
 - **정산**: 일 단위 배치 집계를 서비스 루프로 처리한다(대용량이면 Spring Batch로 확장 여지). 수수료율은
   bps(기본 270=2.7%)로 정수 연산하고 수수료 VAT 10%를 뗀다. 지급예정일은 정산일+2영업일로 **주말만
