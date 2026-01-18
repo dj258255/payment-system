@@ -43,6 +43,7 @@ public class FraudService {
     private int challengeThreshold;
 
     private final VelocityCounter velocityCounter;
+    // REJECTED 리뷰가 진실 원천(DB), 이 인메모리 Set은 캐시 — 기동 시 FraudBlacklistReloader가 재적재한다.
     private final Set<String> cardBlacklist = ConcurrentHashMap.newKeySet();
 
     /** 블랙리스트에 카드 추가(런타임, 무배포). */
