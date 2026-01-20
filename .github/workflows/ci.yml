@@ -32,6 +32,11 @@ jobs:
       - name: Run tests
         run: ./gradlew clean test --console=plain
 
+      # consumer-app은 별도 Gradle 프로젝트(독립 빌드)라 위 test에 포함되지 않는다.
+      # Kafka 소비자가 깨진 채 머지되지 않도록 CI에서 함께 빌드·검증한다.
+      - name: Build consumer-app (독립 프로젝트)
+        run: ./gradlew -p consumer-app build --console=plain
+
       # 실패해도 리포트는 남겨 원인 파악을 돕는다.
       - name: Upload test report
         if: always()

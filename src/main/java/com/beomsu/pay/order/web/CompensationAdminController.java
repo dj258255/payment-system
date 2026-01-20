@@ -6,10 +6,13 @@ import com.beomsu.pay.order.CompensationTaskView;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -28,8 +31,9 @@ class CompensationAdminController {
     private final CompensationAdminService adminService;
 
     @GetMapping
-    List<CompensationTaskView> list(@RequestParam(defaultValue = "FAILED") CompensationStatus status) {
-        return adminService.list(status);
+    Page<CompensationTaskView> list(@RequestParam(defaultValue = "FAILED") CompensationStatus status,
+                                    @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
+        return adminService.list(status, pageable);
     }
 
     @PostMapping("/{id}/retry")

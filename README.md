@@ -79,6 +79,9 @@ docker compose up -d              # MySQL 8.4 + Redis 7.4
 
 부하테스트:
 ```bash
+# 성능 측정 시 rate limiter를 끈다 — checkout-load는 데모 유저 1명이 반복 호출해
+# per-user 5/s에 걸려 429가 섞이면 측정이 왜곡된다(spike-test는 반대로 rate limit on으로 shed 측정).
+APP_RATELIMIT_ENABLED=false ./gradlew bootRun
 k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
 ```
 

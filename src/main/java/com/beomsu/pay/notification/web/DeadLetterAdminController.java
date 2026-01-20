@@ -5,10 +5,13 @@ import com.beomsu.pay.notification.NotificationAdminService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -27,8 +30,8 @@ class DeadLetterAdminController {
     private final NotificationAdminService adminService;
 
     @GetMapping
-    List<DeadLetterView> list() {
-        return adminService.listDeadLetters();
+    Page<DeadLetterView> list(@PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
+        return adminService.listDeadLetters(pageable);
     }
 
     @PostMapping("/{id}/reprocess")

@@ -1,10 +1,10 @@
 package com.beomsu.pay.payment;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 /**
  * 미확정(UNKNOWN) 결제 운영 어드민 — 방치된 미확정 결제를 조회하고 수동 복구를 트리거한다.
@@ -20,13 +20,12 @@ public class PaymentAdminService {
     private final PaymentRepository paymentRepository;
     private final PaymentRecoveryService recoveryService;
 
-    /** 미확정(UNKNOWN) 결제 목록. */
+    /** 미확정(UNKNOWN) 결제 페이지. */
     @Transactional(readOnly = true)
-    public List<UnknownPaymentView> listUnknown() {
-        return paymentRepository.findByStatus(PaymentStatus.UNKNOWN).stream()
+    public Page<UnknownPaymentView> listUnknown(Pageable pageable) {
+        return paymentRepository.findByStatus(PaymentStatus.UNKNOWN, pageable)
                 .map(p -> new UnknownPaymentView(p.getId(), p.getOrderNo(), p.getAmount(),
-                        p.getStatus(), p.getRequestedAt()))
-                .toList();
+                        p.getStatus(), p.getRequestedAt()));
     }
 
     /** 미확정 결제 복구를 즉시 1회 실행한다. 반환값은 처리한 건수. */
