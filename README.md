@@ -25,13 +25,21 @@
 
 ![폭주 제어 데모 — rate limit 429 + 대기열 게이트](docs/images/demo-overload.png)
 
+**관측성(SLO 대시보드 · 알림)** — `docker compose --profile monitoring up -d prometheus grafana` 로 스택을 띄우면, Micrometer가 노출한 메트릭을 Prometheus가 수집하고 Grafana가 결제 SLO를 보여준다. 결제 성공률·처리량(TPS)·p95/p99 레이턴시·HikariCP 풀에 더해, 결제 도메인 고유 지표인 **미확정(UNKNOWN) 결제 최고 경과 시간**과 **대사 미해결(PENDING) 건수**를 커스텀 게이지로 노출한다.
+
+![Grafana 결제 SLO 대시보드](docs/images/demo-grafana-dashboard.png)
+
+대시보드와 같은 지표를 **알림 룰**로도 코드화했다(`monitoring/alert-rules.yml`) — 성공률<95%, 보상 재시도 소진, UNKNOWN 10분+ 방치, 데드락 재시도 폭증, 대사 PENDING 적체. 시스템이 건강하면 5개 모두 `inactive`다.
+
+![Prometheus 결제 SLO 알림 룰](docs/images/demo-prometheus-alerts.png)
+
 ## 기술 스택
 
 - **Java 21**, **Spring Boot 3.4**, **Spring Modulith 1.3**
 - **MySQL 8.4** + JPA(도메인 모델), **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화 — 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito, H2(동시성 실측), **419 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
+- 테스트: JUnit5 + Mockito, H2(동시성 실측), **426 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
 
 ## 아키텍처 — 모듈형 모놀리스
 
@@ -111,3 +119,6 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
 - **가상계좌·구독**: 서비스 계층까지 구현한 데모로, 외부 HTTP 발급 표면(엔드포인트)은 두지 않았다.
 - **정산**: 일 단위 배치 집계를 서비스 루프로 처리한다. 대용량이면 Spring Batch(청크·재시작·병렬)로
   확장할 여지를 남겨 뒀다.
+- **관측성 스크레이프**: `/actuator/prometheus`는 수집기가 인증 없이 주기 GET 해야 하므로 개방한다
+  (나머지 actuator는 ADMIN). 운영에서는 `management.server.port`를 내부망 전용으로 분리해
+  스크레이프하는 것이 정석이다. Prometheus/Grafana는 `monitoring` compose 프로필로 분리해 기본 기동에서 뺐다.

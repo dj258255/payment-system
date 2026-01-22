@@ -1,0 +1,56 @@
+# 결제 SLO 알림 룰 — Prometheus alerting rules
+# 메트릭명은 Micrometer 노출 기준(카운터 _total 접미사, dot→underscore).
+groups:
+  - name: payment-slo
+    rules:
+      # 1) 최근 5분 결제 성공률 < 95%.
+      #    분모(전체 승인율)가 0이면 0/0=NaN이라 Prometheus는 알림을 발화하지 않는다
+      #    → 트래픽이 없을 때 오탐이 뜨지 않는다.
+      - alert: PaymentSuccessRateLow
+        expr: sum(rate(payment_confirm_total{outcome="success"}[5m])) / sum(rate(payment_confirm_total[5m])) < 0.95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "결제 성공률 저하 (< 95%)"
+          description: "최근 5분 결제 성공률이 95% 미만입니다. PG 장애/승인 실패 급증 여부를 확인하세요."
+
+      # 2) 보상 재시도 소진 — 수동 개입 필요. 1건이라도 발생하면 즉시 발화.
+      - alert: CompensationExhausted
+        expr: increase(compensation_exhausted_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "보상 재시도 소진 발생"
+          description: "최근 10분 내 보상 재시도가 소진된 건이 있습니다. 수동 개입(어드민 보상 재처리)이 필요합니다."
+
+      # 3) 미확정(UNKNOWN) 결제가 10분 이상 방치됨.
+      - alert: UnknownPaymentAging
+        expr: payment_unknown_oldest_age_seconds > 600
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "미확정 결제 장기 방치 (> 10분)"
+          description: "가장 오래된 UNKNOWN 결제가 10분 넘게 미확정 상태입니다. 복구 배치/망취소 동작을 확인하세요."
+
+      # 4) 멱등키 데드락 재시도 폭증 — 분당 10회 초과.
+      - alert: DeadlockRetrySpike
+        expr: rate(idempotency_deadlock_retry_total[5m]) * 60 > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "멱등키 데드락 재시도 폭증 (> 10회/분)"
+          description: "멱등키 데드락 재시도가 분당 10회를 초과합니다. 경합/락 대기 증가 여부를 확인하세요."
+
+      # 5) 대사 미해결(PENDING) 적체 — 15분 이상 1건 이상 남아 있음.
+      - alert: ReconPendingBacklog
+        expr: recon_pending_count > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "대사 미해결(PENDING) 적체"
+          description: "PENDING 대사 예외가 15분 넘게 남아 있습니다. 어드민에서 예외 큐를 검토·종결하세요."
