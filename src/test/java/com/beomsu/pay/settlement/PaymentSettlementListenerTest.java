@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 import static org.mockito.Mockito.*;
 
@@ -34,14 +35,15 @@ class PaymentSettlementListenerTest {
     }
 
     @Test
-    @DisplayName("에스크로 릴리스 이벤트 → confirmSettlement(orderNo) 위임")
+    @DisplayName("에스크로 릴리스 이벤트 → confirmSettlement(orderNo, 릴리스일) 위임")
     void onEscrowReleasedDelegates() {
         EscrowReleasedEvent event =
                 new EscrowReleasedEvent("order-1", 10_000, Instant.parse("2026-07-06T09:00:00Z"));
 
         listener.onEscrowReleased(event);
 
-        verify(service).confirmSettlement("order-1");
+        // 릴리스 시각의 UTC 날짜를 집계 기준일로 넘긴다.
+        verify(service).confirmSettlement("order-1", LocalDate.of(2026, 7, 6));
     }
 
     @Test

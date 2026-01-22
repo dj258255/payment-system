@@ -7,6 +7,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.modulith.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+
 /**
  * 결제·에스크로 사건을 정산에 반영하는 리스너 — 정산을 에스크로 생명주기에 정렬한다.
  *
@@ -34,7 +37,9 @@ class PaymentSettlementListener {
 
     @ApplicationModuleListener
     void onEscrowReleased(EscrowReleasedEvent event) {
-        settlementService.confirmSettlement(event.orderNo());
+        // 릴리스 시각의 UTC 날짜를 집계 기준일로 넘긴다 — 정산은 승인일이 아니라 구매확정일 기준.
+        LocalDate releaseDate = LocalDate.ofInstant(event.releasedAt(), ZoneOffset.UTC);
+        settlementService.confirmSettlement(event.orderNo(), releaseDate);
     }
 
     @ApplicationModuleListener
