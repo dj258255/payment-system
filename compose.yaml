@@ -57,7 +57,8 @@ services:
     image: prom/prometheus:v2.54.1
     profiles: ["monitoring"]
     ports:
-      - "9090:9090"
+      # 로컬 전용 바인딩 — 메트릭이 LAN에 노출되지 않게 127.0.0.1로 묶는다.
+      - "127.0.0.1:9090:9090"
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
     volumes:
@@ -71,10 +72,13 @@ services:
     image: grafana/grafana:11.2.0
     profiles: ["monitoring"]
     ports:
-      - "3000:3000"
+      # 로컬 전용 바인딩 — 대시보드를 LAN에 노출하지 않는다.
+      - "127.0.0.1:3000:3000"
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      # 최소권한 — 데모는 대시보드를 보기만 하면 되므로 Viewer.
+      # Admin이면 익명 사용자가 데이터소스를 추가해 내부 서비스로 SSRF 피벗이 가능해진다.
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_SECURITY_ALLOW_EMBEDDING: "true"
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
