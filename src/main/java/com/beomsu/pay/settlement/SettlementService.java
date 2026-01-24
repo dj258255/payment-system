@@ -115,9 +115,10 @@ public class SettlementService {
      * {@code settlement.postsettle.cancel} 카운터만 올린다. 운영이 이 지표로 사후 정산 조정(차기 정산에서
      * 역분개 반영)을 수행한다. 원장(ledger)이 취소 역분개 이력을 이미 보유하므로 정산은 재구성 가능한 집계다.
      *
-     * <p>부분취소의 at-least-once 한계: 같은 취소 이벤트가 중복 배달되면 {@code reduce}가 두 번 호출돼
-     * 이중 차감될 수 있다. 정산은 원장으로부터 재구성 가능한 집계라는 판단 아래 이 위험을 한계로 남긴다
-     * (엄밀한 방어는 취소 이벤트 멱등 키를 정산 측에 별도 적재하는 것 — Phase 5 범위).
+     * <p>부분취소 멱등: 이벤트가 실은 <b>취소 후 잔액(절대값)</b>을 담고, 항목 금액을 그 잔액으로 세팅한다
+     * (델타 차감이 아님). 그래서 같은 취소가 at-least-once로 중복 배달돼도 같은 값이 되어 이중 차감되지
+     * 않는다 — 전액취소(CANCELED 가드)와 대칭적으로 멱등하다. 같은 주문 취소 이벤트는 orderNo 라우팅으로
+     * 파티션 순서가 보존되므로, 더 과거 취소가 뒤늦게 재배달되는 역전은 실질적으로 배제된다.
      */
     @Transactional
     public void reflectCancellation(PaymentCanceledEvent event) {
@@ -139,9 +140,10 @@ public class SettlementService {
         }
 
         if (event.fullyCanceled()) {
-            item.cancel(); // PENDING_CONFIRMATION/CONFIRMED → CANCELED
+            item.cancel(); // PENDING_CONFIRMATION/CONFIRMED → CANCELED (멱등: CANCELED 가드)
         } else {
-            item.reduce(event.cancelAmount());
+            // 델타 차감이 아니라 취소 후 잔액(절대값)으로 세팅 → 재배달돼도 이중 차감 없음(멱등).
+            item.applySettleableBalance(event.settleableBalance());
         }
         itemRepository.saveAndFlush(item);
     }

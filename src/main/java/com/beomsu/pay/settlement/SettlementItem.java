@@ -102,12 +102,15 @@ public class SettlementItem {
     }
 
     /**
-     * 부분취소 반영 — 정산 대상 금액을 취소분만큼 줄인다(0 미만으로는 내려가지 않는다).
+     * 부분취소 반영 — 정산 대상 금액을 <b>취소 후 잔액(절대값)으로 세팅</b>한다. 상태는 유지한다
+     * (부분취소 후에도 잔액은 여전히 정산 대상).
      *
-     * <p>상태는 유지한다(부분취소 후에도 잔액은 여전히 정산 대상). SETTLED 항목엔 호출하지 않으며
-     * (서비스에서 분기), at-least-once 중복 배달 시 이중 차감 위험은 서비스 주석에 한계로 명시한다.
+     * <p><b>멱등</b>: 델타를 빼는 게 아니라 절대 잔액으로 세팅하므로, 같은 취소 이벤트가 at-least-once로
+     * 여러 번 배달돼도 같은 값이 되어 이중 차감되지 않는다. (같은 주문의 취소 이벤트는 orderNo 라우팅으로
+     * 같은 파티션에서 순서 보존되므로, 더 과거 취소가 뒤늦게 재배달되는 역전은 실질적으로 배제된다.)
+     * SETTLED 항목엔 호출하지 않는다(서비스에서 분기).
      */
-    public void reduce(long cancelAmount) {
-        this.amount = Math.max(0L, this.amount - cancelAmount);
+    public void applySettleableBalance(long settleableBalance) {
+        this.amount = Math.max(0L, settleableBalance);
     }
 }

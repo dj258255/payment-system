@@ -165,12 +165,14 @@ public class PaymentService {
         payment.cancel(cancelAmount, TriggeredBy.USER, reason);
         pgClient.cancel(payment.getPaymentKey(), cancelAmount.amount(), reason);
 
-        // 상태 전이(취소)를 명시적으로 영속한다. OSIV off 환경에서 detached 엔티티는 dirty-checking
-        // 자동 flush가 일어나지 않으므로, 이벤트 발행 전에 취소 상태를 DB에 확정한다(flush 강제).
+        // 취소 전이를 이벤트 발행 전에 flush로 확정한다. (이 엔티티는 트랜잭션 안에서 로드돼 managed
+        // 상태라 커밋 시 dirty-check로도 flush되지만, 발행 순서상 상태를 먼저 못박아 두려 saveAndFlush 한다.)
         paymentRepository.saveAndFlush(payment);
 
         boolean fullyCanceled = payment.getStatus() == PaymentStatus.CANCELED;
+        // 취소 후 잔액(절대값)을 실어 정산이 멱등하게 반영하게 한다(델타 차감이 아니라 절대 잔액 세팅).
         events.publishEvent(new PaymentCanceledEvent(
-                payment.getOrderNo(), payment.getId(), cancelAmount.amount(), fullyCanceled));
+                payment.getOrderNo(), payment.getId(), cancelAmount.amount(),
+                payment.getBalanceAmount(), fullyCanceled));
     }
 }

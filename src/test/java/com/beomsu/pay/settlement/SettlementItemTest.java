@@ -80,13 +80,18 @@ class SettlementItemTest {
     }
 
     @Test
-    @DisplayName("reduce: 금액을 차감하되 0 미만으로 내려가지 않는다")
-    void reduceFloorsAtZero() {
-        SettlementItem item = newItem();
-        item.reduce(3_000);
+    @DisplayName("applySettleableBalance: 금액을 잔액(절대값)으로 세팅 — 같은 값 재적용은 멱등, 음수는 0으로")
+    void applySettleableBalanceSetsAbsolute() {
+        SettlementItem item = newItem(); // amount 10,000
+        item.applySettleableBalance(7_000);
         assertThat(item.getAmount()).isEqualTo(7_000);
 
-        item.reduce(999_999); // 잔액보다 큰 차감
+        // 멱등: 같은 잔액을 다시 적용해도 그대로(델타 차감이 아님)
+        item.applySettleableBalance(7_000);
+        assertThat(item.getAmount()).isEqualTo(7_000);
+
+        // 방어: 음수 잔액은 0으로 바닥 처리
+        item.applySettleableBalance(-1);
         assertThat(item.getAmount()).isEqualTo(0);
     }
 }

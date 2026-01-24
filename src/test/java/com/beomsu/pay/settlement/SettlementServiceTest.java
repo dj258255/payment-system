@@ -215,11 +215,11 @@ class SettlementServiceTest {
     }
 
     @Test
-    @DisplayName("전액취소: 항목을 CANCELED로 제외하고 saveAndFlush")
+    @DisplayName("전액취소: 항목을 CANCELED로 제외하고 saveAndFlush (잔액 0)")
     void reflectCancellationFullyCancels() {
         SettlementItem item = confirmedItem(100L, "order-1", 10_000);
         when(itemRepository.findByPaymentId(100L)).thenReturn(Optional.of(item));
-        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 10_000, true);
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 10_000, 0, true);
 
         service.reflectCancellation(event);
 
@@ -228,11 +228,12 @@ class SettlementServiceTest {
     }
 
     @Test
-    @DisplayName("부분취소: 정산 금액을 차감하고 상태는 유지, saveAndFlush")
-    void reflectCancellationPartiallyReduces() {
+    @DisplayName("부분취소: 정산 금액을 취소 후 잔액(절대값)으로 세팅하고 상태 유지, saveAndFlush")
+    void reflectCancellationSetsSettleableBalance() {
         SettlementItem item = confirmedItem(100L, "order-1", 10_000);
         when(itemRepository.findByPaymentId(100L)).thenReturn(Optional.of(item));
-        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 3_000, false);
+        // 3,000 취소 후 잔액 7,000
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 3_000, 7_000, false);
 
         service.reflectCancellation(event);
 
@@ -242,12 +243,27 @@ class SettlementServiceTest {
     }
 
     @Test
+    @DisplayName("부분취소 멱등: 같은 취소 이벤트가 중복 배달돼도 잔액으로 세팅하므로 이중 차감되지 않는다")
+    void reflectCancellationIsIdempotentOnRedelivery() {
+        SettlementItem item = confirmedItem(100L, "order-1", 10_000);
+        when(itemRepository.findByPaymentId(100L)).thenReturn(Optional.of(item));
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 3_000, 7_000, false);
+
+        service.reflectCancellation(event); // 1차
+        service.reflectCancellation(event); // 재배달(at-least-once)
+
+        // 델타 차감이면 4,000이 됐겠지만, 절대 잔액 세팅이라 7,000 유지 — 이중 차감 없음.
+        assertThat(item.getAmount()).isEqualTo(7_000);
+        verify(itemRepository, times(2)).saveAndFlush(item);
+    }
+
+    @Test
     @DisplayName("SETTLED 후 취소: 항목 미변경 + postsettle 카운터 증가(사후 조정 대상)")
     void reflectCancellationAfterSettledCountsOnly() {
         SettlementItem item = confirmedItem(100L, "order-1", 10_000);
         item.markSettled(); // CONFIRMED → SETTLED
         when(itemRepository.findByPaymentId(100L)).thenReturn(Optional.of(item));
-        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 10_000, true);
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 10_000, 0, true);
 
         service.reflectCancellation(event);
 
@@ -261,7 +277,7 @@ class SettlementServiceTest {
     @DisplayName("취소: 정산에 없는 결제면 무시")
     void reflectCancellationMissingItemIsIgnored() {
         when(itemRepository.findByPaymentId(999L)).thenReturn(Optional.empty());
-        PaymentCanceledEvent event = new PaymentCanceledEvent("order-x", 999L, 10_000, true);
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-x", 999L, 10_000, 0, true);
 
         service.reflectCancellation(event);
 
@@ -274,7 +290,7 @@ class SettlementServiceTest {
         SettlementItem item = confirmedItem(100L, "order-1", 10_000);
         item.cancel(); // → CANCELED
         when(itemRepository.findByPaymentId(100L)).thenReturn(Optional.of(item));
-        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 10_000, true);
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 10_000, 0, true);
 
         service.reflectCancellation(event);
 
