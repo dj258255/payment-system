@@ -29,7 +29,8 @@ public class GlobalExceptionHandler {
             case "AMOUNT_MISMATCH", "ORDER_FORBIDDEN", "MAKER_CHECKER_VIOLATION"
                     -> HttpStatus.FORBIDDEN;                                                 // 403
             case "ORDER_NOT_FOUND", "PAYMENT_NOT_FOUND", "PRODUCT_NOT_FOUND",
-                 "FORCE_CANCEL_NOT_FOUND", "FRAUD_REVIEW_NOT_FOUND" -> HttpStatus.NOT_FOUND;  // 404
+                 "FORCE_CANCEL_NOT_FOUND", "FRAUD_REVIEW_NOT_FOUND",
+                 "SETTLEMENT_NOT_FOUND" -> HttpStatus.NOT_FOUND;                              // 404
             case "INVALID_STATE_TRANSITION", "CANCEL_AMOUNT_EXCEEDED", "OUT_OF_STOCK",
                  "INVALID_FRAUD_REVIEW_STATE",
                  "IDEMPOTENT_REQUEST_PROCESSING" -> HttpStatus.CONFLICT;                     // 409

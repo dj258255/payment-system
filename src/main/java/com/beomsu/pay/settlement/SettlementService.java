@@ -4,9 +4,9 @@ import com.beomsu.pay.escrow.EscrowReleasedEvent;
 import com.beomsu.pay.payment.PaymentCanceledEvent;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import io.micrometer.core.instrument.MeterRegistry;
-import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,21 +27,38 @@ import java.util.Optional;
  * 부분취소는 금액을 차감한다. 단 이미 SETTLED(집계 완료)된 항목은 정산에서 되돌릴 수 없으므로 카운터로
  * 기록하고 운영이 별도 정산 조정으로 처리하게 남긴다(아래 {@link #reflectCancellation} 참고).
  *
- * <p>Phase 4는 서비스 루프로 집계하지만, 대용량은 Spring Batch로 확장한다
+ * <p>서비스 루프로 집계하지만, 대용량은 Spring Batch로 확장한다
  * (chunk 단위 커밋 · cursor 기반 읽기 · 날짜/가맹점 partitioning).
+ *
+ * <p><b>후속 과제</b>: 수수료(fee)·수수료 부가세(feeVat)를 원장(ledger) 비용 계정으로 분개하는 것은
+ * 이번 범위 밖이다(모듈 경계·이벤트 추가 리스크). 정산은 원장으로부터 재구성 가능한 집계로 남긴다.
  */
 @Service
-@RequiredArgsConstructor
 public class SettlementService {
 
     private static final Logger log = LoggerFactory.getLogger(SettlementService.class);
 
-    /** 정산 수수료율: 총액의 3%를 내림(floor)한다. KRW는 소수점이 없으므로 정수 연산으로 확정. */
-    private static final long FEE_PERCENT = 3;
-
     private final SettlementItemRepository itemRepository;
     private final SettlementRepository settlementRepository;
     private final MeterRegistry meterRegistry;
+
+    /** 정산 수수료율(basis point). 270 bps = 2.7%. KRW는 소수점이 없으므로 정수 연산으로 확정. */
+    private final long feeBps;
+
+    /** 지급예정일 = settlementDate + 이 영업일 수(주말 skip). */
+    private final int payoutDays;
+
+    public SettlementService(SettlementItemRepository itemRepository,
+                             SettlementRepository settlementRepository,
+                             MeterRegistry meterRegistry,
+                             @Value("${app.settlement.fee-bps:270}") long feeBps,
+                             @Value("${app.settlement.payout-business-days:2}") int payoutDays) {
+        this.itemRepository = itemRepository;
+        this.settlementRepository = settlementRepository;
+        this.meterRegistry = meterRegistry;
+        this.feeBps = feeBps;
+        this.payoutDays = payoutDays;
+    }
 
     /**
      * 결제 승인 이벤트를 정산 항목으로 적재한다 — 상태는 PENDING_CONFIRMATION(구매확정 대기).
@@ -122,10 +139,11 @@ public class SettlementService {
     /**
      * 정산 배치의 핵심 — 해당 날짜의 <b>CONFIRMED</b> 항목을 집계해 정산을 만든다.
      *
-     * <p>흐름: CONFIRMED 조회 → 총액(gross) 합산 → 수수료(3% 내림) → 정산 생성·저장 → 항목 SETTLED.
-     * 구매확정 안 된 PENDING_CONFIRMATION은 집계에서 빠진다 — 이것이 "구매확정 전 보류"의 실현이다.
-     * 재실행 멱등: 그 날짜 정산이 이미 있으면(existsBySettlementDate) 아무 것도 하지 않고 null 반환.
-     * 집계할 CONFIRMED 항목이 없어도 null 반환(빈 정산은 만들지 않는다).
+     * <p>흐름: CONFIRMED 조회 → 총액(gross) 합산 → 수수료(feeBps 내림)·부가세 → 지급예정일(영업일)
+     * → 정산 생성·저장 → 항목 SETTLED. 구매확정 안 된 PENDING_CONFIRMATION은 집계에서 빠진다 —
+     * 이것이 "구매확정 전 보류"의 실현이다. 재실행 멱등: 그 날짜 정산이 이미 있으면
+     * (existsBySettlementDate) 아무 것도 하지 않고 null 반환. 집계할 CONFIRMED 항목이 없어도
+     * null 반환(빈 정산은 만들지 않는다).
      *
      * @return 생성된 정산, 재실행이거나 대상이 없으면 null
      */
@@ -147,15 +165,22 @@ public class SettlementService {
             gross = Math.addExact(gross, item.getAmount()); // 오버플로 시 즉시 실패
         }
         long fee = calculateFee(gross);
+        long feeVat = fee / 10; // 수수료 부가세 10%(내림)
+        LocalDate payoutDate = BusinessDays.plusBusinessDays(date, payoutDays);
 
         Settlement settlement = settlementRepository.save(
-                Settlement.of(date, gross, fee, items.size()));
+                Settlement.of(date, gross, fee, feeVat, items.size(), payoutDate));
         items.forEach(SettlementItem::markSettled);
         return settlement;
     }
 
-    /** 총액의 3%를 내림. floor(gross * 3 / 100)을 정수 연산으로 계산(오버플로는 Math.multiplyExact로 방어). */
+    /**
+     * 수수료를 basis point로 계산해 내림한다. floor(gross * feeBps / 10000)을 정수 연산으로 확정한다
+     * (double 금지 — 화폐 정수 연산 원칙). 오버플로는 {@code Math.multiplyExact}로 방어한다.
+     *
+     * <p>수수료 부가세를 원장 비용 계정으로 분개하는 것은 후속 과제로 남긴다(모듈 경계 밖).
+     */
     private long calculateFee(long gross) {
-        return Math.multiplyExact(gross, FEE_PERCENT) / 100;
+        return Math.multiplyExact(gross, feeBps) / 10000;
     }
 }
