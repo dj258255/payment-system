@@ -61,9 +61,9 @@ public class ReconciliationAdminService {
     /**
      * PENDING 대사 불일치 1건을 수기 확정한다(사람 확인 후).
      *
-     * <p>OSIV off 환경이라 finder로 로드한 엔티티의 dirty-checking 변경은 자동 flush되지 않는다.
-     * 따라서 상태 전이 후 반드시 {@link ReconciliationResultRepository#saveAndFlush(Object)}로
-     * 명시 영속해야 변경이 DB에 남는다.
+     * <p>상태 전이는 {@link ReconciliationResultRepository#saveAndFlush(Object)}로 <b>명시 영속</b>한다.
+     * dirty-check 자동 flush는 readOnly 조회로 세션 FlushMode가 MANUAL이 되거나 엔티티가 detached인
+     * 경우 신뢰할 수 없어(pay-26 사건 교훈), 상태 확정을 명시적으로 강제한다.
      */
     @Transactional
     public ReconMismatchView resolve(long id) {
