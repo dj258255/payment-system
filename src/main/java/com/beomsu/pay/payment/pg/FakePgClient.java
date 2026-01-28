@@ -1,6 +1,7 @@
 package com.beomsu.pay.payment.pg;
 
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -16,10 +17,16 @@ import java.util.concurrent.atomic.AtomicReference;
  * 이후 {@link #query}가 그 값을 돌려준다. 이렇게 하면 <b>"우리는 타임아웃이었지만 PG에는 승인으로
  * 남아 있는"</b> 상황(복구 배치가 승인으로 확정)과 <b>"PG에 아예 없는"</b> 상황(망취소/실패)을 모두
  * 테스트할 수 있다.
+ *
+ * <p><b>pgDelegate 역할은 단일 PG 모드에서만</b>: 멀티 PG 라우팅({@code app.pg.routing.enabled=true})을
+ * 켜면 {@link RoutingPgClient}가 {@code @Qualifier("pgDelegate")} 자리를 대신 차지한다. 같은 qualifier가
+ * 둘이면 주입이 모호해지므로, 라우팅이 켜지면 이 빈은 등록되지 않는다(라우팅 config가 자체 FakePg
+ * 인스턴스로 경로를 구성한다).
  */
 @Component
 @Qualifier("pgDelegate")
 @Profile("!prod")
+@ConditionalOnProperty(name = "app.pg.routing.enabled", havingValue = "false", matchIfMissing = true)
 public class FakePgClient implements PgClient {
 
     /** 다음 approve 호출이 <b>우리에게</b> 돌려줄 결과 (SUCCESS/FAILED/TIMEOUT) */
