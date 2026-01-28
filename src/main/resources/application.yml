@@ -171,6 +171,12 @@ app:
       enabled: ${APP_OUTBOX_CLEANUP_ENABLED:false}
       interval-ms: 3600000
       retention-days: ${APP_OUTBOX_RETENTION_DAYS:7}
+  # 멱등키(idempotency_keys) 정리 스케줄러 → 무한 성장 방지. TTL은 15일(토스페이먼츠 정합)로 그대로 두고,
+  # 유효기간 지난 레코드만 주기 삭제해 15일치로 크기 유지. 기본 1시간 주기.
+  idempotency:
+    cleanup:
+      enabled: ${APP_IDEMPOTENCY_CLEANUP_ENABLED:false}
+      interval-ms: 3600000
   # 일 단위 정산 배치 스케줄러 → SettlementService.settle(전일). 하루 마감이라 기본 24시간 주기.
   # 수수료율은 bps(270=2.7%), 지급예정일은 정산일 + N영업일(주말 skip). 스케줄러는 기본 off(게이트).
   settlement:
