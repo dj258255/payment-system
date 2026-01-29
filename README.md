@@ -129,3 +129,7 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
 - **관측성 스크레이프**: `/actuator/prometheus`는 수집기가 인증 없이 주기 GET 해야 하므로 개방한다
   (나머지 actuator는 ADMIN). 운영에서는 `management.server.port`를 내부망 전용으로 분리해
   스크레이프하는 것이 정석이다. Prometheus/Grafana는 `monitoring` compose 프로필로 분리해 기본 기동에서 뺐다.
+- **체크아웃 트랜잭션 경계**: 체크아웃은 외부 PG 승인을 포함해 단일 트랜잭션으로 처리한다. "외부 콜을
+  트랜잭션 밖으로"는 고규모 정석이나, 이 모놀리스에선 ACID 원자성을 위해 의도적으로 단일 트랜잭션을
+  유지하고 fast-fail(3s)·서킷·UNKNOWN 복구로 커넥션 점유를 완화한다. 스케일이 요구하면 3단계 사가로
+  이행한다 — 안티패턴 인지·트레이드오프·마이그레이션 경로는 [ADR-007](docs/adr/ADR-007-checkout-transaction-boundary.md).

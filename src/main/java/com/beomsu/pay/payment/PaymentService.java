@@ -31,6 +31,11 @@ public class PaymentService {
 
     /**
      * 결제 승인. order 모듈이 금액 검증·주문 상태 전이를 마친 뒤 호출한다.
+     *
+     * <p>PG 승인(외부 HTTP)이 이 메서드의 트랜잭션 안에서 일어난다 — 정확히는 호출자
+     * {@code CheckoutService.confirm}의 트랜잭션에 합류한다(체크아웃 단일 트랜잭션). 외부 콜을
+     * 트랜잭션 안에 두는 것은 커넥션 점유 안티패턴이나, 이 모놀리스에선 ACID 원자성을 위해 의도적으로
+     * 유지하고 fast-fail·서킷·UNKNOWN 복구로 완화한다 — 근거·마이그레이션 경로는 ADR-007 참고.
      */
     @Transactional
     public ConfirmResult confirm(String orderNo, String paymentKey, Money amount) {
@@ -65,10 +70,10 @@ public class PaymentService {
                         null, "결제 결과를 확인하고 있습니다. 잠시 후 다시 확인해 주세요.");
             }
         };
-        // 상태 전이(approve/abort/markUnknown)를 명시적으로 영속한다. 이 payment는 위에서 persist된
-        // '관리(managed)' 엔티티라 save(merge)는 no-op이 되어, dirty-checking 자동 flush가 일어나지 않는
-        // 이 트랜잭션에서는 승인 결과가 확정되지 않는다. 그래서 saveAndFlush로 UPDATE를 강제한다.
-        // (finder로 로드한 detached 엔티티는 save(merge)만으로 확정되지만, 여기선 그 경우가 아니다.)
+        // 상태 전이(approve/abort/markUnknown)를 saveAndFlush로 명시 영속한다. 이 payment는 위에서
+        // persist된 managed 엔티티라 save(merge)는 no-op이므로 그것만으론 UPDATE가 확정되지 않는다.
+        // dirty-check 자동 flush는 readOnly 조회로 세션 FlushMode가 MANUAL이 되면 신뢰할 수 없으므로
+        // (pay-26 사건 교훈), 승인 결과를 saveAndFlush로 확실히 못박는다.
         paymentRepository.saveAndFlush(payment);
         return confirmResult;
     }
