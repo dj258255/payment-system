@@ -3,6 +3,7 @@ package com.beomsu.pay.payment;
 import com.beomsu.pay.payment.pg.PgApproveCommand;
 import com.beomsu.pay.payment.pg.PgApproveResult;
 import com.beomsu.pay.payment.pg.PgClient;
+import com.beomsu.pay.payment.pg.PgQueryResult;
 import com.beomsu.pay.shared.Money;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
@@ -30,52 +31,114 @@ public class PaymentService {
     private final MeterRegistry meterRegistry;
 
     /**
-     * 결제 승인. order 모듈이 금액 검증·주문 상태 전이를 마친 뒤 호출한다.
+     * 승인 1단계 — 결제를 IN_PROGRESS로 적재한다(예약). PG 콜 <b>전</b>에 짧은 트랜잭션으로 커밋된다.
      *
-     * <p>PG 승인(외부 HTTP)이 이 메서드의 트랜잭션 안에서 일어난다 — 정확히는 호출자
-     * {@code CheckoutService.confirm}의 트랜잭션에 합류한다(체크아웃 단일 트랜잭션). 외부 콜을
-     * 트랜잭션 안에 두는 것은 커넥션 점유 안티패턴이나, 이 모놀리스에선 ACID 원자성을 위해 의도적으로
-     * 유지하고 fast-fail·서킷·UNKNOWN 복구로 완화한다 — 근거·마이그레이션 경로는 ADR-007 참고.
+     * <p>ADR-007의 사가 이행: 체크아웃은 예약(tx)→PG(tx 밖)→확정(tx) 3단계로, PG 외부 콜 동안 DB
+     * 커넥션을 붙잡지 않는다. 이 메서드가 그 1단계다. 레코드를 PG 콜 전에 커밋해 두므로, 크래시 후에도
+     * 복구 배치가 이 IN_PROGRESS 레코드를 찾아 PG 조회로 확정할 수 있다(charge 크래시 안전성↑).
+     *
+     * @return 적재된 결제의 id
      */
     @Transactional
-    public ConfirmResult confirm(String orderNo, String paymentKey, Money amount) {
+    public Long beginApproval(String orderNo, String paymentKey, Money amount) {
         Payment payment = Payment.initiate(orderNo, amount);
         payment.startApproval(paymentKey);
         paymentRepository.save(payment);
+        return payment.getId();
+    }
 
+    /**
+     * 승인 2단계 — PG 승인 API를 호출한다. <b>트랜잭션 밖</b>에서 실행되어 외부 응답 동안 DB 커넥션을
+     * 점유하지 않는다(느린 PG가 커넥션 풀을 마르게 하지 않게 하는 핵심). 결과만 반환하고 DB는 건드리지 않는다.
+     * 내부 PG 타입은 모듈 노출용 {@link ApprovalOutcome}로 매핑해 돌려준다(order가 불투명하게 전달).
+     */
+    public ApprovalOutcome pgApprove(String orderNo, String paymentKey, Money amount) {
         PgApproveResult result = pgClient.approve(
                 new PgApproveCommand(paymentKey, orderNo, amount.amount()));
-
         // 관측성: 승인 결과를 결과별로 계측한다. Grafana의 "결제 성공률" 패널의 소스.
         meterRegistry.counter("payment.confirm", "outcome", result.outcome().name().toLowerCase())
                 .increment();
+        return new ApprovalOutcome(
+                ApprovalOutcome.Result.valueOf(result.outcome().name()), result.method(), result.failReason());
+    }
 
-        ConfirmResult confirmResult = switch (result.outcome()) {
+    /**
+     * 승인 3단계 — PG 결과를 결제 레코드에 반영한다(확정). 짧은 트랜잭션. 호출자(체크아웃 확정 tx)에 합류한다.
+     *
+     * <p><b>멱등</b>: IN_PROGRESS일 때만 전이한다. 재배달·복구로 두 번 호출돼도 이미 확정된(DONE/ABORTED/
+     * UNKNOWN) 결제는 현재 상태를 그대로 반영한 결과를 돌려준다 — 멈춘 사가 복구가 이 메서드를 재실행해도 안전.
+     */
+    @Transactional
+    public ConfirmResult applyResult(Long paymentId, ApprovalOutcome outcome) {
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new PaymentException("PAYMENT_NOT_FOUND", "결제 없음: " + paymentId));
+
+        if (payment.getStatus() != PaymentStatus.IN_PROGRESS) {
+            // 이미 확정됨(재실행) — 현재 상태를 그대로 반영해 멱등 반환.
+            return new ConfirmResult(payment.getId(), payment.getStatus(),
+                    payment.getMethod(), "이미 처리됨");
+        }
+
+        ConfirmResult confirmResult = switch (outcome.result()) {
             case SUCCESS -> {
-                payment.approve(result.method());
+                payment.approve(outcome.method());
                 events.publishEvent(new PaymentConfirmedEvent(
-                        orderNo, payment.getId(), amount.amount(), payment.getApprovedAt()));
-                yield new ConfirmResult(payment.getId(), payment.getStatus(),
-                        result.method(), "승인 완료");
+                        payment.getOrderNo(), payment.getId(), payment.getAmount(), payment.getApprovedAt()));
+                yield new ConfirmResult(payment.getId(), payment.getStatus(), outcome.method(), "승인 완료");
             }
             case FAILED -> {
-                payment.abort(result.failReason());
-                yield new ConfirmResult(payment.getId(), payment.getStatus(),
-                        null, result.failReason());
+                payment.abort(outcome.failReason());
+                yield new ConfirmResult(payment.getId(), payment.getStatus(), null, outcome.failReason());
             }
             case TIMEOUT -> {
-                // 미확정: 실패로 단정하지 않는다. 복구 배치/망취소(Phase 2)가 확정한다.
-                payment.markUnknown(result.failReason());
-                yield new ConfirmResult(payment.getId(), payment.getStatus(),
-                        null, "결제 결과를 확인하고 있습니다. 잠시 후 다시 확인해 주세요.");
+                // 미확정: 실패로 단정하지 않는다. 복구 배치가 확정한다.
+                payment.markUnknown(outcome.failReason());
+                yield new ConfirmResult(payment.getId(), payment.getStatus(), null,
+                        "결제 결과를 확인하고 있습니다. 잠시 후 다시 확인해 주세요.");
             }
         };
-        // 상태 전이(approve/abort/markUnknown)를 saveAndFlush로 명시 영속한다. 이 payment는 위에서
-        // persist된 managed 엔티티라 save(merge)는 no-op이므로 그것만으론 UPDATE가 확정되지 않는다.
-        // dirty-check 자동 flush는 readOnly 조회로 세션 FlushMode가 MANUAL이 되면 신뢰할 수 없으므로
-        // (pay-26 사건 교훈), 승인 결과를 saveAndFlush로 확실히 못박는다.
+        // 이 트랜잭션 안 managed 엔티티라 커밋 시 flush되지만, 전이 확정을 명시하려 saveAndFlush(pay-26).
         paymentRepository.saveAndFlush(payment);
         return confirmResult;
+    }
+
+    /**
+     * 멈춘 사가 복구용 — 주문의 카드 결제가 IN_PROGRESS로 멈춰 있으면 PG 조회로 확정(DONE/ABORTED)하고,
+     * 확정 결과를 order 모듈에 노출한다. 카드 결제가 없으면(전액 포인트) empty를 돌려준다.
+     *
+     * <p>PG 조회→확정 로직은 {@link PaymentRecoveryService#resolveByPaymentKey}와 같은 계열이다.
+     * 이미 확정된 결제는 재조회하지 않고 현재 상태를 매핑해 돌려준다(멱등).
+     */
+    @Transactional
+    public Optional<StuckPaymentInfo> resolveStuckPayment(String orderNo) {
+        Optional<Payment> found = paymentRepository.findFirstByOrderNoOrderByRequestedAtDesc(orderNo);
+        if (found.isEmpty()) {
+            return Optional.empty(); // 카드 결제 없음(전액 포인트)
+        }
+        Payment payment = found.get();
+        if (payment.getStatus() == PaymentStatus.IN_PROGRESS) {
+            PgQueryResult pg = pgClient.query(payment.getPaymentKey());
+            switch (pg.status()) {
+                case APPROVED -> {
+                    payment.confirmByRecovery(pg.method());
+                    paymentRepository.saveAndFlush(payment);
+                    events.publishEvent(new PaymentConfirmedEvent(
+                            payment.getOrderNo(), payment.getId(), payment.getAmount(), payment.getApprovedAt()));
+                }
+                case NOT_FOUND -> {
+                    payment.abortByRecovery("복구: PG에 결제 정보 없음(승인 미완료)");
+                    paymentRepository.saveAndFlush(payment);
+                }
+                case CANCELED -> {
+                    payment.networkCancel("복구: PG에서 이미 취소됨");
+                    paymentRepository.saveAndFlush(payment);
+                }
+            }
+        }
+        ApprovalOutcome outcome = (payment.getStatus() == PaymentStatus.DONE)
+                ? new ApprovalOutcome(ApprovalOutcome.Result.SUCCESS, payment.getMethod(), null)
+                : new ApprovalOutcome(ApprovalOutcome.Result.FAILED, null, "복구: 승인 미완료");
+        return Optional.of(new StuckPaymentInfo(payment.getId(), payment.getAmount(), outcome));
     }
 
     private static final List<PaymentStatus> CANCELABLE =
