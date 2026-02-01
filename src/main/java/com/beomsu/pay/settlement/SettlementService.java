@@ -71,29 +71,39 @@ public class SettlementService {
         if (itemRepository.existsByPaymentId(event.paymentId())) {
             return; // 멱등: 이미 적재함
         }
-        LocalDate confirmedDate = LocalDate.ofInstant(event.approvedAt(), ZoneOffset.UTC);
+        // 적재 시점의 confirmedDate는 승인일 placeholder다(PENDING은 집계 대상이 아님). 실제 집계
+        // 기준일은 구매확정(릴리스) 시 confirmSettlement가 릴리스일로 재스탬프한다.
+        LocalDate approvalDate = LocalDate.ofInstant(event.approvedAt(), ZoneOffset.UTC);
         // 최초 INSERT는 save로 충분(신규 영속 → flush는 트랜잭션 커밋이 처리).
         itemRepository.save(SettlementItem.of(
-                event.paymentId(), event.orderNo(), event.amount(), confirmedDate));
+                event.paymentId(), event.orderNo(), event.amount(), approvalDate));
     }
 
     /**
-     * 에스크로 릴리스(구매확정) → 정산 항목을 CONFIRMED로 전이한다. <b>죽어 있던
-     * {@link EscrowReleasedEvent}를 구독해 정산을 구매확정 시점으로 옮기는 핵심.</b>
+     * 에스크로 릴리스(구매확정) → 정산 항목을 CONFIRMED로 전이하고 집계 기준일을 <b>릴리스일로
+     * 재스탬프</b>한다. <b>죽어 있던 {@link EscrowReleasedEvent}를 구독해 정산을 구매확정 시점으로
+     * 옮기는 핵심.</b>
+     *
+     * <p>재스탬프가 필수다 — 에스크로 홀드는 다일(기본 7일)이라 승인일 D의 항목이 D+7에 CONFIRMED된다.
+     * 승인일 그대로 두면 {@code settle(D)}는 D+1에 이미 지났고 재실행도 멱등 skip돼 <b>영구 미정산</b>이
+     * 된다. 릴리스일 R로 재스탬프하면 R+1의 {@code settle(R)}이 정확히 집계한다.
      *
      * <p>항목이 없으면 warn 후 return한다 — 승인/릴리스 이벤트 순서 레이스(릴리스가 적재보다 먼저 도착)
      * 방어. Outbox at-least-once라 릴리스는 재전달되므로, 다음 배달에서 적재된 항목을 만나 전이한다.
-     * 상태 전이는 OSIV off에서 dirty-check 자동 flush가 없으므로 {@code saveAndFlush}로 명시 영속한다.
+     * 이 트랜잭션 안에서 로드한 엔티티라 커밋 시 dirty-check flush되지만, 전이 의도를 명시하려 saveAndFlush한다.
+     *
+     * @param orderNo     릴리스된 주문 번호
+     * @param releaseDate 릴리스(구매확정)가 일어난 날짜 — 정산 집계 기준일로 재스탬프된다
      */
     @Transactional
-    public void confirmSettlement(String orderNo) {
+    public void confirmSettlement(String orderNo, LocalDate releaseDate) {
         Optional<SettlementItem> found = itemRepository.findByOrderNo(orderNo);
         if (found.isEmpty()) {
             log.warn("에스크로 릴리스 수신했으나 정산 항목 없음 orderNo={} — 이벤트 순서 레이스, 재전달 대기", orderNo);
             return;
         }
         SettlementItem item = found.get();
-        item.confirm(); // 멱등: PENDING_CONFIRMATION일 때만 CONFIRMED
+        item.confirm(releaseDate); // 멱등: PENDING_CONFIRMATION일 때만 CONFIRMED + 집계일 재스탬프
         itemRepository.saveAndFlush(item);
     }
 
