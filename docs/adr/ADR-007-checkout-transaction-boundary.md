@@ -1,8 +1,18 @@
-# ADR-007. 체크아웃은 단일 트랜잭션을 유지한다(외부 PG 호출을 포함해서)
+# ADR-007. 체크아웃 트랜잭션 경계 — 단일 트랜잭션 → 3단계 사가로 이행
 
-- 상태: 채택 (Accepted)
-- 날짜: 2026-07-07
+- 상태: **개정 (Superseded by implementation)** — 처음엔 "단일 트랜잭션 유지 + 사가는 마이그레이션 경로"로 채택했으나(아래 원안), 이후 아래 "마이그레이션 경로"를 **실제로 이행**했다(커밋 337c3a0). 지금 코드는 3단계 사가다.
+- 날짜: 2026-07-07 (원안) / 2026-07-07 (사가 이행)
 - 관련: [ADR-003](ADR-003-stock-deduction-timing.md), [ADR-001](ADR-001-architecture-spring-modulith.md), Phase 2(실패 처리)
+
+> **이행 요약**: `CheckoutService.confirm`을 예약(`CheckoutTx.reserve`, tx) → PG 승인(`PaymentService.pgApprove`,
+> **트랜잭션 밖**) → 확정/보상(`CheckoutTx.settle`, tx) 3단계로 재작성했다. PG 외부 콜 동안 DB 커넥션을
+> 붙잡지 않으므로, 느린 PG(브라운아웃)가 커넥션 풀을 마르게 해 앱 전체를 마비시키는 연쇄 장애를 막는다.
+> 원자성을 포기한 대가인 "멈춘 사가"(예약 후 확정 전 크래시)는 `CheckoutRecoveryService`가 PG 조회로
+> 완결/롤백한다. 아래 원안은 "왜 처음엔 단일 tx로 뒀는지"의 기록으로 남긴다.
+
+---
+
+## (원안) 단일 트랜잭션 유지
 
 ## 맥락
 
