@@ -123,10 +123,10 @@ class CheckoutTx {
                         "재고가 부족해 결제를 취소 처리했습니다. 승인된 카드는 자동으로 취소됩니다.");
             }
         } else if (result.isUnknown()) {
-            // 미확정: 선점 포인트 복원, 주문은 PAYMENT_IN_PROGRESS 유지(복구 배치가 확정).
-            if (pointAmount > 0) {
-                pointService.restore(order.getUserId(), pointAmount, orderNo);
-            }
+            // 미확정: 포인트는 <b>예약 상태 그대로 유지</b>한다(결제가 실제로 승인됐을 수 있으므로). 주문은
+            // PAYMENT_IN_PROGRESS로 두고, 복구 배치가 PG 조회로 확정한다 — DONE이면 예약 포인트가 그대로
+            // 소비된 채 PAID가 되고, ABORTED면 아래 거절 분기가 그때 복원한다. 여기서 미리 복원하면, 이후
+            // 완결(SUCCESS 분기)이 포인트를 재소비하지 않아 가맹점이 포인트분만큼 덜 걷는다(자금 손실).
         } else {
             // 명시적 거절: 선점 포인트 복원, 재시도 위해 주문 PENDING_PAYMENT로 복귀.
             if (pointAmount > 0) {
