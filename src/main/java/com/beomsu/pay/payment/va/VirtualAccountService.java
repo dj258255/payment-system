@@ -53,8 +53,8 @@ public class VirtualAccountService {
         PgQueryResult pg = pgClient.query(paymentKey);
         if (pg.isApproved()) {
             va.confirmDeposit();
-            // 상태 전이(DONE)를 명시적으로 영속한다. OSIV off 환경에서 detached 엔티티는
-            // dirty-checking 자동 flush가 일어나지 않으므로 저장을 명시한다(flush 강제).
+            // 상태 전이(DONE)를 saveAndFlush로 명시 영속한다. dirty-check 자동 flush는 readOnly 조회로
+            // 세션 FlushMode가 MANUAL이거나 detached 엔티티인 경우 신뢰할 수 없어(pay-26 교훈) 확정을 강제한다.
             repository.saveAndFlush(va);
         } else {
             // 조회로 재검증했더니 아직 승인 아님 — 위조/조기 웹훅으로 보고 상태를 바꾸지 않는다.
@@ -86,8 +86,8 @@ public class VirtualAccountService {
                 } else {
                     va.expire();
                 }
-                // 상태 전이(DONE/EXPIRED)를 명시적으로 영속한다. OSIV off 환경에서 detached
-                // 엔티티는 dirty-checking 자동 flush가 일어나지 않으므로 저장을 명시한다(flush 강제).
+                // 상태 전이(DONE/EXPIRED)를 saveAndFlush로 명시 영속한다. dirty-check 자동 flush는 readOnly
+                // 조회로 세션 FlushMode가 MANUAL이거나 detached 엔티티인 경우 신뢰할 수 없어(pay-26 교훈) 확정을 강제한다.
                 repository.saveAndFlush(va);
                 processed++;
             } catch (Exception e) {
@@ -105,8 +105,8 @@ public class VirtualAccountService {
     public void handleDepositReversal(String paymentKey, String reason) {
         VirtualAccount va = requireByPaymentKey(paymentKey);
         va.reverseDeposit(reason);
-        // 상태 전이(역전이: DONE → WAITING_FOR_DEPOSIT)를 명시적으로 영속한다. OSIV off 환경에서
-        // detached 엔티티는 dirty-checking 자동 flush가 일어나지 않으므로 저장을 명시한다(flush 강제).
+        // 상태 전이(역전이: DONE → WAITING_FOR_DEPOSIT)를 saveAndFlush로 명시 영속한다. dirty-check 자동
+        // flush는 readOnly 조회로 세션 FlushMode가 MANUAL이거나 detached 엔티티인 경우 신뢰할 수 없어(pay-26 교훈) 확정을 강제한다.
         repository.saveAndFlush(va);
     }
 

@@ -31,8 +31,9 @@ public class SettlementAdminService {
     /**
      * 정산 1건의 지급을 확정한다(CREATED → PAID_OUT).
      *
-     * <p>OSIV off 환경이라 finder로 로드한 엔티티의 dirty-checking 변경은 자동 flush되지 않는다.
-     * 따라서 {@link Settlement#markPaidOut()} 후 반드시 {@code saveAndFlush}로 명시 영속한다.
+     * <p>{@link Settlement#markPaidOut()} 후 {@code saveAndFlush}로 <b>명시 영속</b>한다. dirty-check
+     * 자동 flush는 readOnly 조회로 세션 FlushMode가 MANUAL이 되거나 detached 엔티티인 경우 신뢰할 수 없어
+     * (pay-26 사건 교훈) 상태 확정을 강제한다.
      * markPaidOut은 멱등이라 이미 PAID_OUT이면 시각을 덮어쓰지 않는다.
      */
     @Transactional
