@@ -144,6 +144,22 @@
           </div>
           <div class="hint" id="qHint"></div>
         </div>
+        <div class="card">
+          <h2>구독 정기결제 (빌링키)</h2>
+          <div class="sub">빌링키로 구독 개시 → 즉시청구·청구이력·해지. 정기청구는 dunning 스케줄러가 주기 실행(soft/hard decline 재시도·유예). 본인 구독만 접근(IDOR 방지). 로그인 후 사용.</div>
+          <div class="row">
+            <label>빌링키</label><input id="subBk" value="bk-demo-001" style="width:110px">
+            <label>월 금액</label><input id="subAmt" type="number" value="9900" style="width:80px">
+            <button class="small" onclick="subCreate()">구독 개시</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button class="small" onclick="subList()">내 구독</button>
+            <label>구독ID</label><input id="subId" type="number" value="1" style="width:60px">
+            <button class="small ghost" onclick="subBillNow()">즉시 청구</button>
+            <button class="small warn" onclick="subCancel()">해지</button>
+          </div>
+          <div class="adminlist" id="subs"></div>
+        </div>
       </div>
 
       <div>
@@ -347,7 +363,7 @@ function renderList(target,data){
     data.map(row=>'<tr>'+cols.map(c=>'<td>'+fmt(row[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
 }
 function fmt(v){if(v==null)return '<span class="b-dim">null</span>';const s=String(v);
-  const map={PAID:'green',DONE:'green',EXECUTED:'green',PAID_OUT:'green',SETTLED:'green',CONFIRMED:'green',REQUESTED:'amber',PENDING:'amber',CREATED:'amber',FAILED:'red',REJECTED:'red',CANCELED:'red'};
+  const map={PAID:'green',DONE:'green',EXECUTED:'green',PAID_OUT:'green',SETTLED:'green',CONFIRMED:'green',ACTIVE:'green',SUCCESS:'green',REQUESTED:'amber',PENDING:'amber',CREATED:'amber',IN_GRACE_PERIOD:'amber',ON_HOLD:'amber',SOFT_DECLINE:'amber',FAILED:'red',REJECTED:'red',CANCELED:'red',HARD_DECLINE:'red'};
   return map[s]?'<span class="badge b-'+map[s]+'">'+s+'</span>':s.length>22?s.slice(0,22)+'…':s}
 async function fcRequest(){
   const r=await api('POST','/api/v1/admin/payments/'+$('fcPid').value+'/force-cancel',{cancelAmount:+$('fcAmt').value,reason:'분쟁 정정'});
@@ -363,6 +379,15 @@ async function frAct(act){
   const r=await api('POST','/api/v1/admin/fraud-reviews/'+$('frId').value+'/'+act);
   renderList('fraud',r.data);
 }
+// 구독 정기결제
+async function subCreate(){
+  const r=await api('POST','/api/v1/subscriptions',{billingKey:$('subBk').value,planAmount:+$('subAmt').value});
+  if(r.ok&&r.data) $('subId').value=r.data.id;
+  subList();
+}
+async function subList(){ const r=await api('GET','/api/v1/subscriptions'); renderList('subs',r.data); }
+async function subBillNow(){ await api('POST','/api/v1/subscriptions/'+$('subId').value+'/bill-now'); subList(); }
+async function subCancel(){ await api('POST','/api/v1/subscriptions/'+$('subId').value+'/cancel'); subList(); }
 // 정산: 목록은 Page → content 배열을 정산 전용 컬럼으로 렌더(수수료·VAT·지급액·지급예정일까지 보이게)
 function renderSettle(data){
   const rows=Array.isArray(data)?data:(data?[data]:[]);
