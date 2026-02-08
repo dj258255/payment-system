@@ -60,7 +60,7 @@ class WalletServiceTest {
         account.charge(10_000);
         when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
 
-        long balance = service.use(1L, 6_000);
+        long balance = service.use(1L, 6_000, "ord-1");
 
         assertThat(balance).isEqualTo(4_000);
         verify(accountRepository).saveAndFlush(account);
@@ -90,9 +90,41 @@ class WalletServiceTest {
         account.charge(2_000);
         when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
 
-        assertThatThrownBy(() -> service.use(1L, 6_000))
+        assertThatThrownBy(() -> service.use(1L, 6_000, "ord-1"))
                 .isInstanceOf(WalletException.class)
                 .satisfies(e -> assertThat(((WalletException) e).code()).isEqualTo("INSUFFICIENT_BALANCE"));
+        verify(transactionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("use: 같은 주문의 USE 이력이 이미 있으면 재차감하지 않고 현재 잔액을 반환한다(멱등)")
+    void useIsIdempotentPerOrder() {
+        WalletAccount account = WalletAccount.of(1L);
+        account.charge(10_000);
+        when(transactionRepository.existsByOrderNoAndType("ord-1", WalletTransactionType.USE))
+                .thenReturn(true); // 이미 차감됨
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+
+        long balance = service.use(1L, 6_000, "ord-1");
+
+        assertThat(balance).isEqualTo(10_000); // 재차감 없음 — 잔액 그대로
+        verify(accountRepository, never()).saveAndFlush(any());
+        verify(transactionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("refund: 같은 주문의 REFUND 이력이 이미 있으면 이중환불하지 않는다(멱등 — 복구 재실행 안전)")
+    void refundIsIdempotentPerOrder() {
+        WalletAccount account = WalletAccount.of(1L);
+        account.charge(6_000);
+        when(transactionRepository.existsByOrderNoAndType("ord-1", WalletTransactionType.REFUND))
+                .thenReturn(true); // 이미 환불됨
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+
+        long balance = service.refund(1L, 4_000, "ord-1");
+
+        assertThat(balance).isEqualTo(6_000); // 이중환불 없음
+        verify(accountRepository, never()).saveAndFlush(any());
         verify(transactionRepository, never()).save(any());
     }
 
@@ -104,7 +136,7 @@ class WalletServiceTest {
         account.use(4_000);
         when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
 
-        long balance = service.refund(1L, 4_000);
+        long balance = service.refund(1L, 4_000, "ord-1");
 
         assertThat(balance).isEqualTo(10_000);
         ArgumentCaptor<WalletTransaction> captor = ArgumentCaptor.forClass(WalletTransaction.class);

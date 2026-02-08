@@ -16,6 +16,6 @@
  * queue 모듈에 의존한다 — queue는 아무 모듈에도 의존하지 않으므로(allowedDependencies={}) 순환 없음.
  */
 @org.springframework.modulith.ApplicationModule(
-        allowedDependencies = { "shared", "payment", "point", "escrow", "queue" }
+        allowedDependencies = { "shared", "payment", "point", "escrow", "queue", "wallet" }
 )
 package com.beomsu.pay.order;

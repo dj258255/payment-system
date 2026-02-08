@@ -82,7 +82,7 @@ public class CheckoutService {
      * 복합결제 승인(포인트+카드). 서버 내부 처리 순서(10-API-스펙):
      * <ol>
      *   <li>주문 로드 (없으면 ORDER_NOT_FOUND)</li>
-     *   <li>금액 위변조 검증 — 카드금액 + 포인트금액 == 주문 총액. 불일치 시 AMOUNT_MISMATCH (PG 호출 이전 차단)</li>
+     *   <li>금액 위변조 검증 — 카드금액 + 포인트금액 + 월렛금액 == 주문 총액. 불일치 시 AMOUNT_MISMATCH (PG 호출 이전 차단)</li>
      *   <li>주문 상태 조건부 전이 PENDING_PAYMENT → PAYMENT_IN_PROGRESS (이중 지불 차단)</li>
      *   <li><b>포인트 선점</b> — 롤백이 확실한 내부 자원을 먼저 잡는다</li>
      *   <li>카드 승인 호출(payment 모듈 위임). 전액 포인트(cardAmount==0)면 카드 호출 생략</li>
@@ -97,24 +97,24 @@ public class CheckoutService {
      * @param pointAmount 포인트로 결제할 금액(요청에 없으면 0)
      */
     public CheckoutResult confirm(String orderNo, String paymentKey, Money cardAmount,
-                                  long pointAmount, long authenticatedUserId) {
-        // 0. 음수 방어 — 음수 pointAmount로 검증 우회·오버플로를 시도할 수 없게 한다. (DB 없음)
-        if (pointAmount < 0 || cardAmount.amount() < 0) {
+                                  long pointAmount, long walletAmount, long authenticatedUserId) {
+        // 0. 음수 방어 — 음수 금액으로 검증 우회·오버플로를 시도할 수 없게 한다. (DB 없음)
+        if (pointAmount < 0 || walletAmount < 0 || cardAmount.amount() < 0) {
             throw new OrderException("INVALID_REQUEST", "결제 금액은 음수일 수 없습니다.");
         }
 
-        // Phase 1 (tx) — 예약: 검증·주문 상태 전이(이중지불 잠금)·포인트 선점·결제 IN_PROGRESS 적재.
+        // Phase 1 (tx) — 예약: 검증·주문 상태 전이(이중지불 잠금)·포인트/월렛 선점·결제 IN_PROGRESS 적재.
         // 커밋 후 DB 커넥션을 반납한다.
         CheckoutTx.Reservation reservation =
-                checkoutTx.reserve(orderNo, paymentKey, cardAmount, pointAmount, authenticatedUserId);
+                checkoutTx.reserve(orderNo, paymentKey, cardAmount, pointAmount, walletAmount, authenticatedUserId);
 
         // Phase 2 (tx 밖) — PG 승인: 외부 HTTP 콜을 트랜잭션 밖에서 한다. 이 동안 DB 커넥션 0개 점유
-        // → 느린 PG가 커넥션 풀을 마르게 하지 않는다(ADR-007). 전액 포인트면 PG 콜을 생략한다.
+        // → 느린 PG가 커넥션 풀을 마르게 하지 않는다(ADR-007). 카드 몫이 0이면(포인트+월렛 전액) PG 콜을 생략한다.
         ApprovalOutcome outcome = (cardAmount.amount() > 0)
                 ? paymentService.pgApprove(orderNo, paymentKey, cardAmount)
                 : null;
 
         // Phase 3 (tx) — 확정/보상: PG 결과를 결제·주문에 반영하고 재고 차감/보상까지 마친다.
-        return checkoutTx.settle(orderNo, reservation.paymentId(), cardAmount, pointAmount, outcome);
+        return checkoutTx.settle(orderNo, reservation.paymentId(), cardAmount, pointAmount, walletAmount, outcome);
     }
 }
