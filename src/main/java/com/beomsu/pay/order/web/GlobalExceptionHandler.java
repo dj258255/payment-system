@@ -35,6 +35,7 @@ public class GlobalExceptionHandler {
             case "INVALID_STATE_TRANSITION", "CANCEL_AMOUNT_EXCEEDED", "OUT_OF_STOCK",
                  "INVALID_FRAUD_REVIEW_STATE", "SUBSCRIPTION_NOT_ACTIVE",
                  "INVALID_SUBSCRIPTION_TRANSITION",
+                 "INSUFFICIENT_BALANCE", "LIMIT_EXCEEDED", "WALLET_CONCURRENCY",
                  "IDEMPOTENT_REQUEST_PROCESSING" -> HttpStatus.CONFLICT;                     // 409
             case "IDEMPOTENCY_KEY_REUSED" -> HttpStatus.UNPROCESSABLE_ENTITY;                // 422
             // 대기열 게이트: 요청 자체는 유효하나 지금은 받아줄 수 없다(줄 서면 됨) → 403(권한 문제)이

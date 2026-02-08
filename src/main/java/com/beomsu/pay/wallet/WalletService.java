@@ -50,6 +50,12 @@ public class WalletService {
                 .orElse(0L);
     }
 
+    /** 잔액 + 최근 거래 이력 조회 — 사용자 월렛 화면용. */
+    @Transactional(readOnly = true)
+    public WalletView myWallet(long userId) {
+        return WalletView.of(balance(userId), transactionRepository.findTop20ByUserIdOrderByIdDesc(userId));
+    }
+
     @FunctionalInterface
     private interface BalanceMutation {
         void apply(WalletAccount account, long amount);
