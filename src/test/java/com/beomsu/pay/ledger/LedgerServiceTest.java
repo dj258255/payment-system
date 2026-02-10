@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -24,6 +25,24 @@ class LedgerServiceTest {
     void setUp() {
         repository = mock(LedgerTransactionRepository.class);
         service = new LedgerService(repository);
+    }
+
+    @Test
+    @DisplayName("최근 원장 조회: 트랜잭션을 뷰로 매핑하고 균형(balanced) 여부를 계산한다")
+    void recentTransactionsMapsToViewWithBalance() {
+        when(repository.existsByTxTypeAndSourceTypeAndSourceId(anyString(), anyString(), anyLong()))
+                .thenReturn(false);
+        ArgumentCaptor<LedgerTransaction> captor = ArgumentCaptor.forClass(LedgerTransaction.class);
+        service.recordPaymentConfirmed(event);
+        verify(repository).save(captor.capture());
+        when(repository.findTop50ByOrderByIdDesc()).thenReturn(List.of(captor.getValue()));
+
+        List<LedgerView> views = service.recentTransactions();
+
+        assertThat(views).hasSize(1);
+        assertThat(views.get(0).balanced()).isTrue();        // 차변=대변
+        assertThat(views.get(0).entries()).hasSize(2);
+        assertThat(views.get(0).txType()).isEqualTo("PAYMENT_APPROVED");
     }
 
     @Test

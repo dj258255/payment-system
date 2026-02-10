@@ -37,6 +37,23 @@ class OrderQueryServiceTest {
         return order;
     }
 
+    // --- myOrders (내 주문 목록) ---
+
+    @Test
+    @DisplayName("내 주문 목록: 본인 userId로만 조회해 요약 뷰로 매핑한다(IDOR — 쿼리 자체가 본인 것만)")
+    void myOrdersReturnsOwnSummaries() {
+        Order o = paidOrderOf(1L);
+        when(orderRepository.findTop50ByUserIdOrderByIdDesc(1L)).thenReturn(List.of(o));
+
+        List<OrderSummaryView> result = service.myOrders(1L);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).orderNo()).isEqualTo(o.getOrderNo());
+        assertThat(result.get(0).status()).isEqualTo("PAID");
+        assertThat(result.get(0).totalAmount()).isEqualTo(20_000);
+        verify(orderRepository).findTop50ByUserIdOrderByIdDesc(1L); // 본인 것만 가져옴
+    }
+
     // --- getOrder ---
 
     @Test

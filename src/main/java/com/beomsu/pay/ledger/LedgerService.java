@@ -25,6 +25,14 @@ public class LedgerService {
 
     private final LedgerTransactionRepository repository;
 
+    /** 최근 원장 트랜잭션 조회(감사용) — 분개 목록·균형 여부 포함. */
+    @Transactional(readOnly = true)
+    public List<LedgerView> recentTransactions() {
+        return repository.findTop50ByOrderByIdDesc().stream()
+                .map(LedgerView::from)
+                .toList();
+    }
+
     @Transactional
     public void recordPaymentConfirmed(PaymentConfirmedEvent event) {
         if (alreadyRecorded("PAYMENT_APPROVED", event.paymentId())) {
