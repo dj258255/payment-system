@@ -34,31 +34,64 @@ class PaymentServiceTest {
         service = new PaymentService(repository, pg, events, meterRegistry);
     }
 
+    /** IN_PROGRESS(예약 완료) 상태의 결제를 id를 심어 만든다 — applyResult 테스트용. */
+    private Payment inProgress(String orderNo, String paymentKey, long amount, long id) {
+        Payment p = Payment.initiate(orderNo, Money.of(amount));
+        p.startApproval(paymentKey); // READY → IN_PROGRESS
+        org.springframework.test.util.ReflectionTestUtils.setField(p, "id", id);
+        return p;
+    }
+
     @Test
-    @DisplayName("승인 성공 시 DONE + PaymentConfirmedEvent 발행 + 성공 메트릭 증가")
-    void confirmSuccess() {
+    @DisplayName("beginApproval(예약, Phase 1): 결제를 IN_PROGRESS로 적재한다 — PG 콜 전에")
+    void beginApprovalPersistsInProgress() {
+        ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
+
+        service.beginApproval("order-0", "pk-0", Money.of(10_000));
+
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getStatus()).isEqualTo(PaymentStatus.IN_PROGRESS);
+        assertThat(saved.getValue().getOrderNo()).isEqualTo("order-0");
+    }
+
+    @Test
+    @DisplayName("pgApprove(Phase 2, tx 밖): PG 결과를 ApprovalOutcome으로 매핑 + 성공 메트릭 증가")
+    void pgApproveMapsOutcomeAndCountsMetric() {
         pg.setNextResult(PgApproveResult.success("CARD"));
 
-        ConfirmResult result = service.confirm("order-1", "pk-1", Money.of(10_000));
+        ApprovalOutcome outcome = service.pgApprove("order-1", "pk-1", Money.of(10_000));
+
+        assertThat(outcome.result()).isEqualTo(ApprovalOutcome.Result.SUCCESS);
+        assertThat(outcome.method()).isEqualTo("CARD");
+        // 관측성: 결과별 카운터가 증가한다 (Grafana 결제 성공률의 소스)
+        assertThat(meterRegistry.counter("payment.confirm", "outcome", "success").count()).isEqualTo(1.0);
+        // PG 콜은 DB를 건드리지 않는다(트랜잭션 밖).
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("applyResult(Phase 3) 성공: DONE + PaymentConfirmedEvent 발행 + saveAndFlush")
+    void applyResultSuccessMarksDoneAndPublishes() {
+        Payment p = inProgress("order-1", "pk-1", 10_000, 1L);
+        when(repository.findById(1L)).thenReturn(Optional.of(p));
+
+        ConfirmResult result = service.applyResult(1L, new ApprovalOutcome(ApprovalOutcome.Result.SUCCESS, "CARD", null));
 
         assertThat(result.isApproved()).isTrue();
         assertThat(result.status()).isEqualTo(PaymentStatus.DONE);
         assertThat(result.method()).isEqualTo("CARD");
         verify(events).publishEvent(any(PaymentConfirmedEvent.class));
-        // 승인 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
-        ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
-        verify(repository, atLeastOnce()).saveAndFlush(saved.capture());
-        assertThat(saved.getValue().getStatus()).isEqualTo(PaymentStatus.DONE);
-        // 관측성: 결과별 카운터가 증가한다 (Grafana 결제 성공률의 소스)
-        assertThat(meterRegistry.counter("payment.confirm", "outcome", "success").count()).isEqualTo(1.0);
+        verify(repository, atLeastOnce()).saveAndFlush(p);
+        assertThat(p.getStatus()).isEqualTo(PaymentStatus.DONE);
     }
 
     @Test
-    @DisplayName("타임아웃 시 UNKNOWN + 이벤트 미발행 (실패로 단정하지 않음)")
-    void confirmTimeout() {
-        pg.setNextResult(PgApproveResult.timeout("PG 응답 없음"));
+    @DisplayName("applyResult 타임아웃: UNKNOWN + 이벤트 미발행 (실패로 단정하지 않음)")
+    void applyResultTimeoutMarksUnknownNoEvent() {
+        Payment p = inProgress("order-2", "pk-2", 10_000, 2L);
+        when(repository.findById(2L)).thenReturn(Optional.of(p));
 
-        ConfirmResult result = service.confirm("order-2", "pk-2", Money.of(10_000));
+        ConfirmResult result = service.applyResult(2L, new ApprovalOutcome(ApprovalOutcome.Result.TIMEOUT, null, "PG 응답 없음"));
 
         assertThat(result.isUnknown()).isTrue();
         assertThat(result.status()).isEqualTo(PaymentStatus.UNKNOWN);
@@ -66,15 +99,30 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("명시적 거절 시 ABORTED + 이벤트 미발행")
-    void confirmFailed() {
-        pg.setNextResult(PgApproveResult.failed("잔액부족"));
+    @DisplayName("applyResult 거절: ABORTED + 이벤트 미발행")
+    void applyResultFailedMarksAborted() {
+        Payment p = inProgress("order-3", "pk-3", 10_000, 3L);
+        when(repository.findById(3L)).thenReturn(Optional.of(p));
 
-        ConfirmResult result = service.confirm("order-3", "pk-3", Money.of(10_000));
+        ConfirmResult result = service.applyResult(3L, new ApprovalOutcome(ApprovalOutcome.Result.FAILED, null, "잔액부족"));
 
         assertThat(result.status()).isEqualTo(PaymentStatus.ABORTED);
         assertThat(result.message()).isEqualTo("잔액부족");
         verify(events, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("applyResult 멱등: 이미 확정된(DONE) 결제는 재실행해도 전이하지 않고 현재 상태를 반환")
+    void applyResultIdempotentOnAlreadyResolved() {
+        Payment p = inProgress("order-9", "pk-9", 10_000, 9L);
+        p.approve("CARD"); // 이미 DONE
+        when(repository.findById(9L)).thenReturn(Optional.of(p));
+
+        ConfirmResult result = service.applyResult(9L, new ApprovalOutcome(ApprovalOutcome.Result.SUCCESS, "CARD", null));
+
+        assertThat(result.status()).isEqualTo(PaymentStatus.DONE);
+        verify(events, never()).publishEvent(any()); // 재발행 안 함
+        verify(repository, never()).saveAndFlush(any()); // 재전이 없음
     }
 
     @Test

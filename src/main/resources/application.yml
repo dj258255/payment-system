@@ -151,6 +151,13 @@ app:
   recovery:
     enabled: ${APP_RECOVERY_ENABLED:false}
     interval-ms: 60000
+  # 멈춘 체크아웃 사가 복구 스케줄러(ADR-007) → CheckoutRecoveryService.recoverStuckCheckouts().
+  # 예약(Phase1) 후 확정(Phase3) 전에 크래시로 PAYMENT_IN_PROGRESS로 멈춘 주문을 PG 조회로 완결/롤백.
+  checkout:
+    recovery:
+      enabled: ${APP_CHECKOUT_RECOVERY_ENABLED:false}
+      interval-ms: 60000
+      stuck-after-minutes: ${APP_CHECKOUT_RECOVERY_STUCK_AFTER_MIN:10}
   # 가상계좌 만료 배치 스케줄러 → VirtualAccountService.expireOverdue(now)
   va:
     expiry:

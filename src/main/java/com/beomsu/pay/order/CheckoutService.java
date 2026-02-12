@@ -1,54 +1,48 @@
 package com.beomsu.pay.order;
 
-import com.beomsu.pay.payment.ConfirmResult;
+import com.beomsu.pay.payment.ApprovalOutcome;
 import com.beomsu.pay.payment.PaymentService;
-import com.beomsu.pay.payment.PaymentStatus;
-import com.beomsu.pay.point.PointService;
 import com.beomsu.pay.queue.QueueService;
 import com.beomsu.pay.shared.Money;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 체크아웃(주문 생성 + 결제 승인 오케스트레이션) 애플리케이션 서비스 — order 모듈의 공개 진입점.
  *
  * <p>금액 위변조 검증은 total_amount의 소유자인 주문이 담당하고(이 모듈의 핵심), 실제 PG 승인은
- * payment 모듈({@link PaymentService})에 위임한다. 재고 차감은 ADR-003에 따라 <b>승인 성공 시점</b>에
- * 수행한다.
+ * payment 모듈({@link PaymentService})에 위임한다. 재고 차감은 ADR-003에 따라 <b>승인 성공 시점</b>에 한다.
+ *
+ * <p><b>체크아웃 사가(ADR-007)</b>: {@code confirm}은 클래스가 아니라 오케스트레이터 한 메서드로,
+ * 예약({@link CheckoutTx#reserve}, tx) → PG 승인({@link PaymentService#pgApprove}, <b>tx 밖</b>) →
+ * 확정({@link CheckoutTx#settle}, tx) 3단계다. PG 외부 콜 동안 DB 커넥션을 붙잡지 않아, 느린 PG가
+ * 커넥션 풀을 마르게 하지 않는다. 클래스 레벨 {@code @Transactional}을 떼고 각 단계만 트랜잭션 경계로 둔다.
  */
 @Service
-@Transactional
 public class CheckoutService {
 
     private final PaymentService paymentService;
+    private final CheckoutTx checkoutTx;
     private final OrderRepository orderRepository;
-    private final StockDeductionService stockDeductionService;
     private final ProductRepository productRepository;
-    private final PointService pointService;
-    private final CompensationService compensationService;
     private final QueueService queueService;
     private final List<Long> gateProductIds;
     private final String gateEventId;
 
     public CheckoutService(PaymentService paymentService,
+                           CheckoutTx checkoutTx,
                            OrderRepository orderRepository,
-                           StockDeductionService stockDeductionService,
                            ProductRepository productRepository,
-                           PointService pointService,
-                           CompensationService compensationService,
                            QueueService queueService,
                            @Value("${app.queue.gate.product-ids:}") List<Long> gateProductIds,
                            @Value("${app.queue.gate.event-id:drop}") String gateEventId) {
         this.paymentService = paymentService;
+        this.checkoutTx = checkoutTx;
         this.orderRepository = orderRepository;
-        this.stockDeductionService = stockDeductionService;
         this.productRepository = productRepository;
-        this.pointService = pointService;
-        this.compensationService = compensationService;
         this.queueService = queueService;
         this.gateProductIds = gateProductIds;
         this.gateEventId = gateEventId;
@@ -60,6 +54,7 @@ public class CheckoutService {
      * <p>가격은 클라이언트가 보낸 값이 아니라 서버의 {@link Product} 카탈로그에서 조회한다.
      * 이래야 금액 위변조 검증의 기준값 자체를 신뢰할 수 있다.
      */
+    @Transactional
     public CreateOrderResult createOrder(long userId, List<OrderLine> lines) {
         // 대기열 게이트(옵트인): 이벤트 상품만 서버가 대기열 입장을 강제한다(권고→강제).
         // 게이트 목록이 비어 있으면(기본) 이 블록은 스트림 한 번 안 돌고 건너뛴다 — 대상 없으면 무비용,
@@ -103,108 +98,23 @@ public class CheckoutService {
      */
     public CheckoutResult confirm(String orderNo, String paymentKey, Money cardAmount,
                                   long pointAmount, long authenticatedUserId) {
-        // 0. 음수 방어 — 음수 pointAmount로 검증 우회·오버플로를 시도할 수 없게 한다.
+        // 0. 음수 방어 — 음수 pointAmount로 검증 우회·오버플로를 시도할 수 없게 한다. (DB 없음)
         if (pointAmount < 0 || cardAmount.amount() < 0) {
             throw new OrderException("INVALID_REQUEST", "결제 금액은 음수일 수 없습니다.");
         }
 
-        // 1. 주문 로드
-        Order order = orderRepository.findByOrderNo(orderNo)
-                .orElseThrow(() -> OrderException.orderNotFound(orderNo));
+        // Phase 1 (tx) — 예약: 검증·주문 상태 전이(이중지불 잠금)·포인트 선점·결제 IN_PROGRESS 적재.
+        // 커밋 후 DB 커넥션을 반납한다.
+        CheckoutTx.Reservation reservation =
+                checkoutTx.reserve(orderNo, paymentKey, cardAmount, pointAmount, authenticatedUserId);
 
-        // 1.5. 소유권 검증 — 인증된 사용자가 이 주문의 주인인지 (IDOR 방지).
-        //      검증·상태전이·포인트차감 그 무엇보다 먼저 한다.
-        order.verifyOwner(authenticatedUserId);
+        // Phase 2 (tx 밖) — PG 승인: 외부 HTTP 콜을 트랜잭션 밖에서 한다. 이 동안 DB 커넥션 0개 점유
+        // → 느린 PG가 커넥션 풀을 마르게 하지 않는다(ADR-007). 전액 포인트면 PG 콜을 생략한다.
+        ApprovalOutcome outcome = (cardAmount.amount() > 0)
+                ? paymentService.pgApprove(orderNo, paymentKey, cardAmount)
+                : null;
 
-        // 2. 금액 위변조 검증 — 카드+포인트 합이 주문 총액과 일치해야 한다.
-        //    합산은 오버플로 시 조용히 뒤집히지 않도록 addExact를 쓴다.
-        //    불일치 시 여기서 예외가 나므로 포인트 차감·PG 승인은 호출되지 않는다.
-        long requestedTotal;
-        try {
-            requestedTotal = Math.addExact(cardAmount.amount(), pointAmount);
-        } catch (ArithmeticException e) {
-            throw new OrderException("AMOUNT_OVERFLOW", "결제 금액이 허용 범위를 초과했습니다.");
-        }
-        order.verifyAmount(Money.of(requestedTotal));
-
-        // 3. 주문 상태 조건부 전이 (이중 지불 차단)
-        order.startPayment();
-
-        // 4. 포인트 선점 — 롤백이 확실한 내부 자원을 먼저 선점한다(카드 실패 시 복원으로 보상).
-        if (pointAmount > 0) {
-            pointService.use(order.getUserId(), pointAmount, orderNo);
-        }
-
-        // 5. 카드 승인 위임. 전액 포인트(cardAmount==0)면 카드 호출을 생략하고 승인 성공으로 간주한다.
-        ConfirmResult result;
-        boolean cardApproved;
-        if (cardAmount.amount() > 0) {
-            result = paymentService.confirm(orderNo, paymentKey, cardAmount);
-            cardApproved = result.isApproved();
-        } else {
-            result = null; // 전액 포인트 결제 — 외부 PG 호출 없음
-            cardApproved = true;
-        }
-
-        // 6. 결과 분기
-        if (cardApproved) {
-            // 재고 차감 (ADR-003: 승인 성공 시점 차감). 전략은 조건부 UPDATE(ADR-004: 부하테스트에서 최속).
-            //
-            // 카드 승인은 PG(외부)에서 이미 일어나 DB 롤백으로 되돌릴 수 없다. 그래서 재고 부족을 예외로
-            // 던져 트랜잭션을 통째로 롤백하면 "돈은 나갔는데 주문은 사라진" 불일치가 남는다. 대신
-            // tryDeduct(예외 없는 boolean)로 차감하고, 부족하면 트랜잭션을 깨끗이 커밋시킨 채 보상한다.
-            List<OrderItem> deducted = new ArrayList<>();
-            boolean allDeducted = true;
-            for (OrderItem item : order.getItems()) {
-                if (stockDeductionService.tryDeduct(item.getProductId(), item.getQuantity())) {
-                    deducted.add(item);
-                } else {
-                    allDeducted = false;
-                    break;
-                }
-            }
-            if (allDeducted) {
-                order.markPaid();
-            } else {
-                // 승인 후 재고 부족 → 자동 보상(망취소). 예외를 던지지 않아 트랜잭션은 깨끗이 커밋된다.
-                for (OrderItem d : deducted) {
-                    stockDeductionService.restore(d.getProductId(), d.getQuantity()); // 부분 차감분 원복
-                }
-                if (pointAmount > 0) {
-                    pointService.restore(order.getUserId(), pointAmount, orderNo); // 선점 포인트 복원(내부·확실)
-                }
-                if (cardAmount.amount() > 0) {
-                    // 외부·불확실한 PG 취소는 durable 보상 태스크로 적재해 스케줄러가 재시도로 망취소한다.
-                    compensationService.enqueueNetworkCancel(orderNo, cardAmount.amount(),
-                            "재고 부족: 카드 승인 후 자동 망취소");
-                }
-                order.markFailed();
-                orderRepository.saveAndFlush(order); // 상태 전이를 명시적으로 영속(아래 saveOrderState 주석 참고, flush 강제)
-                return new CheckoutResult(orderNo, order.getStatus(),
-                        (result != null ? result.status() : PaymentStatus.DONE),
-                        "재고가 부족해 결제를 취소 처리했습니다. 승인된 카드는 자동으로 취소됩니다.");
-            }
-        } else if (result.isUnknown()) {
-            // 미확정: 카드 결과를 확정할 수 없다 → 선점한 포인트를 복원(보상)하고 주문은 PAYMENT_IN_PROGRESS로 유지.
-            if (pointAmount > 0) {
-                pointService.restore(order.getUserId(), pointAmount, orderNo);
-            }
-        } else {
-            // 명시적 거절(ABORTED): 선점한 포인트를 복원(보상)하고, 재시도를 위해 주문을 PENDING_PAYMENT로 복귀.
-            if (pointAmount > 0) {
-                pointService.restore(order.getUserId(), pointAmount, orderNo);
-            }
-            order.revertToPending();
-        }
-
-        // 주문 상태 전이(startPayment/markPaid/revertToPending)를 명시적으로 영속한다.
-        // OSIV off + 트랜잭션 내 readOnly 조회로 세션 flush가 MANUAL이 되어 dirty-checking 자동
-        // flush가 일어나지 않으므로, 승인 결과가 DB에 확정되도록 저장을 명시한다(flush 강제).
-        orderRepository.saveAndFlush(order);
-
-        // 전액 포인트 결제는 PG 결과가 없으므로 DONE으로 간주해 응답한다.
-        PaymentStatus paymentStatus = (result != null) ? result.status() : PaymentStatus.DONE;
-        String message = (result != null) ? result.message() : "포인트 전액 결제 완료";
-        return new CheckoutResult(orderNo, order.getStatus(), paymentStatus, message);
+        // Phase 3 (tx) — 확정/보상: PG 결과를 결제·주문에 반영하고 재고 차감/보상까지 마친다.
+        return checkoutTx.settle(orderNo, reservation.paymentId(), cardAmount, pointAmount, outcome);
     }
 }

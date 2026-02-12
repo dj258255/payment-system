@@ -1,0 +1,143 @@
+package com.beomsu.pay.order;
+
+import com.beomsu.pay.payment.ApprovalOutcome;
+import com.beomsu.pay.payment.ConfirmResult;
+import com.beomsu.pay.payment.PaymentService;
+import com.beomsu.pay.payment.PaymentStatus;
+import com.beomsu.pay.point.PointService;
+import com.beomsu.pay.shared.Money;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 체크아웃 사가(ADR-007)의 <b>트랜잭션 경계</b> — 예약(Phase 1)과 확정(Phase 3)을 각각 짧은 트랜잭션으로
+ * 담는다. 그 사이의 PG 승인(Phase 2)은 {@link CheckoutService}가 트랜잭션 밖에서 호출한다.
+ *
+ * <p>별도 빈으로 둔 이유: {@code CheckoutService.confirm}(오케스트레이터, 비트랜잭션)이 이 메서드들을
+ * 프록시로 호출해야 각 단계의 {@code @Transactional}이 실제 트랜잭션 경계가 된다(자기호출이면 우회됨).
+ */
+@Component
+@RequiredArgsConstructor
+class CheckoutTx {
+
+    private final PaymentService paymentService;
+    private final OrderRepository orderRepository;
+    private final StockDeductionService stockDeductionService;
+    private final PointService pointService;
+    private final CompensationService compensationService;
+
+    /** 예약 결과 — 확정 단계로 넘길 최소 정보. cardAmount==0(전액 포인트)이면 paymentId는 null. */
+    record Reservation(Long paymentId) {}
+
+    /**
+     * Phase 1 — 예약(짧은 tx). 검증 → 주문 상태 전이(이중지불 잠금) → 포인트 선점 → 결제 IN_PROGRESS 적재.
+     * PG 콜 <b>전</b>에 커밋되어 커넥션을 반납한다. 크래시 시에도 이 상태(주문 IN_PROGRESS + 결제 IN_PROGRESS
+     * + 포인트 예약)가 남아 복구 배치가 완결/롤백할 수 있다.
+     */
+    @Transactional
+    public Reservation reserve(String orderNo, String paymentKey, Money cardAmount,
+                               long pointAmount, long authenticatedUserId) {
+        Order order = orderRepository.findByOrderNo(orderNo)
+                .orElseThrow(() -> OrderException.orderNotFound(orderNo));
+        order.verifyOwner(authenticatedUserId); // IDOR 방지 — 무엇보다 먼저
+
+        long requestedTotal;
+        try {
+            requestedTotal = Math.addExact(cardAmount.amount(), pointAmount);
+        } catch (ArithmeticException e) {
+            throw new OrderException("AMOUNT_OVERFLOW", "결제 금액이 허용 범위를 초과했습니다.");
+        }
+        order.verifyAmount(Money.of(requestedTotal));
+
+        order.startPayment(); // PENDING_PAYMENT → PAYMENT_IN_PROGRESS (조건부 전이, 이중지불 차단)
+
+        if (pointAmount > 0) {
+            pointService.use(order.getUserId(), pointAmount, orderNo); // 롤백 확실한 내부 자원 선점
+        }
+
+        Long paymentId = null;
+        if (cardAmount.amount() > 0) {
+            paymentId = paymentService.beginApproval(orderNo, paymentKey, cardAmount);
+        }
+        orderRepository.saveAndFlush(order);
+        return new Reservation(paymentId);
+    }
+
+    /**
+     * Phase 3 — 확정/보상(짧은 tx). PG 결과({@code outcome})를 결제에 반영하고 주문을 확정하거나 보상한다.
+     * PG 결과가 없으면(전액 포인트) 승인 성공으로 간주한다. 재고 차감은 승인 성공 시점에 한다(ADR-003).
+     *
+     * <p>이 메서드는 <b>재진입 가능</b>하다 — 멈춘 사가 복구가 PG 조회 결과로 이 메서드를 재실행해도
+     * {@code applyResult}가 멱등(IN_PROGRESS일 때만 전이)이라 안전하다.
+     */
+    @Transactional
+    public CheckoutResult settle(String orderNo, Long paymentId, Money cardAmount,
+                                 long pointAmount, ApprovalOutcome outcome) {
+        Order order = orderRepository.findByOrderNo(orderNo)
+                .orElseThrow(() -> OrderException.orderNotFound(orderNo));
+
+        ConfirmResult result;
+        boolean cardApproved;
+        if (paymentId != null) {
+            result = paymentService.applyResult(paymentId, outcome); // 결제 확정(멱등), 이 tx에 합류
+            cardApproved = result.isApproved();
+        } else {
+            result = null; // 전액 포인트 — PG 결과 없음
+            cardApproved = true;
+        }
+
+        if (cardApproved) {
+            // 승인 성공 시점 재고 차감(ADR-003). tryDeduct(예외 없는 boolean) — 부족해도 tx는 깨끗이 커밋하고 보상.
+            List<OrderItem> deducted = new ArrayList<>();
+            boolean allDeducted = true;
+            for (OrderItem item : order.getItems()) {
+                if (stockDeductionService.tryDeduct(item.getProductId(), item.getQuantity())) {
+                    deducted.add(item);
+                } else {
+                    allDeducted = false;
+                    break;
+                }
+            }
+            if (allDeducted) {
+                order.markPaid();
+            } else {
+                // 승인 후 재고 부족 → 자동 보상(망취소). 예외를 던지지 않아 tx는 깨끗이 커밋된다.
+                for (OrderItem d : deducted) {
+                    stockDeductionService.restore(d.getProductId(), d.getQuantity());
+                }
+                if (pointAmount > 0) {
+                    pointService.restore(order.getUserId(), pointAmount, orderNo);
+                }
+                if (cardAmount.amount() > 0) {
+                    compensationService.enqueueNetworkCancel(orderNo, cardAmount.amount(),
+                            "재고 부족: 카드 승인 후 자동 망취소");
+                }
+                order.markFailed();
+                orderRepository.saveAndFlush(order);
+                return new CheckoutResult(orderNo, order.getStatus(),
+                        (result != null ? result.status() : PaymentStatus.DONE),
+                        "재고가 부족해 결제를 취소 처리했습니다. 승인된 카드는 자동으로 취소됩니다.");
+            }
+        } else if (result.isUnknown()) {
+            // 미확정: 선점 포인트 복원, 주문은 PAYMENT_IN_PROGRESS 유지(복구 배치가 확정).
+            if (pointAmount > 0) {
+                pointService.restore(order.getUserId(), pointAmount, orderNo);
+            }
+        } else {
+            // 명시적 거절: 선점 포인트 복원, 재시도 위해 주문 PENDING_PAYMENT로 복귀.
+            if (pointAmount > 0) {
+                pointService.restore(order.getUserId(), pointAmount, orderNo);
+            }
+            order.revertToPending();
+        }
+
+        orderRepository.saveAndFlush(order);
+        PaymentStatus paymentStatus = (result != null) ? result.status() : PaymentStatus.DONE;
+        String message = (result != null) ? result.message() : "포인트 전액 결제 완료";
+        return new CheckoutResult(orderNo, order.getStatus(), paymentStatus, message);
+    }
+}
