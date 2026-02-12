@@ -25,6 +25,9 @@ import java.util.List;
 @RequiredArgsConstructor
 class CheckoutTx {
 
+    /** 적립률(정책) — 실결제액(카드+월렛)의 %. 쿠폰/등급별 차등 등은 이후 정책으로 확장 가능. */
+    private static final long EARN_RATE_PERCENT = 1;
+
     private final PaymentService paymentService;
     private final OrderRepository orderRepository;
     private final StockDeductionService stockDeductionService;
@@ -117,6 +120,10 @@ class CheckoutTx {
             }
             if (allDeducted) {
                 order.markPaid();
+                // 실결제액(카드+월렛, 포인트 사용분 제외) 기준 적립 — 포인트로 포인트를 버는 이중적립 방지.
+                // earn은 orderNo 멱등이라 복구가 이 성공분기를 재실행해도 이중적립되지 않는다.
+                long paidByMoney = cardAmount.amount() + walletAmount;
+                pointService.earn(order.getUserId(), paidByMoney * EARN_RATE_PERCENT / 100, orderNo);
             } else {
                 // 승인 후 재고 부족 → 자동 보상(망취소). 예외를 던지지 않아 tx는 깨끗이 커밋된다.
                 for (OrderItem d : deducted) {

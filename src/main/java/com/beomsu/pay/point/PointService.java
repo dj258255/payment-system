@@ -90,11 +90,38 @@ public class PointService {
         return Math.max(0, used - refunded);
     }
 
+    /**
+     * 포인트 적립 — 결제 완료 시 실결제액 기준으로 적립한다. 같은 주문의 EARN 이력이 이미 있으면
+     * 멱등하게 skip한다(사가 성공분기·복구 재실행에도 이중적립 방지). amount==0이면 무시.
+     */
+    public void earn(long userId, long amount, String orderNo) {
+        if (amount < 0) {
+            throw new PointException("INVALID_AMOUNT", "포인트 금액은 음수일 수 없습니다: " + amount);
+        }
+        if (amount == 0) {
+            return;
+        }
+        if (historyRepository.existsByOrderNoAndType(orderNo, PointHistoryType.EARN)) {
+            return; // 멱등: 이미 적립함
+        }
+        PointAccount account = accountRepository.findById(userId)
+                .orElseGet(() -> PointAccount.of(userId, 0));
+        account.earn(amount);
+        accountRepository.save(account);
+        historyRepository.save(PointHistory.of(userId, PointHistoryType.EARN, amount, orderNo));
+    }
+
     /** 잔액 조회 — 계정이 없으면 0. */
     @Transactional(readOnly = true)
     public long balance(long userId) {
         return accountRepository.findById(userId)
                 .map(PointAccount::getBalance)
                 .orElse(0L);
+    }
+
+    /** 잔액 + 최근 이력(적립·사용·복원·환불) 조회 — 사용자 포인트 화면용. */
+    @Transactional(readOnly = true)
+    public PointView myPoints(long userId) {
+        return PointView.of(balance(userId), historyRepository.findTop20ByUserIdOrderByIdDesc(userId));
     }
 }
