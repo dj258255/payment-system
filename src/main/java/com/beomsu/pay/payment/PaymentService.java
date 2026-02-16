@@ -116,7 +116,11 @@ public class PaymentService {
             return Optional.empty(); // 카드 결제 없음(전액 포인트)
         }
         Payment payment = found.get();
-        if (payment.getStatus() == PaymentStatus.IN_PROGRESS) {
+        // IN_PROGRESS(예약 후 크래시)뿐 아니라 UNKNOWN(타임아웃 미확정)도 PG 조회로 재확정한다 —
+        // PaymentRecoveryService.resolveByPaymentKey와 같은 계열. UNKNOWN을 재조회하지 않으면 타임아웃
+        // 체크아웃이 이 배치 단독으로 영구 미완결된다.
+        if (payment.getStatus() == PaymentStatus.IN_PROGRESS
+                || payment.getStatus() == PaymentStatus.UNKNOWN) {
             PgQueryResult pg = pgClient.query(payment.getPaymentKey());
             switch (pg.status()) {
                 case APPROVED -> {
@@ -125,12 +129,14 @@ public class PaymentService {
                     events.publishEvent(new PaymentConfirmedEvent(
                             payment.getOrderNo(), payment.getId(), payment.getAmount(), payment.getApprovedAt()));
                 }
+                // NOT_FOUND(승인 미완료)·CANCELED(PG에서 취소됨) 모두 "성공한 결제 아님" → ABORTED로 확정한다.
+                // IN_PROGRESS→CANCELED는 전이표상 불법이므로 abortByRecovery로 통일한다(IN_PROGRESS·UNKNOWN 모두 합법).
                 case NOT_FOUND -> {
                     payment.abortByRecovery("복구: PG에 결제 정보 없음(승인 미완료)");
                     paymentRepository.saveAndFlush(payment);
                 }
                 case CANCELED -> {
-                    payment.networkCancel("복구: PG에서 이미 취소됨");
+                    payment.abortByRecovery("복구: PG에서 취소됨(승인 미완료)");
                     paymentRepository.saveAndFlush(payment);
                 }
             }
