@@ -78,17 +78,75 @@ public class SubscriptionService {
                 List.of(SubscriptionStatus.ACTIVE, SubscriptionStatus.IN_GRACE_PERIOD), today);
 
         for (Subscription subscription : targets) {
-            BillingResult result = billingGateway.charge(subscription.getBillingKey(), subscription.getPlanAmount());
-            switch (result) {
-                case SUCCESS -> handleSuccess(subscription);
-                case SOFT_DECLINE -> handleSoftDecline(subscription, today);
-                case HARD_DECLINE -> handleHardDecline(subscription);
-            }
-            // dunning 상태 전이(renew/recover/enterGrace/hold)를 saveAndFlush로 명시 영속한다. dirty-check
-            // 자동 flush는 readOnly 조회로 세션 FlushMode가 MANUAL이거나 detached 엔티티인 경우 신뢰할 수 없어(pay-26 교훈) 확정을 강제한다.
-            subscriptionRepository.saveAndFlush(subscription);
+            bill(subscription, today);
         }
         return targets.size();
+    }
+
+    /** 구독 1건 청구 — 배치와 데모 트리거가 공유한다. dunning 상태 전이를 명시 saveAndFlush로 확정. */
+    private void bill(Subscription subscription, LocalDate today) {
+        BillingResult result = billingGateway.charge(subscription.getBillingKey(), subscription.getPlanAmount());
+        switch (result) {
+            case SUCCESS -> handleSuccess(subscription);
+            case SOFT_DECLINE -> handleSoftDecline(subscription, today);
+            case HARD_DECLINE -> handleHardDecline(subscription);
+        }
+        // dirty-check 자동 flush는 readOnly 조회로 세션 FlushMode가 MANUAL이거나 detached 엔티티인 경우
+        // 신뢰할 수 없어(pay-26 교훈) 전이를 saveAndFlush로 확정한다.
+        subscriptionRepository.saveAndFlush(subscription);
+    }
+
+    // --- 외부 표면(사용자 API) ---
+
+    /** 구독 개시(컨트롤러용) — 오늘 시작으로 구독을 만들고 뷰를 반환한다(엔티티 미노출). */
+    @Transactional
+    public SubscriptionView createSubscription(long userId, String billingKey, long planAmount) {
+        return SubscriptionView.from(subscribe(userId, billingKey, planAmount, LocalDate.now()));
+    }
+
+    /** 내 구독 목록. */
+    @Transactional(readOnly = true)
+    public List<SubscriptionView> subscriptionsOf(long userId) {
+        return subscriptionRepository.findByUserIdOrderByIdDesc(userId).stream()
+                .map(SubscriptionView::from).toList();
+    }
+
+    /** 구독 상세 + 청구 이력. 소유자만 조회 가능(IDOR 방지). */
+    @Transactional(readOnly = true)
+    public SubscriptionDetailView detail(Long subscriptionId, long userId) {
+        Subscription s = requireOwned(subscriptionId, userId);
+        return SubscriptionDetailView.of(s, dunningAttemptRepository.findBySubscriptionIdOrderByIdAsc(subscriptionId));
+    }
+
+    /** 구독 해지(ACTIVE/유예/정지 → CANCELED). 소유자만. */
+    @Transactional
+    public SubscriptionView cancel(Long subscriptionId, long userId) {
+        Subscription s = requireOwned(subscriptionId, userId);
+        s.cancel(); // 도메인 가드: CANCELED로의 허용 전이만
+        subscriptionRepository.saveAndFlush(s);
+        return SubscriptionView.from(s);
+    }
+
+    /** 데모/운영 트리거 — 이 구독을 지금 즉시 청구한다(날짜 무관). 소유자만. */
+    @Transactional
+    public SubscriptionView billNow(Long subscriptionId, long userId) {
+        Subscription s = requireOwned(subscriptionId, userId);
+        if (s.getStatus() != SubscriptionStatus.ACTIVE
+                && s.getStatus() != SubscriptionStatus.IN_GRACE_PERIOD) {
+            throw SubscriptionException.notActive(s.getStatus());
+        }
+        bill(s, LocalDate.now());
+        return SubscriptionView.from(s);
+    }
+
+    /** 소유권 검증 — 남의 구독 조회·변경(IDOR)을 막는다. 무엇보다 먼저. */
+    private Subscription requireOwned(Long subscriptionId, long userId) {
+        Subscription s = subscriptionRepository.findById(subscriptionId)
+                .orElseThrow(() -> SubscriptionException.notFound(subscriptionId));
+        if (s.getUserId() != userId) {
+            throw new SubscriptionException("SUBSCRIPTION_FORBIDDEN", "본인의 구독만 접근할 수 있습니다.");
+        }
+        return s;
     }
 
     private void handleSuccess(Subscription subscription) {

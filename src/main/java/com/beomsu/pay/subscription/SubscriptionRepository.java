@@ -14,4 +14,7 @@ interface SubscriptionRepository extends JpaRepository<Subscription, Long> {
     /** 배치 청구 대상 조회 — ACTIVE/IN_GRACE_PERIOD 등 여러 상태를 한 번에. */
     List<Subscription> findByStatusInAndNextBillingDateLessThanEqual(
             Collection<SubscriptionStatus> statuses, LocalDate date);
+
+    /** 내 구독 목록 — 사용자 소유 구독을 최신순으로. */
+    List<Subscription> findByUserIdOrderByIdDesc(long userId);
 }
