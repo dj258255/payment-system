@@ -159,7 +159,10 @@ public class SecurityConfig {
             } catch (UsernameNotFoundException notDemo) {
                 // (b) 실 회원 — 이메일로 조회. username(=UserDetails.getUsername())을 회원의 숫자 id로
                 // 만들어, DaoAuthenticationProvider가 이 값을 principal 이름(=JWT subject)으로 쓰게 한다.
-                Member member = memberRepository.findByEmail(username)
+                // 가입 시 이메일을 trim().toLowerCase()로 정규화해 저장하므로, 로그인 조회도 같은 정규화를
+                // 적용해야 대소문자·공백이 섞인 입력으로도 로그인된다.
+                String normalizedEmail = username == null ? null : username.trim().toLowerCase();
+                Member member = memberRepository.findByEmail(normalizedEmail)
                         .orElseThrow(() -> new UsernameNotFoundException("사용자를 찾을 수 없습니다: " + username));
                 return User.withUsername(String.valueOf(member.getId()))
                         .password(member.getPasswordHash())
