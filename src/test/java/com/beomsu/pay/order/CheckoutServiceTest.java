@@ -5,6 +5,7 @@ import com.beomsu.pay.payment.ConfirmResult;
 import com.beomsu.pay.payment.PaymentService;
 import com.beomsu.pay.payment.PaymentStatus;
 import com.beomsu.pay.point.PointService;
+import com.beomsu.pay.wallet.WalletService;
 import com.beomsu.pay.queue.QueueService;
 import com.beomsu.pay.shared.Money;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +35,7 @@ class CheckoutServiceTest {
     private StockDeductionService stockDeductionService;
     private ProductRepository productRepository;
     private PointService pointService;
+    private WalletService walletService;
     private CompensationService compensationService;
     private QueueService queueService;
     private CheckoutService service;
@@ -45,6 +47,7 @@ class CheckoutServiceTest {
         stockDeductionService = mock(StockDeductionService.class);
         productRepository = mock(ProductRepository.class);
         pointService = mock(PointService.class);
+        walletService = mock(WalletService.class);
         compensationService = mock(CompensationService.class);
         queueService = mock(QueueService.class);
         when(stockDeductionService.tryDeduct(anyLong(), anyInt())).thenReturn(true);
@@ -53,7 +56,7 @@ class CheckoutServiceTest {
 
     private CheckoutService serviceWithGate(List<Long> gateProductIds) {
         CheckoutTx checkoutTx = new CheckoutTx(paymentService, orderRepository,
-                stockDeductionService, pointService, compensationService);
+                stockDeductionService, pointService, walletService, compensationService);
         return new CheckoutService(paymentService, checkoutTx, orderRepository,
                 productRepository, queueService, gateProductIds, GATE_EVENT);
     }
@@ -97,7 +100,7 @@ class CheckoutServiceTest {
         Order order = orderOf(100L, 2);
         cardApproved();
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(stockDeductionService).tryDeduct(100L, 2);
@@ -113,7 +116,7 @@ class CheckoutServiceTest {
         Order order = orderOf(100L, 2);
         cardApproved();
 
-        service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
+        service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 0, 1L);
 
         // 예약(beginApproval) → PG(pgApprove, tx 밖) → 확정(applyResult) 순으로 배선됨.
         verify(paymentService).beginApproval(eq(order.getOrderNo()), eq("pk-1"), eq(Money.of(20_000)));
@@ -126,7 +129,7 @@ class CheckoutServiceTest {
     void confirmAmountMismatchDoesNotCallPayment() {
         Order order = orderOf(100L, 2); // total 20,000
 
-        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(19_000), 0, 1L))
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(19_000), 0, 0, 1L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
 
@@ -141,7 +144,7 @@ class CheckoutServiceTest {
         Order order = orderOf(100L, 2);
         cardResolvesTo(PaymentStatus.UNKNOWN, "확인 중");
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_IN_PROGRESS);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.UNKNOWN);
@@ -155,7 +158,7 @@ class CheckoutServiceTest {
         cardResolvesTo(PaymentStatus.UNKNOWN, "확인 중");
 
         // 카드 14,000 + 포인트 6,000
-        service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 1L);
+        service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_IN_PROGRESS);
         verify(pointService).use(1L, 6_000, order.getOrderNo());              // 예약은 함
@@ -170,7 +173,7 @@ class CheckoutServiceTest {
         Order order = orderOf(100L, 2);
         cardResolvesTo(PaymentStatus.ABORTED, "잔액부족");
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.ABORTED);
@@ -184,7 +187,7 @@ class CheckoutServiceTest {
         cardApproved();
         when(stockDeductionService.tryDeduct(100L, 3)).thenReturn(false);
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(30_000), 0, 1L);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(30_000), 0, 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
         verify(orderRepository, atLeastOnce()).saveAndFlush(order);
@@ -202,7 +205,7 @@ class CheckoutServiceTest {
         cardApproved();
         when(stockDeductionService.tryDeduct(100L, 2)).thenReturn(false);
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 1L);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
         verify(pointService).restore(1L, 6_000, order.getOrderNo());
@@ -222,7 +225,7 @@ class CheckoutServiceTest {
         when(stockDeductionService.tryDeduct(10L, 1)).thenReturn(true);
         when(stockDeductionService.tryDeduct(20L, 1)).thenReturn(false);
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
         verify(stockDeductionService).restore(10L, 1);
@@ -237,7 +240,7 @@ class CheckoutServiceTest {
     void confirmOrderNotFound() {
         when(orderRepository.findByOrderNo("missing")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.confirm("missing", "pk-1", Money.of(20_000), 0, 1L))
+        assertThatThrownBy(() -> service.confirm("missing", "pk-1", Money.of(20_000), 0, 0, 1L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("ORDER_NOT_FOUND"));
     }
@@ -250,7 +253,7 @@ class CheckoutServiceTest {
         Order order = orderOf(100L, 2); // total 20,000
         cardApproved();
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 1L);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(pointService).use(1L, 6_000, order.getOrderNo());          // 포인트 선점(카드보다 먼저)
@@ -266,7 +269,7 @@ class CheckoutServiceTest {
         Order order = orderOf(100L, 2); // total 20,000
         cardResolvesTo(PaymentStatus.ABORTED, "잔액부족");
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 1L);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 0, 1L);
 
         verify(pointService).use(1L, 6_000, order.getOrderNo());
         verify(pointService).restore(1L, 6_000, order.getOrderNo());       // 보상 트랜잭션
@@ -280,7 +283,7 @@ class CheckoutServiceTest {
     void compositePaymentAmountMismatch() {
         Order order = orderOf(100L, 2); // total 20,000
 
-        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 5_000, 1L))
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 5_000, 0, 1L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
 
@@ -289,12 +292,73 @@ class CheckoutServiceTest {
         verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
     }
 
+    // --- 월렛 복합결제(카드+월렛) — 월렛은 커밋되는 부수효과라 실패 시 '명시적 환불'로 보상 ---
+
+    @Test
+    @DisplayName("카드+월렛 성공: 월렛 차감(예약) + 카드 승인 + PAID, 환불 없음")
+    void cardPlusWalletSuccess() {
+        Order order = orderOf(100L, 2); // total 20,000
+        cardApproved();
+
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 0, 6_000, 1L);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(walletService).use(1L, 6_000, order.getOrderNo());              // 월렛 선점(예약)
+        verify(paymentService).pgApprove(eq(order.getOrderNo()), eq("pk-1"), eq(Money.of(14_000)));
+        verify(walletService, never()).refund(anyLong(), anyLong(), anyString());
+        assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
+    }
+
+    @Test
+    @DisplayName("카드+월렛 카드 실패(ABORTED): 선점 월렛을 환불(보상)하고 PENDING_PAYMENT로 복귀")
+    void cardPlusWalletCardFailureRefundsWallet() {
+        Order order = orderOf(100L, 2); // total 20,000
+        cardResolvesTo(PaymentStatus.ABORTED, "잔액부족");
+
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 0, 6_000, 1L);
+
+        verify(walletService).use(1L, 6_000, order.getOrderNo());
+        verify(walletService).refund(1L, 6_000, order.getOrderNo());           // orderNo 멱등 보상
+        verify(stockDeductionService, never()).tryDeduct(anyLong(), anyInt());
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.ABORTED);
+    }
+
+    @Test
+    @DisplayName("카드+월렛 승인 후 재고 부족: 선점 월렛 환불 + 망취소 + 주문 FAILED")
+    void cardPlusWalletOutOfStockRefundsWallet() {
+        Order order = orderOf(100L, 2); // total 20,000
+        cardApproved();
+        when(stockDeductionService.tryDeduct(100L, 2)).thenReturn(false);
+
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 0, 6_000, 1L);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
+        verify(walletService).refund(1L, 6_000, order.getOrderNo());
+        verify(compensationService).enqueueNetworkCancel(order.getOrderNo(), 14_000L,
+                "재고 부족: 카드 승인 후 자동 망취소");
+        assertThat(result.orderStatus()).isEqualTo(OrderStatus.FAILED);
+    }
+
+    @Test
+    @DisplayName("복합결제 금액 검증: 카드+포인트+월렛 합이 주문금액과 다르면 AMOUNT_MISMATCH")
+    void cardPlusWalletAmountMismatch() {
+        Order order = orderOf(100L, 2); // total 20,000
+
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 0, 5_000, 1L))
+                .isInstanceOf(OrderException.class)
+                .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
+
+        verify(walletService, never()).use(anyLong(), anyLong(), anyString());
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
+    }
+
     @Test
     @DisplayName("전액 포인트 결제(cardAmount=0): 카드 호출 없이 재고 차감 + PAID")
     void fullPointPayment() {
         Order order = orderOf(100L, 2); // total 20,000
 
-        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(0), 20_000, 1L);
+        CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(0), 20_000, 0, 1L);
 
         verify(pointService).use(1L, 20_000, order.getOrderNo());
         verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
@@ -309,7 +373,7 @@ class CheckoutServiceTest {
     void confirmRejectsNonOwner() {
         Order order = orderOf(100L, 2); // 주인은 userId 1
 
-        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 2L))
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 0, 2L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("ORDER_FORBIDDEN"));
 
@@ -324,7 +388,7 @@ class CheckoutServiceTest {
     void confirmRejectsNegativeAmounts() {
         Order order = orderOf(100L, 2);
 
-        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(25_000), -5_000, 1L))
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(25_000), -5_000, 0, 1L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("INVALID_REQUEST"));
         verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));

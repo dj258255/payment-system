@@ -2,6 +2,7 @@ package com.beomsu.pay.order;
 
 import com.beomsu.pay.payment.ApprovalOutcome;
 import com.beomsu.pay.payment.PaymentService;
+import com.beomsu.pay.wallet.WalletService;
 import com.beomsu.pay.payment.StuckPaymentInfo;
 import com.beomsu.pay.shared.Money;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +22,7 @@ class CheckoutRecoveryServiceTest {
 
     private OrderRepository orderRepository;
     private PaymentService paymentService;
+    private WalletService walletService;
     private CheckoutTx checkoutTx;
     private CheckoutRecoveryService service;
 
@@ -28,8 +30,9 @@ class CheckoutRecoveryServiceTest {
     void setUp() {
         orderRepository = mock(OrderRepository.class);
         paymentService = mock(PaymentService.class);
+        walletService = mock(WalletService.class);
         checkoutTx = mock(CheckoutTx.class);
-        service = new CheckoutRecoveryService(orderRepository, paymentService, checkoutTx);
+        service = new CheckoutRecoveryService(orderRepository, paymentService, walletService, checkoutTx);
         ReflectionTestUtils.setField(service, "stuckAfterMinutes", 10L);
     }
 
@@ -51,7 +54,7 @@ class CheckoutRecoveryServiceTest {
         int recovered = service.recoverStuckCheckouts();
 
         assertThat(recovered).isEqualTo(1);
-        verify(checkoutTx).settle(eq(order.getOrderNo()), eq(1L), eq(Money.of(14_000)), eq(6_000L),
+        verify(checkoutTx).settle(eq(order.getOrderNo()), eq(1L), eq(Money.of(14_000)), eq(6_000L), eq(0L),
                 any(ApprovalOutcome.class));
     }
 
@@ -66,7 +69,7 @@ class CheckoutRecoveryServiceTest {
         service.recoverStuckCheckouts();
 
         // 전액 포인트: cardAmount 0, pointAmount 20,000, outcome null
-        verify(checkoutTx).settle(eq(order.getOrderNo()), isNull(), eq(Money.of(0)), eq(20_000L), isNull());
+        verify(checkoutTx).settle(eq(order.getOrderNo()), isNull(), eq(Money.of(0)), eq(20_000L), eq(0L), isNull());
     }
 
     @Test
@@ -83,6 +86,6 @@ class CheckoutRecoveryServiceTest {
 
         // bad는 실패, good은 성공 → 1건 복구, good에 대해 settle 호출됨
         assertThat(recovered).isEqualTo(1);
-        verify(checkoutTx).settle(eq(good.getOrderNo()), isNull(), any(Money.class), anyLong(), isNull());
+        verify(checkoutTx).settle(eq(good.getOrderNo()), isNull(), any(Money.class), anyLong(), anyLong(), isNull());
     }
 }

@@ -4,6 +4,7 @@ import com.beomsu.pay.payment.ApprovalOutcome;
 import com.beomsu.pay.payment.PaymentService;
 import com.beomsu.pay.payment.StuckPaymentInfo;
 import com.beomsu.pay.shared.Money;
+import com.beomsu.pay.wallet.WalletService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +35,7 @@ public class CheckoutRecoveryService {
 
     private final OrderRepository orderRepository;
     private final PaymentService paymentService;
+    private final WalletService walletService;
     private final CheckoutTx checkoutTx;
 
     /** 이 시간 이상 PAYMENT_IN_PROGRESS로 머문 주문만 복구 대상 — 진행 중인 정상 체크아웃과 겹치지 않게. */
@@ -52,12 +54,16 @@ public class CheckoutRecoveryService {
                 // 카드 결제를 PG 조회로 확정(없으면 전액 포인트 → empty).
                 Optional<StuckPaymentInfo> info = paymentService.resolveStuckPayment(order.getOrderNo());
                 long cardAmount = info.map(StuckPaymentInfo::amount).orElse(0L);
-                // 포인트분은 금액 검증 불변식(카드+포인트=총액)에서 도출한다.
-                long pointAmount = order.getTotalAmount() - cardAmount;
+                // 월렛 예약분은 append-only 월렛 원장(orderNo 키)에서 역산한다 — 원 요청의 결제수단 분할이
+                // 주문에 저장돼 있지 않으므로, 커밋된 USE 이력이 진실의 원천이다.
+                long walletAmount = walletService.reservedAmountForOrder(order.getOrderNo());
+                // 포인트분은 금액 검증 불변식(카드+포인트+월렛=총액)에서 도출한다.
+                long pointAmount = order.getTotalAmount() - cardAmount - walletAmount;
                 ApprovalOutcome outcome = info.map(StuckPaymentInfo::outcome).orElse(null);
                 Long paymentId = info.map(StuckPaymentInfo::paymentId).orElse(null);
 
-                checkoutTx.settle(order.getOrderNo(), paymentId, Money.of(cardAmount), pointAmount, outcome);
+                checkoutTx.settle(order.getOrderNo(), paymentId, Money.of(cardAmount),
+                        pointAmount, walletAmount, outcome);
                 recovered++;
             } catch (Exception e) {
                 // 한 건 실패가 배치를 멈추지 않게 격리 — 다음 주기에 재시도.

@@ -38,18 +38,26 @@ public class WalletTransaction {
     @Column(nullable = false)
     private long balanceAfter;
 
+    /**
+     * 결제 차감(USE)·환불(REFUND)을 주문 단위로 멱등화하는 키. 충전(CHARGE)은 주문과 무관해 null이다.
+     * (order_no, type)에 유니크 인덱스가 걸려 있어 같은 주문의 차감/환불은 1건만 남는다(사가 재진입 대비).
+     */
+    @Column(length = 64)
+    private String orderNo;
+
     @Column(nullable = false)
     private Instant createdAt;
 
-    private WalletTransaction(long userId, WalletTransactionType type, long amount, long balanceAfter) {
+    private WalletTransaction(long userId, WalletTransactionType type, long amount, long balanceAfter, String orderNo) {
         this.userId = userId;
         this.type = type;
         this.amount = amount;
         this.balanceAfter = balanceAfter;
+        this.orderNo = orderNo;
         this.createdAt = Instant.now();
     }
 
-    public static WalletTransaction of(long userId, WalletTransactionType type, long amount, long balanceAfter) {
-        return new WalletTransaction(userId, type, amount, balanceAfter);
+    public static WalletTransaction of(long userId, WalletTransactionType type, long amount, long balanceAfter, String orderNo) {
+        return new WalletTransaction(userId, type, amount, balanceAfter, orderNo);
     }
 }
