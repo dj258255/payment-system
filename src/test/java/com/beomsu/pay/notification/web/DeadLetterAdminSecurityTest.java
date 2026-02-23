@@ -1,6 +1,7 @@
 package com.beomsu.pay.notification.web;
 
 import com.beomsu.pay.RateLimiter;
+import com.beomsu.pay.member.MemberRepository;
 import com.beomsu.pay.SecurityConfig;
 import com.beomsu.pay.notification.NotificationAdminService;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +45,10 @@ class DeadLetterAdminSecurityTest {
     // (어드민 경로는 rate limit 대상이 아니라 목의 기본 동작으로 충분하다)
     @MockitoBean
     RateLimiter rateLimiter;
+
+    // SecurityConfig의 복합 UserDetailsService가 회원 조회에 쓰는 협력자 — JPA를 안 띄우는 웹 슬라이스라 목.
+    @MockitoBean
+    MemberRepository memberRepository;
 
     @Test
     @DisplayName("인증 없이 DLQ 조회 → 401 Unauthorized")

@@ -1,5 +1,6 @@
 package com.beomsu.pay;
 
+import com.beomsu.pay.member.MemberRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +48,10 @@ class AuthControllerTest {
     // (auth 경로는 rate limit 대상이 아니라 목의 기본 동작으로 충분하다)
     @MockitoBean
     RateLimiter rateLimiter;
+
+    // SecurityConfig의 복합 UserDetailsService가 회원 조회에 쓰는 협력자 — JPA를 안 띄우는 웹 슬라이스라 목.
+    @MockitoBean
+    MemberRepository memberRepository;
 
     @Test
     @DisplayName("올바른 자격증명 → 200 + token(access)/refreshToken 둘 다")
