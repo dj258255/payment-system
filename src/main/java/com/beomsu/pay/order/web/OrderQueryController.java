@@ -2,6 +2,7 @@ package com.beomsu.pay.order.web;
 
 import com.beomsu.pay.order.OrderDetailView;
 import com.beomsu.pay.order.OrderQueryService;
+import com.beomsu.pay.order.OrderSummaryView;
 import com.beomsu.pay.payment.PaymentDetailView;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,6 +10,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.security.Principal;
+import java.util.List;
 
 /**
  * 주문·결제 조회 REST 컨트롤러 — 승인 미확정(202 UNKNOWN)을 폴링으로 확정 확인하는 진입점.
@@ -24,6 +26,12 @@ public class OrderQueryController {
 
     public OrderQueryController(OrderQueryService orderQueryService) {
         this.orderQueryService = orderQueryService;
+    }
+
+    @GetMapping("/api/v1/orders")
+    public ResponseEntity<List<OrderSummaryView>> myOrders(Principal principal) {
+        long userId = Long.parseLong(principal.getName());
+        return ResponseEntity.ok(orderQueryService.myOrders(userId));
     }
 
     @GetMapping("/api/v1/orders/{orderNo}")

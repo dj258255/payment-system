@@ -160,6 +160,17 @@
           </div>
           <div class="adminlist" id="subs"></div>
         </div>
+        <div class="card">
+          <h2>선불 월렛 (충전 · 잔액 · 결제수단)</h2>
+          <div class="sub">충전(전금법 기명 한도) → 잔액·이력 조회. 체크아웃에서 카드·포인트와 함께 복합결제 수단으로 쓴다(카드+포인트+월렛 == 주문총액). 결제 차감은 orderNo 멱등, 실패 시 명시적 환불로 보상. 본인 월렛만 접근. 로그인 후 사용.</div>
+          <div class="row">
+            <label>충전액</label><input id="wCharge" type="number" value="50000" style="width:90px">
+            <button class="small" onclick="walletCharge()">충전</button>
+            <button class="small ghost" onclick="walletView()">잔액·이력</button>
+            <span class="badge b-dim" id="wBal">잔액 —</span>
+          </div>
+          <div class="adminlist" id="wHist"></div>
+        </div>
       </div>
 
       <div>
@@ -388,6 +399,18 @@ async function subCreate(){
 async function subList(){ const r=await api('GET','/api/v1/subscriptions'); renderList('subs',r.data); }
 async function subBillNow(){ await api('POST','/api/v1/subscriptions/'+$('subId').value+'/bill-now'); subList(); }
 async function subCancel(){ await api('POST','/api/v1/subscriptions/'+$('subId').value+'/cancel'); subList(); }
+// 선불 월렛
+function renderWallet(w){
+  if(!w) return;
+  $('wBal').textContent='잔액 '+fmt(w.balance)+'원';
+  const el=$('wHist'); const rows=w.history||[];
+  if(!rows.length){el.innerHTML='<div class="hint">(거래 이력 없음)</div>';return}
+  const cols=['type','amount','balanceAfter'];
+  el.innerHTML='<table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+
+    rows.map(row=>'<tr>'+cols.map(c=>'<td>'+fmt(row[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+}
+async function walletCharge(){ const r=await api('POST','/api/v1/wallet/charge',{amount:+$('wCharge').value}); if(r.ok) walletView(); }
+async function walletView(){ const r=await api('GET','/api/v1/wallet'); renderWallet(r.data); }
 // 정산: 목록은 Page → content 배열을 정산 전용 컬럼으로 렌더(수수료·VAT·지급액·지급예정일까지 보이게)
 function renderSettle(data){
   const rows=Array.isArray(data)?data:(data?[data]:[]);

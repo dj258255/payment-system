@@ -45,6 +45,16 @@ public class OrderQueryService {
     }
 
     /**
+     * 내 주문 목록 — 최신순 최근 50건. userId는 인증 principal에서 온 값이라, 다른 사용자의 주문은
+     * 애초에 조회 대상이 아니다(쿼리 자체가 본인 것만 가져옴 — IDOR 방지의 가장 단순한 형태).
+     */
+    public List<OrderSummaryView> myOrders(long authenticatedUserId) {
+        return orderRepository.findTop50ByUserIdOrderByIdDesc(authenticatedUserId).stream()
+                .map(OrderSummaryView::from)
+                .toList();
+    }
+
+    /**
      * 결제 상세 조회. 결제→주문 매핑을 payment에서 받아 그 주문의 소유권을 검증한 뒤에만 상세를 반환한다
      * (남의 결제 조회 차단). 결제가 없으면 404, 소유권 위반이면 403.
      */
