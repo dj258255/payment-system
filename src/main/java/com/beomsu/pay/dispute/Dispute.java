@@ -27,6 +27,14 @@ public class Dispute {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * 낙관적 락 — 동시 승패 확정(WON/LOST) 레이스를 막는다. 두 어드민 요청이 같은 OPEN 분쟁을 읽어
+     * 각각 WON/LOST로 커밋하려 하면, 나중 커밋이 버전 충돌로 실패한다. 이게 없으면 최종 상태는 WON인데
+     * 이미 발행된 LOST 이벤트로 승소 분쟁에 역분개가 찍힐 수 있다.
+     */
+    @Version
+    private long version;
+
     /** 외부(PG/카드사) 차지백 식별자 — 멱등키. */
     @Column(nullable = false, length = 200)
     private String chargebackId;
@@ -77,9 +85,12 @@ public class Dispute {
         this.createdAt = Instant.now();
     }
 
-    /** 차지백 수신으로 분쟁을 개시한다 — OPEN 상태로 생성. */
+    /** 차지백 수신으로 분쟁을 개시한다 — OPEN 상태로 생성. 금액은 양수여야 한다(0/음수는 원장 역분개를 깨뜨림). */
     public static Dispute open(String chargebackId, String orderNo, Long paymentId, long amount,
                                String reason, Instant respondByDeadline) {
+        if (amount <= 0) {
+            throw new DisputeException("INVALID_DISPUTE_AMOUNT", "분쟁 금액은 양수여야 합니다: " + amount);
+        }
         return new Dispute(chargebackId, orderNo, paymentId, amount, reason, respondByDeadline);
     }
 

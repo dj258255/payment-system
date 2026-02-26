@@ -1,6 +1,7 @@
 package com.beomsu.pay;
 
 import com.beomsu.pay.member.MemberRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
@@ -45,13 +47,18 @@ class AuthControllerTest {
     JwtDecoder jwtDecoder;
 
     // SecurityConfig가 시큐리티 체인에 RateLimitFilter를 끼우며 요구하는 협력자 — 슬라이스에선 목.
-    // (auth 경로는 rate limit 대상이 아니라 목의 기본 동작으로 충분하다)
+    // login은 이제 IP 기준 rate limit 대상이라, 한도 통과(true)를 스텁하지 않으면 필터가 429로 막는다.
     @MockitoBean
     RateLimiter rateLimiter;
 
     // SecurityConfig의 복합 UserDetailsService가 회원 조회에 쓰는 협력자 — JPA를 안 띄우는 웹 슬라이스라 목.
     @MockitoBean
     MemberRepository memberRepository;
+
+    @BeforeEach
+    void allowRateLimit() {
+        when(rateLimiter.tryAcquire(any(), anyInt(), any())).thenReturn(true); // 한도 통과 — 필터가 막지 않게
+    }
 
     @Test
     @DisplayName("올바른 자격증명 → 200 + token(access)/refreshToken 둘 다")

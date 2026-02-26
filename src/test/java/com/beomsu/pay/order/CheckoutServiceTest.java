@@ -310,7 +310,7 @@ class CheckoutServiceTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(walletService).use(1L, 6_000, order.getOrderNo());              // 월렛 선점(예약)
         verify(paymentService).pgApprove(eq(order.getOrderNo()), eq("pk-1"), eq(Money.of(14_000)));
-        verify(walletService, never()).refund(anyLong(), anyLong(), anyString());
+        verify(walletService, never()).restore(anyLong(), anyLong(), anyString());
         // 적립은 실결제액(카드 14,000 + 월렛 6,000 = 20,000)의 1% = 200
         verify(pointService).earn(1L, 200, order.getOrderNo());
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
@@ -325,7 +325,7 @@ class CheckoutServiceTest {
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 0, 6_000, 1L);
 
         verify(walletService).use(1L, 6_000, order.getOrderNo());
-        verify(walletService).refund(1L, 6_000, order.getOrderNo());           // orderNo 멱등 보상
+        verify(walletService).restore(1L, 6_000, order.getOrderNo());          // 예약 해제(멱등)
         verify(stockDeductionService, never()).tryDeduct(anyLong(), anyInt());
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.ABORTED);
@@ -341,7 +341,7 @@ class CheckoutServiceTest {
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 0, 6_000, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
-        verify(walletService).refund(1L, 6_000, order.getOrderNo());
+        verify(walletService).restore(1L, 6_000, order.getOrderNo());
         verify(compensationService).enqueueNetworkCancel(order.getOrderNo(), 14_000L,
                 "재고 부족: 카드 승인 후 자동 망취소");
         assertThat(result.orderStatus()).isEqualTo(OrderStatus.FAILED);

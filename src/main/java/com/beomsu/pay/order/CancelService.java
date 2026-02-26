@@ -4,6 +4,7 @@ import com.beomsu.pay.order.RefundAllocator.RefundAllocation;
 import com.beomsu.pay.payment.PaymentService;
 import com.beomsu.pay.point.PointService;
 import com.beomsu.pay.shared.Money;
+import com.beomsu.pay.wallet.WalletService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +27,7 @@ public class CancelService {
     private final OrderRepository orderRepository;
     private final PaymentService paymentService;
     private final PointService pointService;
+    private final WalletService walletService;
     private final StockDeductionService stockDeductionService;
 
     /**
@@ -58,14 +60,15 @@ public class CancelService {
             throw new OrderException("INVALID_STATE_TRANSITION", "결제 완료 주문만 취소할 수 있습니다.");
         }
 
-        // 5. 잔여 결제분 조회 — 이미 환불된 몫을 제외한 포인트·카드 잔액.
+        // 5. 잔여 결제분 조회 — 이미 환불된 몫을 제외한 포인트·월렛·카드 잔액.
         long paidByPoint = pointService.refundableAmount(orderNo);
+        long paidByWallet = walletService.refundableAmount(orderNo);
         long paidByCard = paymentService.cardBalance(orderNo);
 
-        // 6. 포인트 우선 배분. 잔여 초과면 RefundAllocator가 IllegalArgumentException을 던진다.
+        // 6. 포인트 → 월렛 → 카드 순 배분. 잔여 초과면 RefundAllocator가 IllegalArgumentException을 던진다.
         RefundAllocation alloc;
         try {
-            alloc = RefundAllocator.allocate(cancelAmount, paidByPoint, paidByCard);
+            alloc = RefundAllocator.allocate(cancelAmount, paidByPoint, paidByWallet, paidByCard);
         } catch (IllegalArgumentException e) {
             throw new OrderException("CANCEL_AMOUNT_EXCEEDED", e.getMessage());
         }
@@ -75,13 +78,24 @@ public class CancelService {
             pointService.refund(order.getUserId(), alloc.fromPoint(), orderNo);
         }
 
-        // 8. 카드 취소 위임 — PaymentCanceledEvent로 현금영수증 연쇄취소·원장 역분개가 이어진다.
+        // 8. 월렛 환불(내부 자원 — 즉시·확실). orderNo 멱등이라 재호출에도 이중환불 없음.
+        if (alloc.fromWallet() > 0) {
+            walletService.refund(order.getUserId(), alloc.fromWallet(), orderNo);
+        }
+
+        // 9. 카드 취소 위임 — PaymentCanceledEvent로 현금영수증 연쇄취소·원장 역분개가 이어진다.
         if (alloc.fromCard() > 0) {
             paymentService.cancelByOrderNo(orderNo, Money.of(alloc.fromCard()), reason);
         }
 
-        // 9. 전액 취소 판정.
-        boolean fully = (cancelAmount == paidByPoint + paidByCard);
+        // 10. 적립 회수 — 실결제액(카드+월렛)으로 낸 몫을 되돌렸으니 그 몫의 적립도 회수한다(포인트 파밍 방지).
+        // 적립은 실결제액 기준이었으므로 회수도 되돌린 실결제액에 같은 율을 적용한다. 포인트로 낸 몫은 적립
+        // 대상이 아니었으니 회수 대상도 아니다.
+        long refundedMoney = alloc.fromWallet() + alloc.fromCard();
+        pointService.reverseEarn(order.getUserId(), refundedMoney * CheckoutTx.EARN_RATE_PERCENT / 100, orderNo);
+
+        // 11. 전액 취소 판정 — 포인트+월렛+카드 잔여 전액을 취소했는가.
+        boolean fully = (cancelAmount == paidByPoint + paidByWallet + paidByCard);
         if (fully) {
             // 전액 취소: 차감했던 재고를 복원하고 주문을 CANCELED로 전이한다.
             for (OrderItem item : order.getItems()) {
@@ -94,6 +108,7 @@ public class CancelService {
         }
         // 부분취소는 금액 단위라 수량 단위 재고에 매핑되지 않아 복원하지 않는다. 주문은 PAID 유지.
 
-        return new CancelResult(orderNo, order.getStatus(), alloc.fromPoint(), alloc.fromCard(), fully);
+        return new CancelResult(orderNo, order.getStatus(),
+                alloc.fromPoint(), alloc.fromWallet(), alloc.fromCard(), fully);
     }
 }

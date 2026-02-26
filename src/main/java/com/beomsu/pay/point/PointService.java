@@ -20,8 +20,9 @@ public class PointService {
     private final PointHistoryRepository historyRepository;
 
     /**
-     * 포인트 차감(결제 선점). 같은 주문의 USE 이력이 이미 있으면 멱등하게 skip한다.
-     * 롤백이 확실한 내부 자원이므로 복합결제에서 카드보다 먼저 선점된다.
+     * 포인트 차감(결제 선점). <b>활성 예약</b>(USE−RESTORE−REFUND {@literal >} 0)이 남아 있으면 멱등 skip한다
+     * — 중복요청·사가 재진입은 재차감하지 않되, 승인 실패로 예약이 RESTORE된 뒤 같은 주문을 재시도하면
+     * 다시 차감돼야 하기 때문이다(거절→재시도 이중무료 방지). 롤백이 확실한 내부 자원이라 카드보다 먼저 선점된다.
      */
     public void use(long userId, long amount, String orderNo) {
         if (amount < 0) {
@@ -30,8 +31,8 @@ public class PointService {
         if (amount == 0) {
             return;
         }
-        if (historyRepository.existsByOrderNoAndType(orderNo, PointHistoryType.USE)) {
-            return; // 멱등: 이미 차감함
+        if (refundableAmount(orderNo) > 0) {
+            return; // 활성 예약 있음 — 멱등 skip
         }
         PointAccount account = accountRepository.findById(userId)
                 .orElseGet(() -> PointAccount.of(userId, 0));
@@ -80,14 +81,15 @@ public class PointService {
     }
 
     /**
-     * 이미 환불된 몫을 제외한, 취소 시 환불 가능한 포인트. 이 주문의 USE 합에서 REFUND 합을 뺀다.
-     * 음수면(방어) 0으로 보정한다.
+     * 주문의 <b>활성 예약</b> 포인트 = USE 합 − RESTORE 합 − REFUND 합(음수 보정 0). 취소 시 환불 가능액이자
+     * {@link #use}의 멱등 판정 기준이다 — 사가 해제(RESTORE)·취소 환불(REFUND)된 몫을 빼야 재시도·취소가 정확하다.
      */
     @Transactional(readOnly = true)
     public long refundableAmount(String orderNo) {
         long used = historyRepository.sumAmountByOrderNoAndType(orderNo, PointHistoryType.USE);
+        long restored = historyRepository.sumAmountByOrderNoAndType(orderNo, PointHistoryType.RESTORE);
         long refunded = historyRepository.sumAmountByOrderNoAndType(orderNo, PointHistoryType.REFUND);
-        return Math.max(0, used - refunded);
+        return Math.max(0, used - restored - refunded);
     }
 
     /**
@@ -109,6 +111,28 @@ public class PointService {
         account.earn(amount);
         accountRepository.save(account);
         historyRepository.save(PointHistory.of(userId, PointHistoryType.EARN, amount, orderNo));
+    }
+
+    /**
+     * 적립 회수(취소 보상) — 취소로 되돌린 실결제액 몫만큼 적립을 회수한다. 아직 회수되지 않은 적립분
+     * (EARN 합 − EARN_REVERSAL 합)을 상한으로 캡해, 부분취소가 여러 번 와도 적립보다 많이 회수하지 않는다.
+     * 이미 적립분을 소진했으면 잔액이 음수가 될 수 있다(파밍 방지 — 이후 적립으로 상계).
+     */
+    public void reverseEarn(long userId, long requestedAmount, String orderNo) {
+        if (requestedAmount <= 0) {
+            return;
+        }
+        long earned = historyRepository.sumAmountByOrderNoAndType(orderNo, PointHistoryType.EARN);
+        long reversed = historyRepository.sumAmountByOrderNoAndType(orderNo, PointHistoryType.EARN_REVERSAL);
+        long clawback = Math.min(requestedAmount, earned - reversed);
+        if (clawback <= 0) {
+            return; // 회수할 적립분 없음
+        }
+        PointAccount account = accountRepository.findById(userId)
+                .orElseGet(() -> PointAccount.of(userId, 0));
+        account.reverseEarn(clawback); // 잔액 음수 허용
+        accountRepository.save(account);
+        historyRepository.save(PointHistory.of(userId, PointHistoryType.EARN_REVERSAL, clawback, orderNo));
     }
 
     /** 잔액 조회 — 계정이 없으면 0. */

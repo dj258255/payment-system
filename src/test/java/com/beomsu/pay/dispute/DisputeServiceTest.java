@@ -1,5 +1,6 @@
 package com.beomsu.pay.dispute;
 
+import com.beomsu.pay.payment.PaymentService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,19 +15,24 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 class DisputeServiceTest {
 
     private DisputeRepository repository;
+    private PaymentService paymentService;
     private ApplicationEventPublisher events;
     private DisputeService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(DisputeRepository.class);
+        paymentService = mock(PaymentService.class);
         events = mock(ApplicationEventPublisher.class);
-        service = new DisputeService(repository, events);
+        service = new DisputeService(repository, paymentService, events);
+        // 기본: 원 결제 10,000원이 존재한다고 본다(개별 테스트에서 재정의).
+        when(paymentService.approvedAmountByOrderNo(anyString())).thenReturn(Optional.of(10_000L));
     }
 
     private Dispute openDispute(Long id) {
@@ -62,6 +68,30 @@ class DisputeServiceTest {
 
         assertThat(view.id()).isEqualTo(7L);
         assertThat(view.status()).isEqualTo("OPEN");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("openFromChargeback: 원 결제가 없는 orderNo는 DISPUTE_NO_PAYMENT — 분쟁 미생성(가짜 차지백 차단)")
+    void openRejectsChargebackForUnknownPayment() {
+        when(repository.findByChargebackId("cb-x")).thenReturn(Optional.empty());
+        when(paymentService.approvedAmountByOrderNo("order-x")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.openFromChargeback("cb-x", "order-x", null, 10_000, "fraudulent"))
+                .isInstanceOf(DisputeException.class)
+                .satisfies(e -> assertThat(((DisputeException) e).code()).isEqualTo("DISPUTE_NO_PAYMENT"));
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("openFromChargeback: 차지백 금액이 원 결제 금액 초과면 DISPUTE_AMOUNT_EXCEEDS — 원장 오염 차단")
+    void openRejectsInflatedChargeback() {
+        when(repository.findByChargebackId("cb-big")).thenReturn(Optional.empty());
+        when(paymentService.approvedAmountByOrderNo("order-1")).thenReturn(Optional.of(10_000L));
+
+        assertThatThrownBy(() -> service.openFromChargeback("cb-big", "order-1", 100L, 10_000_000, "fraudulent"))
+                .isInstanceOf(DisputeException.class)
+                .satisfies(e -> assertThat(((DisputeException) e).code()).isEqualTo("DISPUTE_AMOUNT_EXCEEDS"));
         verify(repository, never()).save(any());
     }
 

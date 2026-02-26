@@ -66,4 +66,16 @@ public class PointAccount {
         }
         this.balance += amount;
     }
+
+    /**
+     * 적립 회수 — 취소 시 적립분을 되돌린다. {@link #use}와 달리 <b>잔액이 음수가 되는 것을 허용</b>한다:
+     * 이미 적립분을 소진한 뒤 취소해도 회수를 관철해야 파밍을 막을 수 있고, 음수분(적립 채무)은 이후
+     * 적립으로 상계된다. (일반 결제 차감 {@code use}는 여전히 잔액 부족을 막는다 — 회수만 예외.)
+     */
+    public void reverseEarn(long amount) {
+        if (amount < 0) {
+            throw new IllegalArgumentException("회수 금액은 음수일 수 없습니다: " + amount);
+        }
+        this.balance -= amount;
+    }
 }

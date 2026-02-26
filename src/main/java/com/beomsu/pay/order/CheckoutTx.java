@@ -25,8 +25,8 @@ import java.util.List;
 @RequiredArgsConstructor
 class CheckoutTx {
 
-    /** 적립률(정책) — 실결제액(카드+월렛)의 %. 쿠폰/등급별 차등 등은 이후 정책으로 확장 가능. */
-    private static final long EARN_RATE_PERCENT = 1;
+    /** 적립률(정책) — 실결제액(카드+월렛)의 %. 취소 시 적립 회수도 이 율을 쓴다. 쿠폰/등급 차등은 이후 확장. */
+    static final long EARN_RATE_PERCENT = 1;
 
     private final PaymentService paymentService;
     private final OrderRepository orderRepository;
@@ -133,7 +133,7 @@ class CheckoutTx {
                     pointService.restore(order.getUserId(), pointAmount, orderNo);
                 }
                 if (walletAmount > 0) {
-                    walletService.refund(order.getUserId(), walletAmount, orderNo); // orderNo 멱등 보상
+                    walletService.restore(order.getUserId(), walletAmount, orderNo); // 예약 해제(멱등)
                 }
                 if (cardAmount.amount() > 0) {
                     compensationService.enqueueNetworkCancel(orderNo, cardAmount.amount(),
@@ -151,12 +151,14 @@ class CheckoutTx {
             // PAID가 되고, ABORTED면 아래 거절 분기가 그때 복원한다. 여기서 미리 복원하면, 이후 완결(SUCCESS
             // 분기)이 예약분을 재소비하지 않아 가맹점이 그만큼 덜 걷는다(자금 손실).
         } else {
-            // 명시적 거절: 선점 포인트·월렛 복원, 재시도 위해 주문 PENDING_PAYMENT로 복귀.
+            // 명시적 거절: 선점 포인트·월렛 예약 해제(RESTORE), 재시도 위해 주문 PENDING_PAYMENT로 복귀.
+            // 해제는 멱등이고, USE 멱등이 활성예약(USE−RESTORE−REFUND) 기준이라 재시도 시 다시 차감된다
+            // (거절→재시도 이중무료 방지). point.restore와 wallet.restore가 대칭이다.
             if (pointAmount > 0) {
                 pointService.restore(order.getUserId(), pointAmount, orderNo);
             }
             if (walletAmount > 0) {
-                walletService.refund(order.getUserId(), walletAmount, orderNo); // orderNo 멱등 보상
+                walletService.restore(order.getUserId(), walletAmount, orderNo);
             }
             order.revertToPending();
         }
