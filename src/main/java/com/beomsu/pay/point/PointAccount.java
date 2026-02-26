@@ -58,4 +58,12 @@ public class PointAccount {
         }
         this.balance += amount;
     }
+
+    /** 포인트 적립 — 결제 완료 시 실결제액 기준으로 잔액을 더한다. */
+    public void earn(long amount) {
+        if (amount < 0) {
+            throw new IllegalArgumentException("적립 금액은 음수일 수 없습니다: " + amount);
+        }
+        this.balance += amount;
+    }
 }

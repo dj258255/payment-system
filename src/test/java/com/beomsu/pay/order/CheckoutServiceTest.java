@@ -106,7 +106,10 @@ class CheckoutServiceTest {
         verify(stockDeductionService).tryDeduct(100L, 2);
         verify(orderRepository, atLeastOnce()).saveAndFlush(order);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
-        verifyNoInteractions(pointService);
+        // 순수 카드결제도 실결제액(20,000)의 1% = 200 적립. 차감/복원은 없음.
+        verify(pointService).earn(1L, 200, order.getOrderNo());
+        verify(pointService, never()).use(anyLong(), anyLong(), anyString());
+        verify(pointService, never()).restore(anyLong(), anyLong(), anyString());
         verifyNoInteractions(compensationService);
     }
 
@@ -260,6 +263,8 @@ class CheckoutServiceTest {
         verify(paymentService).pgApprove(eq(order.getOrderNo()), eq("pk-1"), eq(Money.of(14_000)));
         verify(stockDeductionService).tryDeduct(100L, 2);
         verify(pointService, never()).restore(anyLong(), anyLong(), anyString());
+        // 적립은 실결제액(카드 14,000, 포인트 사용분 제외)의 1% = 140
+        verify(pointService).earn(1L, 140, order.getOrderNo());
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
     }
 
@@ -306,6 +311,8 @@ class CheckoutServiceTest {
         verify(walletService).use(1L, 6_000, order.getOrderNo());              // 월렛 선점(예약)
         verify(paymentService).pgApprove(eq(order.getOrderNo()), eq("pk-1"), eq(Money.of(14_000)));
         verify(walletService, never()).refund(anyLong(), anyLong(), anyString());
+        // 적립은 실결제액(카드 14,000 + 월렛 6,000 = 20,000)의 1% = 200
+        verify(pointService).earn(1L, 200, order.getOrderNo());
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
     }
 

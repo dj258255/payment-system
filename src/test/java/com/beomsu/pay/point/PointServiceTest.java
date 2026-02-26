@@ -43,6 +43,33 @@ class PointServiceTest {
     }
 
     @Test
+    @DisplayName("earn: 잔액을 늘리고 EARN 이력을 남긴다")
+    void earnAddsAndRecords() {
+        PointAccount account = PointAccount.of(1L, 1_000);
+        when(historyRepository.existsByOrderNoAndType("order-1", PointHistoryType.EARN)).thenReturn(false);
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+
+        service.earn(1L, 200, "order-1");
+
+        assertThat(account.getBalance()).isEqualTo(1_200);
+        ArgumentCaptor<PointHistory> captor = ArgumentCaptor.forClass(PointHistory.class);
+        verify(historyRepository).save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo(PointHistoryType.EARN);
+        assertThat(captor.getValue().getAmount()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("earn: 같은 주문의 EARN 이력이 이미 있으면 이중적립하지 않는다(멱등)")
+    void earnIsIdempotentPerOrder() {
+        when(historyRepository.existsByOrderNoAndType("order-1", PointHistoryType.EARN)).thenReturn(true);
+
+        service.earn(1L, 200, "order-1");
+
+        verify(accountRepository, never()).save(any());
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("use: 잔액 부족이면 INSUFFICIENT_POINT 예외, 이력 저장 안 함")
     void useInsufficientThrows() {
         PointAccount account = PointAccount.of(1L, 2_000);
