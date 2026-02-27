@@ -35,7 +35,7 @@ class PointServiceTest {
         service.use(1L, 6_000, "order-1");
 
         assertThat(account.getBalance()).isEqualTo(4_000);
-        verify(accountRepository).save(account);
+        verify(accountRepository).saveAndFlush(account);
         ArgumentCaptor<PointHistory> captor = ArgumentCaptor.forClass(PointHistory.class);
         verify(historyRepository).save(captor.capture());
         assertThat(captor.getValue().getType()).isEqualTo(PointHistoryType.USE);
@@ -65,7 +65,7 @@ class PointServiceTest {
 
         service.earn(1L, 200, "order-1");
 
-        verify(accountRepository, never()).save(any());
+        verify(accountRepository, never()).saveAndFlush(any());
         verify(historyRepository, never()).save(any());
     }
 
@@ -91,7 +91,7 @@ class PointServiceTest {
         service.use(1L, 6_000, "order-1");
 
         verify(accountRepository, never()).findById(anyLong());
-        verify(accountRepository, never()).save(any());
+        verify(accountRepository, never()).saveAndFlush(any());
         verify(historyRepository, never()).save(any());
     }
 
@@ -136,7 +136,7 @@ class PointServiceTest {
         service.restore(1L, 6_000, "order-1");
 
         assertThat(account.getBalance()).isEqualTo(10_000);
-        verify(accountRepository).save(account);
+        verify(accountRepository).saveAndFlush(account);
         ArgumentCaptor<PointHistory> captor = ArgumentCaptor.forClass(PointHistory.class);
         verify(historyRepository).save(captor.capture());
         assertThat(captor.getValue().getType()).isEqualTo(PointHistoryType.RESTORE);
@@ -149,7 +149,7 @@ class PointServiceTest {
 
         service.restore(1L, 6_000, "order-1");
 
-        verify(accountRepository, never()).save(any());
+        verify(accountRepository, never()).saveAndFlush(any());
         verify(historyRepository, never()).save(any());
     }
 
