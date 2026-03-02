@@ -31,12 +31,13 @@ public class GlobalExceptionHandler {
                     -> HttpStatus.FORBIDDEN;                                                 // 403
             case "ORDER_NOT_FOUND", "PAYMENT_NOT_FOUND", "PRODUCT_NOT_FOUND",
                  "FORCE_CANCEL_NOT_FOUND", "FRAUD_REVIEW_NOT_FOUND",
-                 "SETTLEMENT_NOT_FOUND", "SUBSCRIPTION_NOT_FOUND" -> HttpStatus.NOT_FOUND;    // 404
+                 "SETTLEMENT_NOT_FOUND", "SUBSCRIPTION_NOT_FOUND",
+                 "MEMBER_NOT_FOUND" -> HttpStatus.NOT_FOUND;                                  // 404
             case "INVALID_STATE_TRANSITION", "CANCEL_AMOUNT_EXCEEDED", "OUT_OF_STOCK",
                  "INVALID_FRAUD_REVIEW_STATE", "SUBSCRIPTION_NOT_ACTIVE",
                  "INVALID_SUBSCRIPTION_TRANSITION",
                  "INSUFFICIENT_BALANCE", "LIMIT_EXCEEDED", "WALLET_CONCURRENCY",
-                 "IDEMPOTENT_REQUEST_PROCESSING" -> HttpStatus.CONFLICT;                     // 409
+                 "IDEMPOTENT_REQUEST_PROCESSING", "EMAIL_ALREADY_EXISTS" -> HttpStatus.CONFLICT; // 409
             case "IDEMPOTENCY_KEY_REUSED" -> HttpStatus.UNPROCESSABLE_ENTITY;                // 422
             // 대기열 게이트: 요청 자체는 유효하나 지금은 받아줄 수 없다(줄 서면 됨) → 403(권한 문제)이
             // 아니라 429가 의미에 맞다. 클라이언트는 enter → status 폴링 후 재시도하면 된다.

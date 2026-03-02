@@ -1,5 +1,7 @@
 package com.beomsu.pay;
 
+import com.beomsu.pay.member.Member;
+import com.beomsu.pay.member.MemberRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -11,6 +13,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
@@ -60,6 +63,8 @@ public class SecurityConfig {
                         // 로그인(BCrypt 1회)·갱신(refresh 자체가 소유 증명)은 개방,
                         // 로그아웃은 현재 access를 폐기하므로 인증 필요.
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
+                        // 회원 가입은 로그인 전에 가능해야 하므로 개방한다(이후 이메일로 /auth/login).
+                        .requestMatchers(HttpMethod.POST, "/api/v1/members/signup").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/webhooks/**").permitAll()      // HMAC 자체 인증
@@ -113,12 +118,27 @@ public class SecurityConfig {
         return configuration.getAuthenticationManager();
     }
 
+    /**
+     * 복합 UserDetailsService — 로그인 식별자로 (a) 먼저 인메모리 데모 계정(admin/admin2/"1"/"2")을
+     * 찾고, 없으면 (b) MemberRepository로 이메일 회원을 찾는다. 둘 다 없으면 UsernameNotFoundException.
+     *
+     * <p><b>숫자 userId 계약 보존</b>: DaoAuthenticationProvider는 인증 성공 시 <i>로드된 UserDetails의
+     * getUsername()</i>을 principal 이름으로 삼는다(입력한 로그인 식별자가 아니라). 그래서 회원이
+     * 이메일로 로그인해도, 여기서 username을 회원의 숫자 id({@code String.valueOf(member.getId())})로
+     * 만들어 반환하면 {@code auth.getName()}=숫자 id가 되고 JWT subject도 숫자로 유지된다. 이 계약이
+     * 깨지면 order/payment/wallet/point/subscription의 {@code Long.parseLong(principal.getName())}
+     * 소유권 검증이 전부 무너진다.
+     *
+     * <p>MemberRepository를 생성자(빈 파라미터)로 주입해 지연 없이 조회한다. 인메모리 조회는 로컬이라
+     * 빠르고, 회원 조회는 데모 계정이 아닐 때만 1회 DB 히트한다.
+     */
     @Bean
     UserDetailsService userDetailsService(
             @Value("${app.admin.username:admin}") String adminUsername,
             @Value("${app.admin.password:admin-local-only}") String adminPassword,
             @Value("${app.user.password:user-local-only}") String userPassword,
-            PasswordEncoder encoder) {
+            PasswordEncoder encoder,
+            MemberRepository memberRepository) {
         UserDetails admin = User.withUsername(adminUsername)
                 .password(encoder.encode(adminPassword)).roles("ADMIN").build();
         // maker-checker용 2번째 어드민: 강제취소는 요청자≠승인자를 강제하므로, admin이 요청하고
@@ -130,7 +150,23 @@ public class SecurityConfig {
                 .password(encoder.encode(userPassword)).roles("USER").build();
         UserDetails user2 = User.withUsername("2")
                 .password(encoder.encode(userPassword)).roles("USER").build();
-        return new InMemoryUserDetailsManager(admin, admin2, user1, user2);
+        InMemoryUserDetailsManager inMemory = new InMemoryUserDetailsManager(admin, admin2, user1, user2);
+
+        return username -> {
+            // (a) 데모 계정 우선 — admin/admin2/"1"/"2"는 인메모리 그대로 유지(기존 로그인 무중단).
+            try {
+                return inMemory.loadUserByUsername(username);
+            } catch (UsernameNotFoundException notDemo) {
+                // (b) 실 회원 — 이메일로 조회. username(=UserDetails.getUsername())을 회원의 숫자 id로
+                // 만들어, DaoAuthenticationProvider가 이 값을 principal 이름(=JWT subject)으로 쓰게 한다.
+                Member member = memberRepository.findByEmail(username)
+                        .orElseThrow(() -> new UsernameNotFoundException("사용자를 찾을 수 없습니다: " + username));
+                return User.withUsername(String.valueOf(member.getId()))
+                        .password(member.getPasswordHash())
+                        .roles(member.getRole())
+                        .build();
+            }
+        };
     }
 
     @Bean
