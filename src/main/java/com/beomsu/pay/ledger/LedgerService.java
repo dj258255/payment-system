@@ -1,5 +1,6 @@
 package com.beomsu.pay.ledger;
 
+import com.beomsu.pay.dispute.DisputeLostEvent;
 import com.beomsu.pay.payment.PaymentCanceledEvent;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class LedgerService {
 
     private static final Logger log = LoggerFactory.getLogger(LedgerService.class);
     private static final String SOURCE_PAYMENT = "PAYMENT";
+    private static final String SOURCE_DISPUTE = "DISPUTE";
 
     private final LedgerTransactionRepository repository;
 
@@ -62,6 +64,28 @@ public class LedgerService {
                 List.of(
                         LedgerEntry.debit(AccountType.SALES, cancelAmount),          // 역분개
                         LedgerEntry.credit(AccountType.PG_RECEIVABLE, cancelAmount)
+                ));
+        repository.save(tx);
+    }
+
+    /**
+     * 분쟁 패소 → 원매출 역분개. 취소({@link #recordPaymentCanceled})와 같은 방향으로 되돌린다:
+     * 매출(차변) ↔ PG 미수금(대변). 원거래를 지우지 않고 반대 분개를 추가해 이력을 보존한다.
+     * (txType="DISPUTE_LOST", sourceType="DISPUTE", sourceId=disputeId) 유니크로 <b>멱등</b> —
+     * 같은 패소 이벤트가 재전달돼도 역분개는 한 번만.
+     */
+    @Transactional
+    public void recordDisputeLost(DisputeLostEvent event) {
+        if (repository.existsByTxTypeAndSourceTypeAndSourceId("DISPUTE_LOST", SOURCE_DISPUTE, event.disputeId())) {
+            return; // 멱등: 이미 역분개함
+        }
+        long amount = event.amount();
+        LedgerTransaction tx = LedgerTransaction.of(
+                "DISPUTE_LOST", SOURCE_DISPUTE, event.disputeId(),
+                "분쟁 패소 역분개 " + event.orderNo(),
+                List.of(
+                        LedgerEntry.debit(AccountType.SALES, amount),          // 역분개
+                        LedgerEntry.credit(AccountType.PG_RECEIVABLE, amount)
                 ));
         repository.save(tx);
     }
