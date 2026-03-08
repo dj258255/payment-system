@@ -99,6 +99,16 @@
             <button onclick="login('1','user-local-only')">사용자로 로그인</button>
             <button class="ghost" onclick="login('admin','admin-local-only')">관리자로 로그인</button>
           </div>
+          <div class="sub" style="margin-top:12px">회원 가입 · 이메일 로그인 — InMemory 데모계정과 별개로 실제 JPA 회원. 이메일로 로그인해도 JWT subject는 숫자 회원 id라 소유권 계약(Long.parseLong(principal)) 그대로. 가입 id는 1000부터(데모유저 1/2와 충돌 방지).</div>
+          <div class="row" style="margin-top:8px">
+            <label>이메일</label><input id="mEmail" value="alice@example.com" style="width:170px">
+            <label>비번</label><input id="mPw" type="password" value="password123" style="width:90px">
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button class="small" onclick="memberSignup()">가입</button>
+            <button class="small ghost" onclick="memberLogin()">이메일 로그인</button>
+            <span class="badge b-dim" id="mWho">미로그인</span>
+          </div>
         </div>
 
         <div class="card">
@@ -283,6 +293,25 @@
       </div>
       <div class="adminlist" id="settle"></div>
     </div>
+    <div class="card">
+      <h2>분쟁 / 차지백</h2>
+      <div class="sub">차지백 웹훅 수신(HMAC 서명) → 분쟁 개시(OPEN, chargebackId 멱등) → 증빙 제출 → 승/패 확정. <b>패소(LOST) 시 원장 역분개</b>(매출 차변 ↔ PG미수금 대변)로 사후 정합. 관리자 로그인 필요.</div>
+      <div class="row">
+        <label>chargebackId</label><input id="dpCbId" value="cb-1001" style="width:100px">
+        <label>orderNo</label><input id="dpOrder" value="order-1" style="width:100px">
+        <label>결제ID</label><input id="dpPid" type="number" value="100" style="width:70px">
+        <label>금액</label><input id="dpAmt" type="number" value="10000" style="width:90px">
+        <button class="small" onclick="dpChargeback()">차지백 전송</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="small ghost" onclick="dpList()">분쟁 목록</button>
+        <label>분쟁ID</label><input id="dpId" type="number" value="1" style="width:60px">
+        <button class="small ghost" onclick="dpEvidence()">증빙 제출</button>
+        <button class="small" onclick="dpResolve('WON')">승소</button>
+        <button class="small warn" onclick="dpResolve('LOST')">패소(역분개)</button>
+      </div>
+      <div class="adminlist" id="disp"></div>
+    </div>
   </section>
 </div>
 
@@ -327,6 +356,20 @@ async function login(u,p){
     $('who').innerHTML='<b>'+role+'</b> 로그인됨 · 토큰 발급';
     $('btnOrder').disabled=false;
     $('btnQEnter').disabled=false;$('btnQStatus').disabled=false;$('btnQLeave').disabled=false;}
+}
+// 회원 가입 / 이메일 로그인 (실 JPA 회원)
+async function memberSignup(){
+  const r=await api('POST','/api/v1/members/signup',{email:$('mEmail').value.trim(),password:$('mPw').value});
+  if(r.ok) $('mWho').textContent='가입 id '+r.data.id+' ('+r.data.email+') → 로그인하세요';
+}
+async function memberLogin(){
+  // 이메일을 username 필드에 태운다 — 복합 UserDetailsService가 이메일→회원 조회, 발급 JWT subject는 숫자 회원 id.
+  const r=await api('POST','/api/v1/auth/login',{username:$('mEmail').value.trim(),password:$('mPw').value});
+  if(r.ok){token=r.data.token;role='회원';
+    let sub='?';try{sub=JSON.parse(atob(token.split('.')[1])).sub}catch{}
+    $('who').innerHTML='<b>회원</b> 로그인됨 · userId=<b>'+sub+'</b> · 토큰 발급';
+    $('mWho').textContent='userId='+sub+' 로그인됨';
+    $('btnOrder').disabled=false;}
 }
 function renderQueue(p){
   $('qPos').className='badge '+(p.position<0?'b-dim':'b-cyan');$('qPos').textContent=p.position<0?'대기열 없음':p.position+'번';
@@ -431,6 +474,24 @@ function renderPoint(p){
     rows.map(row=>'<tr>'+cols.map(c=>'<td>'+fmt(row[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
 }
 async function pointView(){ const r=await api('GET','/api/v1/points'); renderPoint(r.data); }
+// 분쟁 / 차지백 (로컬 데모용 웹훅 시크릿으로 HMAC 서명 계산)
+const DP_SECRET='local-webhook-secret-please-override-32b';
+async function dpChargeback(){
+  const body=JSON.stringify({chargebackId:$('dpCbId').value,orderNo:$('dpOrder').value,
+    paymentId:+$('dpPid').value,amount:+$('dpAmt').value,reason:'fraudulent'});
+  const ts=Math.floor(Date.now()/1000);
+  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(DP_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const mac=await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(ts+'.'+body));
+  const sig=[...new Uint8Array(mac)].map(b=>b.toString(16).padStart(2,'0')).join('');
+  logLine('req','→ POST /api/v1/webhooks/chargeback');
+  const res=await fetch('/api/v1/webhooks/chargeback',{method:'POST',
+    headers:{'Content-Type':'application/json','X-Signature':`t=${ts},v1=${sig}`},body});
+  const txt=await res.text();logLine(res.ok?'ok':'err',(res.ok?'✓ ':'✗ ')+res.status+' '+txt);
+  dpList();
+}
+async function dpList(){ const r=await api('GET','/api/v1/admin/disputes'); renderList('disp',r.data); }
+async function dpEvidence(){ await api('POST','/api/v1/admin/disputes/'+$('dpId').value+'/evidence',{memo:'영수증·배송 증적 첨부'}); dpList(); }
+async function dpResolve(outcome){ await api('POST','/api/v1/admin/disputes/'+$('dpId').value+'/resolve',{outcome}); dpList(); }
 // 정산: 목록은 Page → content 배열을 정산 전용 컬럼으로 렌더(수수료·VAT·지급액·지급예정일까지 보이게)
 function renderSettle(data){
   const rows=Array.isArray(data)?data:(data?[data]:[]);
