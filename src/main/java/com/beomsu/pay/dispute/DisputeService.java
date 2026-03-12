@@ -1,5 +1,6 @@
 package com.beomsu.pay.dispute;
 
+import com.beomsu.pay.payment.PaymentService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +32,7 @@ public class DisputeService {
     private static final Duration RESPOND_WINDOW = Duration.ofDays(7);
 
     private final DisputeRepository repository;
+    private final PaymentService paymentService;
     private final ApplicationEventPublisher events;
 
     /**
@@ -42,6 +44,16 @@ public class DisputeService {
         var existing = repository.findByChargebackId(chargebackId);
         if (existing.isPresent()) {
             return DisputeView.from(existing.get());
+        }
+        // 원 결제 대조 — 실존하는 승인 완료 결제여야 하고, 차지백 금액이 그 금액을 넘을 수 없다.
+        // 페이로드를 전면 신뢰하면 가짜 orderNo·과다 금액으로 원장이 오염되므로(패소 확정 시 역분개),
+        // 개시 시점에 막는다. 웹훅은 이 예외를 200으로 흡수(로깅)해 재전송 폭주를 피한다.
+        long approved = paymentService.approvedAmountByOrderNo(orderNo)
+                .orElseThrow(() -> new DisputeException("DISPUTE_NO_PAYMENT",
+                        "차지백 대상 결제를 찾을 수 없습니다: orderNo=" + orderNo));
+        if (amount > approved) {
+            throw new DisputeException("DISPUTE_AMOUNT_EXCEEDS",
+                    "차지백 금액이 원 결제 금액을 초과합니다: 차지백 %d, 결제 %d".formatted(amount, approved));
         }
         Instant respondBy = Instant.now().plus(RESPOND_WINDOW);
         try {

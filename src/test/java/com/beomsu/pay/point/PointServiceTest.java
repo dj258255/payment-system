@@ -83,15 +83,47 @@ class PointServiceTest {
     }
 
     @Test
-    @DisplayName("use: 같은 주문의 USE 이력이 이미 있으면 멱등 skip (이중 차감 없음)")
+    @DisplayName("use: 활성 예약(USE−RESTORE−REFUND>0)이 남아 있으면 멱등 skip (이중 차감 없음)")
     void useIsIdempotent() {
-        when(historyRepository.existsByOrderNoAndType("order-1", PointHistoryType.USE)).thenReturn(true);
+        // 활성 예약 6,000 존재 → skip
+        when(historyRepository.sumAmountByOrderNoAndType("order-1", PointHistoryType.USE)).thenReturn(6_000L);
 
         service.use(1L, 6_000, "order-1");
 
         verify(accountRepository, never()).findById(anyLong());
         verify(accountRepository, never()).save(any());
         verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("use: 예약이 RESTORE로 해제됐으면 재시도 시 다시 차감한다(거절→재시도 이중무료 방지)")
+    void useReappliesAfterRestore() {
+        PointAccount account = PointAccount.of(1L, 10_000);
+        when(historyRepository.sumAmountByOrderNoAndType("order-1", PointHistoryType.USE)).thenReturn(6_000L);
+        when(historyRepository.sumAmountByOrderNoAndType("order-1", PointHistoryType.RESTORE)).thenReturn(6_000L);
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+
+        service.use(1L, 6_000, "order-1");
+
+        assertThat(account.getBalance()).isEqualTo(4_000); // 다시 차감됨
+        verify(historyRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("reverseEarn: 취소 시 적립을 회수하되 적립분을 상한으로 캡한다(파밍 방지)")
+    void reverseEarnClawsBackCappedAtEarned() {
+        PointAccount account = PointAccount.of(1L, 500);
+        when(historyRepository.sumAmountByOrderNoAndType("order-1", PointHistoryType.EARN)).thenReturn(300L);
+        when(historyRepository.sumAmountByOrderNoAndType("order-1", PointHistoryType.EARN_REVERSAL)).thenReturn(0L);
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+
+        service.reverseEarn(1L, 1_000, "order-1"); // 요청 1,000이지만 적립 300까지만 회수
+
+        assertThat(account.getBalance()).isEqualTo(200); // 500 - 300
+        ArgumentCaptor<PointHistory> captor = ArgumentCaptor.forClass(PointHistory.class);
+        verify(historyRepository).save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo(PointHistoryType.EARN_REVERSAL);
+        assertThat(captor.getValue().getAmount()).isEqualTo(300);
     }
 
     @Test

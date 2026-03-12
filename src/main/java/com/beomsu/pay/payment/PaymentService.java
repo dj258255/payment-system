@@ -181,6 +181,16 @@ public class PaymentService {
                 .orElse(0L);
     }
 
+    /**
+     * 주문의 <b>승인 완료(DONE)</b> 결제 금액 — 차지백 검증용. 승인된 카드 결제가 없으면 empty.
+     * dispute가 차지백 금액이 원 결제 금액을 넘지 않는지, 실존 주문인지 대조할 때 쓴다(가짜/과다 차지백 차단).
+     */
+    @Transactional(readOnly = true)
+    public Optional<Long> approvedAmountByOrderNo(String orderNo) {
+        return paymentRepository.findFirstByOrderNoAndStatusIn(orderNo, List.of(PaymentStatus.DONE))
+                .map(Payment::getAmount);
+    }
+
     // --- 조회(read-only) 지원: order 모듈의 조회 오케스트레이션이 소유권 검증 후 호출한다 ---
 
     /**

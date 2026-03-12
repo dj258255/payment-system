@@ -43,6 +43,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private static final Set<String> TARGET_PATHS =
             Set.of("/api/v1/orders", "/api/v1/payments/confirm");
 
+    /** 미인증 진입점 — IP 기준으로 제한한다(브루트포스·BCrypt DoS·가입 스팸 방어). */
+    private static final Set<String> AUTH_PATHS =
+            Set.of("/api/v1/auth/login", "/api/v1/members/signup");
+
     private static final Duration WINDOW = Duration.ofSeconds(1);
     private static final String RATE_LIMITED_BODY =
             "{\"code\":\"RATE_LIMITED\",\"message\":\"요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.\"}";
@@ -63,8 +67,27 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        if (!enabled || !"POST".equals(request.getMethod())
-                || !TARGET_PATHS.contains(request.getRequestURI())) {
+        if (!enabled || !"POST".equals(request.getMethod())) {
+            chain.doFilter(request, response);
+            return;
+        }
+        String path = request.getRequestURI();
+
+        // 미인증 진입점(로그인/회원가입)은 principal이 없으므로 <b>클라이언트 IP</b>로 제한한다.
+        // 이 두 경로는 요청마다 BCrypt(검증/인코딩, ~110ms)를 태우고 크리덴셜 브루트포스·가입 스팸의
+        // 표적이라, 미인증이라고 그냥 통과시키면 비대칭 DoS·계정 열거에 노출된다.
+        if (AUTH_PATHS.contains(path)) {
+            String ip = clientIp(request);
+            if (!rateLimiter.tryAcquire("ip:" + ip + ":" + path, perUserPerSec, WINDOW)
+                    || !rateLimiter.tryAcquire("global:" + path, globalPerSec, WINDOW)) {
+                reject(response);
+                return;
+            }
+            chain.doFilter(request, response);
+            return;
+        }
+
+        if (!TARGET_PATHS.contains(path)) {
             chain.doFilter(request, response);
             return;
         }
@@ -76,7 +99,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
 
-        String path = request.getRequestURI();
         // per-user 먼저(더 좁은 한도) — 초과면 global 카운터는 소비하지 않는다.
         if (!rateLimiter.tryAcquire("user:" + auth.getName() + ":" + path, perUserPerSec, WINDOW)
                 || !rateLimiter.tryAcquire("global:" + path, globalPerSec, WINDOW)) {
@@ -84,6 +106,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
         chain.doFilter(request, response);
+    }
+
+    /**
+     * 클라이언트 IP — <b>소켓 피어({@code getRemoteAddr})만</b> 쓴다. {@code X-Forwarded-For}를 앱에서 직접
+     * 읽으면 클라이언트가 헤더를 위조·회전해 per-IP 한도를 우회할 수 있어(스푸핑 가능 필드) 신뢰하지 않는다.
+     * 프록시/LB 뒤 배포에서는 {@code server.forward-headers-strategy=FRAMEWORK}(+ Tomcat
+     * {@code remoteip.internal-proxies}를 LB CIDR로 제한)로 <b>신뢰된 프록시에서 온 경우에만</b> 프레임워크가
+     * 실 클라이언트 IP를 안전하게 대입하게 하고, 여기서는 그 결과인 remoteAddr를 그대로 쓴다.
+     */
+    private static String clientIp(HttpServletRequest request) {
+        return request.getRemoteAddr();
     }
 
     /** 429를 필터에서 직접 write — 컨트롤러/서비스/DB에 비용 0. */

@@ -3,6 +3,7 @@ package com.beomsu.pay.order;
 import com.beomsu.pay.payment.PaymentService;
 import com.beomsu.pay.point.PointService;
 import com.beomsu.pay.shared.Money;
+import com.beomsu.pay.wallet.WalletService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ class CancelServiceTest {
     private OrderRepository orderRepository;
     private PaymentService paymentService;
     private PointService pointService;
+    private WalletService walletService;
     private StockDeductionService stockDeductionService;
     private CancelService service;
 
@@ -28,8 +30,10 @@ class CancelServiceTest {
         orderRepository = mock(OrderRepository.class);
         paymentService = mock(PaymentService.class);
         pointService = mock(PointService.class);
+        walletService = mock(WalletService.class);
         stockDeductionService = mock(StockDeductionService.class);
-        service = new CancelService(orderRepository, paymentService, pointService, stockDeductionService);
+        service = new CancelService(orderRepository, paymentService, pointService,
+                walletService, stockDeductionService);
     }
 
     /** userId 1 소유의 10,000 x 2 = 20,000 짜리 PAID 주문. */
@@ -61,6 +65,41 @@ class CancelServiceTest {
         assertThat(result.fullyCanceled()).isTrue();
         assertThat(result.refundedPoint()).isEqualTo(6_000);
         assertThat(result.refundedCard()).isEqualTo(14_000);
+    }
+
+    @Test
+    @DisplayName("전액취소(카드+월렛): 월렛 몫도 환불하고 전액취소로 판정한다(자금손실 회귀)")
+    void fullCancelRefundsWalletShare() {
+        Order order = paidOrderOf(100L, 2); // total 20,000
+        when(pointService.refundableAmount(order.getOrderNo())).thenReturn(0L);
+        when(walletService.refundableAmount(order.getOrderNo())).thenReturn(6_000L);
+        when(paymentService.cardBalance(order.getOrderNo())).thenReturn(14_000L);
+
+        CancelResult result = service.cancel(order.getOrderNo(), 20_000, "고객변심", 1L);
+
+        // 카드 14,000 + 월렛 6,000 = 20,000 전액취소. 월렛 몫이 반드시 환불돼야 한다.
+        verify(walletService).refund(1L, 6_000, order.getOrderNo());
+        verify(paymentService).cancelByOrderNo(order.getOrderNo(), Money.of(14_000), "고객변심");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELED);
+        assertThat(result.fullyCanceled()).isTrue();
+        assertThat(result.refundedWallet()).isEqualTo(6_000);
+        assertThat(result.refundedCard()).isEqualTo(14_000);
+    }
+
+    @Test
+    @DisplayName("전액 월렛 결제 주문 취소: 카드 취소 없이 월렛 전액 환불 + CANCELED")
+    void fullCancelWalletOnlyOrder() {
+        Order order = paidOrderOf(100L, 2); // total 20,000
+        when(pointService.refundableAmount(order.getOrderNo())).thenReturn(0L);
+        when(walletService.refundableAmount(order.getOrderNo())).thenReturn(20_000L);
+        when(paymentService.cardBalance(order.getOrderNo())).thenReturn(0L);
+
+        CancelResult result = service.cancel(order.getOrderNo(), 20_000, "고객변심", 1L);
+
+        verify(walletService).refund(1L, 20_000, order.getOrderNo());
+        verify(paymentService, never()).cancelByOrderNo(anyString(), any(Money.class), anyString());
+        assertThat(result.fullyCanceled()).isTrue();
+        assertThat(result.refundedWallet()).isEqualTo(20_000);
     }
 
     @Test
