@@ -10,6 +10,10 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>복합결제 Saga에서 order 모듈이 호출한다: 결제 시 {@link #use}(선점), 카드 실패 시
  * {@link #restore}(보상), 부분취소 시 {@link #refund}. 모든 잔액 변경은 이력 append와 함께 이뤄지며,
  * (orderNo, type)로 멱등성을 보장해 "따닥" 중복 요청·재시도에도 이중 차감/복원이 없도록 한다.
+ *
+ * <p><b>잔액 변경은 {@code saveAndFlush}로 즉시 영속한다</b>(pay-26 교훈). 취소처럼 같은 트랜잭션에서
+ * 앞서 readOnly 조회({@link #refundableAmount})가 세션 FlushMode를 MANUAL로 바꾼 뒤라면, 일반 {@code save}는
+ * 지연 flush에 의존해 UPDATE가 유실될 수 있다(이력 INSERT는 IDENTITY라 즉시 flush돼 남아 불일치가 생긴다).
  */
 @Service
 @Transactional
@@ -37,7 +41,7 @@ public class PointService {
         PointAccount account = accountRepository.findById(userId)
                 .orElseGet(() -> PointAccount.of(userId, 0));
         account.use(amount); // 잔액 부족이면 여기서 INSUFFICIENT_POINT
-        accountRepository.save(account);
+        accountRepository.saveAndFlush(account);
         historyRepository.save(PointHistory.of(userId, PointHistoryType.USE, amount, orderNo));
     }
 
@@ -58,7 +62,7 @@ public class PointService {
         PointAccount account = accountRepository.findById(userId)
                 .orElseGet(() -> PointAccount.of(userId, 0));
         account.restore(amount);
-        accountRepository.save(account);
+        accountRepository.saveAndFlush(account);
         historyRepository.save(PointHistory.of(userId, PointHistoryType.RESTORE, amount, orderNo));
     }
 
@@ -76,7 +80,7 @@ public class PointService {
         PointAccount account = accountRepository.findById(userId)
                 .orElseGet(() -> PointAccount.of(userId, 0));
         account.restore(amount);
-        accountRepository.save(account);
+        accountRepository.saveAndFlush(account);
         historyRepository.save(PointHistory.of(userId, PointHistoryType.REFUND, amount, orderNo));
     }
 
@@ -109,7 +113,7 @@ public class PointService {
         PointAccount account = accountRepository.findById(userId)
                 .orElseGet(() -> PointAccount.of(userId, 0));
         account.earn(amount);
-        accountRepository.save(account);
+        accountRepository.saveAndFlush(account);
         historyRepository.save(PointHistory.of(userId, PointHistoryType.EARN, amount, orderNo));
     }
 
@@ -131,7 +135,7 @@ public class PointService {
         PointAccount account = accountRepository.findById(userId)
                 .orElseGet(() -> PointAccount.of(userId, 0));
         account.reverseEarn(clawback); // 잔액 음수 허용
-        accountRepository.save(account);
+        accountRepository.saveAndFlush(account);
         historyRepository.save(PointHistory.of(userId, PointHistoryType.EARN_REVERSAL, clawback, orderNo));
     }
 
