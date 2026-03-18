@@ -50,6 +50,6 @@ env:{version}:{base64(wrapBlob)}:{base64(dataBlob)}
 
 ## 포기한 것 / 주의
 
-- **암호문이 길어진다.** wrap된 DEK와 버전 prefix를 함께 실으므로 단일 키 방식보다 base64 60여 바이트 + prefix만큼 길다. 민감 컬럼 길이를 넉넉히 잡아야 한다. (현재 `@Convert`를 실제로 붙인 엔티티가 없어 스키마 영향은 없다 — 적용 시 컬럼 길이 재검토.)
+- **암호문이 길어진다.** wrap된 DEK와 버전 prefix를 함께 실으므로 단일 키 방식보다 base64 60여 바이트 + prefix만큼 길다. 민감 컬럼 길이를 넉넉히 잡아야 한다. (실제 적용: `BillingKey`·`Subscription`·`VirtualAccount`가 `@Convert(EncryptedStringConverter)`로 암호화 저장하고, 값 검색이 필요한 빌링키는 블라인드 인덱스로 동등검색한다 — 컬럼 길이를 그에 맞게 잡았다.)
 - **DEK-per-value.** 값마다 DEK를 새로 만들어 wrap하므로 저장 오버헤드가 있다. 대신 로테이션·침해 반경 이점을 얻는다(필드 암호화엔 타당한 트레이드오프).
 - **로컬 KEK는 데모다.** 운영은 반드시 실 KMS로 `MasterKeyProvider`를 교체하고, KEK를 코드·리포지토리에 두지 않는다(`app.crypto.kek.*`는 env 오버라이드).
