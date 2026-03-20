@@ -70,6 +70,8 @@
 `com.beomsu.pay` 바로 아래 각 패키지가 하나의 애플리케이션 모듈이다. 모듈 간 통신은 직접 호출이 아니라
 **도메인 이벤트**로 하고, 그 경계를 테스트(`ModularityTests`)가 강제한다. 규칙 위반 시 빌드가 깨진다.
 
+![pay 아키텍처 — 유입/인증 → 결제 코어(체크아웃 사가·PG 어댑터) → Outbox 이벤트 → 구독자(원장·에스크로·정산·대사·분쟁·FDS) → 인프라](docs/images/architecture.svg)
+
 ```
 com.beomsu.pay
 ├── order          주문 상태머신, 금액 위변조 검증, 체크아웃 사가 오케스트레이션·취소, 멱등키
@@ -128,7 +130,7 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
 - [docs/03 아키텍처 설계](docs/03-아키텍처-설계.md) — 멱등성, Saga/Outbox, 원장, 웹훅, 정산/대사
 - [docs/04 장애 시나리오 설계](docs/04-장애-시나리오-설계.md) — 외부 API 실패 처리 전반
 - [docs/05 성능 전략](docs/05-성능개선-전략.md) — 동시성 제어, 부하테스트, 관측성
-- [docs/09 ERD](docs/09-ERD-설계.md), [docs/10 API 스펙](docs/10-API-스펙.md)
+- [docs/09 ERD](docs/09-ERD-설계.md) ([다이어그램](docs/images/erd.svg)), [docs/10 API 스펙](docs/10-API-스펙.md)
 - [docs/adr](docs/adr/) — 아키텍처 결정 기록
 
 ## 가정과 한계
