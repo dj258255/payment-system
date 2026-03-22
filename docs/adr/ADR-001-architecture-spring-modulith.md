@@ -5,7 +5,7 @@
 
 ## 맥락
 
-결제 시스템은 도메인이 뚜렷하게 나뉜다 — 주문, 결제, 원장, 정산, 대사. 이런 도메인에서 처음부터 물리적 MSA(서비스별 배포·DB·네트워크)를 도입하면:
+결제 시스템은 도메인이 주문·결제·원장·정산·대사로 뚜렷하게 나뉜다. 이런 도메인에서 처음부터 물리적 MSA(서비스별 배포·DB·네트워크)를 도입하면:
 
 - 분산 트랜잭션·네트워크 장애 같은 **본질이 아닌 인프라 복잡도**에 시간을 다 쓰게 되고,
 - 정작 보여줘야 할 **도메인 설계(멱등성·상태머신·원장·대사)**가 묻힌다.
@@ -18,13 +18,13 @@
 
 - `com.beomsu.pay` 바로 아래 각 패키지 = 하나의 애플리케이션 모듈 (order, payment, ledger, settlement, reconciliation, shared)
 - 모듈 간 통신은 **직접 호출 금지, 도메인 이벤트로만** 한다.
-- `package-info.java`의 `allowedDependencies`로 허용 의존을 선언하고, `ModularityTests.verify()`가 위반 시 **빌드를 깨뜨린다** — 아키텍처 규칙을 테스트로 강제.
+- `package-info.java`의 `allowedDependencies`로 허용 의존을 선언하고, `ModularityTests.verify()`가 위반 시 **빌드를 깨뜨린다**. 아키텍처 규칙을 테스트로 강제한다.
 - `shared`만 OPEN 모듈로 두어 공유 값 타입(Money 등)을 자유롭게 참조하게 한다.
 
 ## 근거 / 이점
 
 1. **경계는 지키되 인프라는 단순**: 모듈 규칙은 정적 검증으로 강제되지만, 배포는 단일 아티팩트라 운영이 단순하다. 나중에 특정 모듈을 물리적으로 떼어내야 할 때, 이미 이벤트로 소통하고 있으므로 전환 비용이 낮다.
-2. **핵심 이점 — Event Publication Registry가 곧 Transactional Outbox**: [ADR-002](ADR-002-outbox-event-publication-registry.md) 참조.
+2. **핵심 이점은 Event Publication Registry가 곧 Transactional Outbox라는 점**: [ADR-002](ADR-002-outbox-event-publication-registry.md) 참조.
 3. **문서 자동 생성**: 모듈 다이어그램(PlantUML)이 테스트에서 생성돼 아키텍처가 코드와 항상 동기화된다.
 
 ## 트레이드오프 / 포기한 것

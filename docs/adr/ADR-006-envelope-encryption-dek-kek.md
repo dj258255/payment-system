@@ -26,9 +26,9 @@
 env:{version}:{base64(wrapBlob)}:{base64(dataBlob)}
 ```
 
-- `version` — DEK를 감싼 KEK의 버전. 복호화 때 어느 KEK로 unwrap할지 안다.
-- `dataBlob` — 데이터 암호문 `iv(12)+ct+tag`, DEK로 GCM.
-- `wrapBlob` — 감싼 DEK `iv(12)+wrappedDek+tag`, KEK로 GCM.
+- `version`: DEK를 감싼 KEK의 버전. 복호화 때 어느 KEK로 unwrap할지 안다.
+- `dataBlob`: 데이터 암호문 `iv(12)+ct+tag`, DEK로 GCM.
+- `wrapBlob`: 감싼 DEK `iv(12)+wrappedDek+tag`, KEK로 GCM.
 
 버전을 암호문에 실으므로, 로테이션 후에도 옛 암호문을 옛 버전 KEK로 복호화할 수 있다.
 
@@ -38,7 +38,7 @@ env:{version}:{base64(wrapBlob)}:{base64(dataBlob)}
 2. **마스터키를 프로세스 밖에 둘 수 있다.** `MasterKeyProvider`는 "버전으로 KEK를 얻는" 좁은 추상화다. 실 KMS 구현은 wrap/unwrap만 KMS에 위임하고 마스터키 원문을 노출하지 않는다.
 3. **키 침해 반경 축소.** DEK는 행마다 다르므로 한 DEK가 노출돼도 그 행만 영향을 받는다.
 
-## AesGcm과 공존 — @Primary + 조건부 활성
+## AesGcm과 공존: @Primary + 조건부 활성
 
 `AesGcmFieldCipher`는 **남긴다**(기존 테스트·단일 키 경로 보존). 빈 선택은 프로퍼티로 전환한다.
 
@@ -50,6 +50,6 @@ env:{version}:{base64(wrapBlob)}:{base64(dataBlob)}
 
 ## 포기한 것 / 주의
 
-- **암호문이 길어진다.** wrap된 DEK와 버전 prefix를 함께 실으므로 단일 키 방식보다 base64 60여 바이트 + prefix만큼 길다. 민감 컬럼 길이를 넉넉히 잡아야 한다. (실제 적용: `BillingKey`·`Subscription`·`VirtualAccount`가 `@Convert(EncryptedStringConverter)`로 암호화 저장하고, 값 검색이 필요한 빌링키는 블라인드 인덱스로 동등검색한다 — 컬럼 길이를 그에 맞게 잡았다.)
+- **암호문이 길어진다.** wrap된 DEK와 버전 prefix를 함께 실으므로 단일 키 방식보다 base64 60여 바이트 + prefix만큼 길다. 민감 컬럼 길이를 넉넉히 잡아야 한다. (실제 적용: `BillingKey`·`Subscription`·`VirtualAccount`가 `@Convert(EncryptedStringConverter)`로 암호화 저장하고, 값 검색이 필요한 빌링키는 블라인드 인덱스로 동등검색한다. 컬럼 길이를 그에 맞게 잡았다.)
 - **DEK-per-value.** 값마다 DEK를 새로 만들어 wrap하므로 저장 오버헤드가 있다. 대신 로테이션·침해 반경 이점을 얻는다(필드 암호화엔 타당한 트레이드오프).
 - **로컬 KEK는 데모다.** 운영은 반드시 실 KMS로 `MasterKeyProvider`를 교체하고, KEK를 코드·리포지토리에 두지 않는다(`app.crypto.kek.*`는 env 오버라이드).

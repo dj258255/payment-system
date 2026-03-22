@@ -27,7 +27,7 @@ public record PaymentCanceledEvent(String orderNo, Long paymentId, long cancelAm
 ## 근거
 
 1. **Outbox + Kafka = at-least-once (유실 없음).** Modulith는 이벤트를 발행 트랜잭션과 **같은 로컬 트랜잭션**으로 `event_publication`에 기록한다(ADR-002). 커밋 후 외부화 리스너가 Kafka로 발행하고, 성공해야 완료로 마킹한다. 발행 실패/앱 다운이면 미완료로 남아 재기동 시 재발행된다(`republish-outstanding-events-on-restart`). "DB 커밋과 Kafka 발행"의 dual-write 문제를 Outbox가 흡수하므로 **at-least-once**가 보장된다 → 프로세스 밖 소비자도 인프로세스 소비자와 똑같이 멱등 컨슈머로 설계한다.
-2. **orderNo를 파티션 키로 → 주문 단위 순서 보존.** 라우팅 키 `#{orderNo}`가 Kafka 메시지 키가 되고, 같은 키는 같은 파티션으로 간다. Kafka는 파티션 내 순서만 보장하므로, 같은 주문의 `confirmed → canceled`가 **역전 없이** 순서대로 도착한다. (전역 순서가 아니라 주문 단위 순서만 필요하다 — Zero-Payload 이벤트라 소비자가 최신 상태를 조회로 확정할 수도 있다.)
+2. **orderNo를 파티션 키로 → 주문 단위 순서 보존.** 라우팅 키 `#{orderNo}`가 Kafka 메시지 키가 되고, 같은 키는 같은 파티션으로 간다. Kafka는 파티션 내 순서만 보장하므로, 같은 주문의 `confirmed → canceled`가 **역전 없이** 순서대로 도착한다. (전역 순서가 아니라 주문 단위 순서만 필요하다. Zero-Payload 이벤트라 소비자가 최신 상태를 조회로 확정할 수도 있다.)
 3. **바퀴를 다시 발명하지 않는다.** 브릿지·직렬화·라우팅을 프레임워크가 검증된 형태로 제공한다.
 
 ## 브로커 부재 안전장치 (프로퍼티 게이트)
@@ -41,8 +41,8 @@ public record PaymentCanceledEvent(String orderNo, Long paymentId, long cancelAm
 
 - **전역 순서는 보장하지 않는다.** 주문 단위 순서만 보존한다(파티션 키=orderNo). 서로 다른 주문 간 순서는 소비자가 의존하면 안 된다.
 - at-least-once이므로 **중복 발행 가능** → 소비자는 반드시 멱등. (ADR-002의 processed_events 결과 소비 원칙과 동일.)
-- 어떤 이벤트를 외부화할지는 애노테이션으로 **명시적 선택** — 모든 도메인 이벤트를 무분별하게 내보내지 않는다(스키마 결합 최소화).
+- 어떤 이벤트를 외부화할지는 애노테이션으로 **명시적으로 선택**한다. 모든 도메인 이벤트를 무분별하게 내보내지 않는다(스키마 결합 최소화).
 
 ## 실증
 
-- 프로세스 밖 소비자 실증: 별도 프로세스 앱 [`consumer-app/`](../../consumer-app/README.md)(독립 Gradle 프로젝트)이 `payment.confirmed`/`payment.canceled`를 구독한다 — 도메인 코드 무수정.
+- 프로세스 밖 소비자 실증: 별도 프로세스 앱 [`consumer-app/`](../../consumer-app/README.md)(독립 Gradle 프로젝트)이 `payment.confirmed`/`payment.canceled`를 구독한다. 도메인 코드는 무수정이다.
