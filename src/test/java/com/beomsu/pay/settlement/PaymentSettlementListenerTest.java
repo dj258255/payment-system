@@ -1,8 +1,8 @@
 package com.beomsu.pay.settlement;
 
-import com.beomsu.pay.escrow.EscrowReleasedEvent;
-import com.beomsu.pay.payment.PaymentCanceledEvent;
-import com.beomsu.pay.payment.PaymentConfirmedEvent;
+import com.beomsu.paycontracts.EscrowReleasedEvent;
+import com.beomsu.paycontracts.PaymentCanceledEvent;
+import com.beomsu.paycontracts.PaymentConfirmedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

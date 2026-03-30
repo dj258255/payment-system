@@ -1,5 +1,7 @@
 package com.beomsu.pay.payment;
 
+import com.beomsu.paycontracts.PaymentConfirmedEvent;
+
 import com.beomsu.pay.payment.pg.PgClient;
 import com.beomsu.pay.payment.pg.PgPaymentStatus;
 import com.beomsu.pay.payment.pg.PgQueryResult;

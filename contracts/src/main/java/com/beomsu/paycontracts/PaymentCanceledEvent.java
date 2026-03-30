@@ -1,9 +1,12 @@
-package com.beomsu.pay.payment;
+package com.beomsu.paycontracts;
 
 import org.springframework.modulith.events.Externalized;
 
 /**
  * 결제 취소(전액/부분) 이벤트. ledger가 역분개를, settlement가 정산액 반영을 위해 구독한다.
+ *
+ * <p>발행자와 프로세스 밖 소비자가 공유하는 <b>계약(published language)</b>이라 pay 본체가 아닌
+ * pay-contracts 아티팩트에 둔다. 필드 변경은 소비자 전부와의 호환을 검토한 뒤에만 한다.
  *
  * <p>승인 이벤트와 마찬가지로 {@code @Externalized}로 Kafka에 외부화하며, 라우팅 키를
  * {@code orderNo}로 잡아 같은 주문의 승인/취소 이벤트가 같은 파티션에서 순서대로 흐르게 한다.
@@ -14,7 +17,7 @@ import org.springframework.modulith.events.Externalized;
  *
  * @param settleableBalance 이 취소가 반영된 뒤의 취소 가능 잔액(=정산 대상 금액). 전액취소면 0.
  */
-@Externalized("payment.canceled::#{orderNo}")
+@Externalized(PayTopics.PAYMENT_CANCELED + "::#{orderNo}")
 public record PaymentCanceledEvent(String orderNo, Long paymentId, long cancelAmount,
                                    long settleableBalance, boolean fullyCanceled) {
 }

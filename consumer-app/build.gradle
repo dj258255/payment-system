@@ -21,6 +21,10 @@ repositories {
 }
 
 dependencies {
+    // 이벤트 계약 — 토픽명 상수(PayTopics)를 발행자와 공유(오타가 곧 컴파일 에러).
+    // 이벤트 record 역직렬화에는 여전히 안 쓴다(String + readTree 유지, 타입 헤더 비결합).
+    implementation 'com.beomsu.pay:pay-contracts:0.1.0'
+
     // 웹서버 없는 경량 워커 — starter-web 대신 core starter만
     implementation 'org.springframework.boot:spring-boot-starter'
     implementation 'org.springframework.kafka:spring-kafka'
