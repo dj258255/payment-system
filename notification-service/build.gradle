@@ -1,0 +1,48 @@
+// 알림 서비스 — pay 모놀리스에서 추출된 두 번째 서비스 (consumer-app 데모의 실서비스 승격).
+//
+// settlement-service와 같은 독립 Gradle 프로젝트 패턴이다. 인프로세스 시절부터 갖고 있던
+// 멱등 소비(ProcessedEvent)와 DLQ(DeadLetter)가 Kafka at-least-once에서 비로소 실전이 된다.
+// 실행: docker compose up -d 후 ./gradlew -p notification-service bootRun
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.4.2'          // 메인 프로젝트와 동일 버전
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.beomsu'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)        // 메인 프로젝트와 동일 toolchain
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // 이벤트 계약 — 토픽 상수 + 이벤트 record(Kafka 페이로드 역직렬화 대상)
+    implementation 'com.beomsu.pay:pay-contracts:0.1.0'
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'          // DLQ 어드민 REST
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.kafka:spring-kafka'
+    // 코어가 발급한 JWT(HS256)를 같은 시크릿으로 로컬 검증한다 — settlement-service와 동일 패턴
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+    implementation 'org.flywaydb:flyway-mysql'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

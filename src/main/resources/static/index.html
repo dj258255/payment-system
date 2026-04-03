@@ -277,7 +277,7 @@
         <div class="card">
           <h2>DLQ (실패 이벤트)</h2>
           <div class="sub">멱등 컨슈머가 실패를 흡수한 데드레터. 재처리 가능.</div>
-          <div class="row"><button class="small" onclick="adm('GET','/api/v1/admin/dead-letters','dlq')">DLQ 목록</button></div>
+          <div class="row"><button class="small" onclick="adm('GET',NOTIFICATION_BASE+'/api/v1/admin/dead-letters','dlq')">DLQ 목록</button></div>
           <div class="adminlist" id="dlq"></div>
         </div>
       </div>
@@ -496,6 +496,8 @@ async function dpResolve(outcome){ await api('POST','/api/v1/admin/disputes/'+$(
 // 토큰은 그대로 쓰고, 오리진만 다르다(CORS는 settlement-service가 이 콘솔 오리진을 허용).
 // K8s Ingress 도입 시 경로 라우팅으로 same-origin이 되어 이 상수는 ''로 돌아간다.
 const SETTLEMENT_BASE='http://localhost:8090';
+// 알림/DLQ도 별도 서비스(notification-service, :8091)다 — 같은 JWT를 로컬 검증한다.
+const NOTIFICATION_BASE='http://localhost:8091';
 // 정산: 목록은 Page → content 배열을 정산 전용 컬럼으로 렌더(수수료·VAT·지급액·지급예정일까지 보이게)
 function renderSettle(data){
   const rows=Array.isArray(data)?data:(data?[data]:[]);
