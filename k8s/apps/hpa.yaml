@@ -1,0 +1,26 @@
+# HPA — pay-core만 수평 확장한다. 이것이 분리의 결실이다:
+# 모놀리스에서는 스케일아웃이 정산 스케줄러를 복제했지만(실측 재현, ADR-009),
+# 이제 결제 트래픽은 결제만 늘린다. 정산·알림은 컨슈머라 파티션 수가 소비 병렬성의
+# 상한이므로 HPA 대상이 아니다(단일 파티션 로컬에선 특히).
+# metrics-server 필요(k8s/README.md 설치 절차).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pay-core
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pay-core
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60     # requests(500m) 기준 60% — 지속 300m 초과 시 증설
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 60 # 데모용(기본 300s) — 스파이크 후 축소를 빨리 관찰

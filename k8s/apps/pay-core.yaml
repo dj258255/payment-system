@@ -1,0 +1,61 @@
+# pay-core — 주문·결제·원장·에스크로·대사·분쟁·FDS (수평 확장 대상).
+#
+# 무중단 롤링의 두 축:
+#   * probe: 준비 안 된 파드에 트래픽을 주지 않고(readiness), 죽은 파드를 재시작(liveness).
+#     Spring Boot는 K8s 감지 시 /actuator/health/{readiness,liveness} 그룹을 자동 노출한다.
+#   * 종료: preStop sleep 5로 엔드포인트 제거가 전파될 시간을 벌고, 앱의 graceful shutdown
+#     (20s 드레이닝, application.yml)이 인플라이트 결제를 지킨다.
+#     terminationGracePeriodSeconds(30) > preStop(5) + 드레이닝(20) 이어야 SIGKILL을 안 맞는다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pay-core
+spec:
+  replicas: 1                 # HPA(hpa.yaml)가 부하에 따라 1~3으로 조정한다
+  selector:
+    matchLabels: { app: pay-core }
+  template:
+    metadata:
+      labels: { app: pay-core }
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: pay-core
+          image: pay-core:local
+          imagePullPolicy: Never          # kind load docker-image로 주입한 로컬 이미지
+          ports:
+            - containerPort: 8080
+          env:
+            - { name: SPRING_PROFILES_ACTIVE, value: kafka }
+            - { name: KAFKA_BOOTSTRAP, value: "kafka:9092" }
+            - { name: SPRING_DATASOURCE_URL, value: "jdbc:mysql://mysql:3306/pay" }
+            - { name: SPRING_DATASOURCE_USERNAME, value: pay }
+            - { name: SPRING_DATASOURCE_PASSWORD, value: pay }
+            - { name: SPRING_DATA_REDIS_HOST, value: redis }
+            - name: APP_JWT_SECRET
+              valueFrom: { secretKeyRef: { name: pay-jwt, key: APP_JWT_SECRET } }
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8080 }
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+          resources:
+            requests: { cpu: 500m, memory: 768Mi }   # HPA CPU% 산정의 분모 — requests 없으면 HPA 불능
+            limits: { memory: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pay-core
+spec:
+  selector: { app: pay-core }
+  ports:
+    - port: 8080
