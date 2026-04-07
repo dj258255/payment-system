@@ -56,4 +56,18 @@ open http://localhost:8081/
   → 결제 15/15 성공(격리), Deployment 자가치유로 새 파드 기동, 복구 후
   결제 16건 = 정산 적재 16건(**유실 0** — 다운 중 이벤트는 Kafka에 적체, 컨슈머가
   커밋 오프셋부터 재개).
-- HPA 활성(`cpu 12%/60%`, metrics-server 정상).
+- **무중단 롤링**: 노드 용량 내 부하(10VU) 중 `rollout restart` → **5xx·연결거부 0건**
+  (잔여 0.3%는 멱등 계약의 409 충돌 응답). 여기까지 오는 데 4회의 실측·진단이 필요했다 —
+  probe timeout 오탐, MySQL CFS 기아, MySQL OOM 순으로 잡았다. 전 과정은
+  [실측 문서](../docs/performance/msa-baseline-experiments.md)의 롤링 절 참고.
+- **HPA**: 부하 구간에서 pay-core만 1→3 스케일아웃 관측(정산·알림 불변 — 분리의 결실).
+
+## 실측이 남긴 하드닝 (전부 겪고 고친 것)
+
+| 증상 | 원인 | 수정 |
+|---|---|---|
+| probe 401 → CrashLoop | 시큐리티가 `/actuator/health` 정확 일치만 허용 | `/actuator/health/**` 공개 |
+| 부팅 중 liveness kill 연쇄 | probe timeout 기본 1s + liveness가 부팅 감시 | startupProbe 신설, timeout 3s |
+| 롤링 중 전 레플리카 동시 교체 | 기본 maxUnavailable 25% | `maxUnavailable: 0, maxSurge: 1` |
+| 부팅 파드 Flyway 연결 실패 | MySQL cpu request 250m — 포화 시 CFS 밀림 | DB는 공유 병목, cpu "1"로 |
+| 부하 중 MySQL OOMKill | 메모리 limit 1Gi < 버퍼풀+커넥션 실사용 | limit 1536Mi |

@@ -22,11 +22,13 @@ import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
  */
 
 const BASE = __ENV.BASE_URL || 'http://localhost:8080';
-const VUS = 30;
+// VUS·DURATION은 env로 조절한다 — 재배포 실험은 기본값, HPA 스케일아웃 실험은 VUS를 키운다.
+const VUS = Number(__ENV.VUS || 30);
+const DURATION = __ENV.DURATION || '3m';
 
 export const options = {
   scenarios: {
-    checkout: { executor: 'constant-vus', vus: VUS, duration: '3m', exec: 'checkout' },
+    checkout: { executor: 'constant-vus', vus: VUS, duration: DURATION, exec: 'checkout' },
   },
   // 재시작 실험이므로 실패는 예상 결과다. 임계치는 걸지 않고 관측만 한다.
 };
