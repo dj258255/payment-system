@@ -80,7 +80,7 @@ public class SecurityConfig {
                         // 막힌다. 운영에선 management.server.port를 내부망 전용으로 분리해 스크레이프하는
                         // 게 정석이나, 여기선 로컬 Prometheus를 위해 이 엔드포인트만 개방한다.
                         // 나머지 actuator(env·heapdump·modulith 등 정찰 소지)는 계속 ADMIN으로 잠근다.
-                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .anyRequest().permitAll())
                 // Bearer 토큰의 HS256 서명만 검증(요청당 BCrypt 없음)

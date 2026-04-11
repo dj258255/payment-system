@@ -1,4 +1,0 @@
-rootProject.name = 'pay-settlement-service'
-
-// 이벤트 계약(pay-contracts)을 발행자(pay)·다른 소비자와 동일한 composite build로 조합한다.
-includeBuild '../contracts'

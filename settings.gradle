@@ -1,6 +1,1 @@
 rootProject.name = 'pay'
-
-// 이벤트 계약 아티팩트(pay-contracts)를 composite build로 조합한다.
-// 'com.beomsu.pay:pay-contracts' 의존 선언이 이 로컬 빌드로 자동 치환(substitution)되므로,
-// 퍼블리시 없이 개발하고 나중에 저장소 배포로 전환해도 소비자 선언은 그대로다.
-includeBuild 'contracts'

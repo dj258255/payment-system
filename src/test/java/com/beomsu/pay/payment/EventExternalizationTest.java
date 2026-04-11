@@ -1,9 +1,5 @@
 package com.beomsu.pay.payment;
 
-import com.beomsu.paycontracts.PaymentCanceledEvent;
-
-import com.beomsu.paycontracts.PaymentConfirmedEvent;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.modulith.events.Externalized;

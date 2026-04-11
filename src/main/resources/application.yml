@@ -184,8 +184,13 @@ app:
     cleanup:
       enabled: ${APP_IDEMPOTENCY_CLEANUP_ENABLED:false}
       interval-ms: 3600000
-  # 정산은 별도 서비스로 추출됐다(settlement-service/, 근거: docs/performance/msa-baseline-experiments.md).
-  # 이 앱은 이벤트를 발행만 하고, 정산 스케줄러·배치·어드민 API는 settlement-service가 소유한다.
+  # 일 단위 정산 배치 스케줄러 → SettlementService.settle(전일). 하루 마감이라 기본 24시간 주기.
+  # 수수료율은 bps(270=2.7%), 지급예정일은 정산일 + N영업일(주말 skip). 스케줄러는 기본 off(게이트).
+  settlement:
+    enabled: ${APP_SETTLEMENT_ENABLED:false}
+    interval-ms: 86400000
+    fee-bps: ${APP_SETTLEMENT_FEE_BPS:270}            # 수수료율(basis point) 270 = 2.7%
+    payout-business-days: ${APP_SETTLEMENT_PAYOUT_DAYS:2}   # 지급예정일 = 정산일 + N영업일
   # API 유입 제어(rate limit) — "감당 못 할 요청은 바깥 층에서 싸게 거절한다(429)".
   # 대상: POST /api/v1/orders, POST /api/v1/payments/confirm (RateLimitFilter, 시큐리티 체인 내
   # Bearer 인증 뒤). 고정 윈도우(1초) INCR — 경계 순간 최대 2배 통과는 단순성의 대가로 수용.

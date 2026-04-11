@@ -1,9 +1,5 @@
 package com.beomsu.pay.payment;
 
-import com.beomsu.paycontracts.PaymentCanceledEvent;
-
-import com.beomsu.paycontracts.PaymentConfirmedEvent;
-
 import com.beomsu.pay.payment.pg.PgApproveCommand;
 import com.beomsu.pay.payment.pg.PgApproveResult;
 import com.beomsu.pay.payment.pg.PgClient;
