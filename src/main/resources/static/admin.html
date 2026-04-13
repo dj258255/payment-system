@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PAY 운영 백오피스</title>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  :root{
+    --paper:#F6F4EF; --card:#FFFFFF; --ink:#1C1A16; --sub:#7A756A; --line:#E7E2D6; --line2:#D8D2C2;
+    --side:#181613; --side-ink:#CFC9BC; --side-dim:#8A8375;
+    --accent:#0E4DA4; --accent-ink:#0A3B80;
+    --green:#0B7A4B; --amber:#B45309; --red:#BC3434; --teal:#0F766E;
+    --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    --shadow:0 1px 2px rgba(28,26,22,.05),0 8px 24px -12px rgba(28,26,22,.12);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font:14.5px/1.55 "Pretendard Variable",Pretendard,-apple-system,"Apple SD Gothic Neo",sans-serif;
+    display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+
+  /* ── 사이드바: 잉크 장부 표지 ── */
+  aside{background:var(--side);color:var(--side-ink);padding:20px 0;position:sticky;top:0;height:100vh;overflow:auto}
+  .logo{font-weight:800;font-size:18px;letter-spacing:-.03em;color:#fff;padding:0 22px 4px}
+  .logo b{color:#6EA8FF}
+  .side-sub{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--side-dim);padding:0 22px 18px;border-bottom:1px solid #2C2924}
+  .nav-group{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--side-dim);padding:18px 22px 6px}
+  aside a{display:flex;align-items:center;gap:9px;padding:8px 22px;color:var(--side-ink);text-decoration:none;font-size:13.5px;font-weight:550;border-left:2px solid transparent}
+  aside a:hover{background:#211E1A;color:#fff}
+  aside a.on{background:#26221D;color:#fff;border-left-color:#6EA8FF}
+  aside a .dot{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.45}
+  .back{margin-top:26px;padding:14px 22px;border-top:1px solid #2C2924}
+  .back a{padding:8px 0;color:var(--side-dim);font-size:12.5px}
+
+  /* ── 본문 ── */
+  main{padding:26px 34px 140px;max-width:1080px}
+  .topbar{display:flex;align-items:center;gap:12px;margin-bottom:22px}
+  .crumb{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;color:var(--sub)}
+  .spacer{flex:1}
+  .who{font-size:13px;color:var(--sub)} .who b{color:var(--ink)}
+  .health{font-family:var(--mono);font-size:11px}
+  h1{margin:0 0 4px;font-size:22px;font-weight:800;letter-spacing:-.02em}
+  .desc{color:var(--sub);font-size:13px;margin-bottom:20px;max-width:720px}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:20px 22px;margin-bottom:16px;box-shadow:var(--shadow)}
+  .panel h2{margin:0 0 3px;font-size:14.5px;font-weight:700}
+  .panel .sub{color:var(--sub);font-size:12.5px;margin-bottom:13px}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  button{cursor:pointer;font:inherit;font-weight:650;font-size:12.5px;border-radius:8px;padding:7px 13px;
+    border:1px solid var(--accent-ink);background:var(--accent);color:#fff;transition:.13s}
+  button:hover{background:var(--accent-ink)}
+  button.ghost{background:var(--card);border-color:var(--line2);color:var(--ink)}
+  button.ghost:hover{background:#F2EFE7}
+  button.warn{background:#fff;border-color:#E2B8B8;color:var(--red)}
+  button.warn:hover{background:#FBF1F1}
+  input{background:#FCFBF8;border:1px solid var(--line2);color:var(--ink);border-radius:7px;padding:7px 10px;font:inherit;font-size:12.5px;width:100px}
+  input:focus{outline:2px solid #0E4DA433;border-color:var(--accent)}
+  label{font-size:12px;color:var(--sub)}
+  .hint{font-size:12px;color:var(--sub);margin-top:8px}
+  .mk-note{font-size:12px;color:var(--amber);margin-top:8px}
+
+  .list{font-family:var(--mono);font-size:12px;max-height:340px;overflow:auto;margin-top:6px}
+  .list table{width:100%;border-collapse:collapse}
+  .list th{text-align:left;color:var(--sub);font-weight:600;padding:7px 9px;border-bottom:1px solid var(--line);
+    font-size:10px;letter-spacing:.08em;text-transform:uppercase;position:sticky;top:0;background:var(--card)}
+  .list td{padding:7px 9px;border-bottom:1px solid #F0EDE4;font-variant-numeric:tabular-nums}
+  .list tr:hover td{background:#FAF8F3}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;font-weight:700;
+    padding:2px 8px;border-radius:20px;border:1px solid var(--line2);color:var(--sub);background:#fff}
+  .badge::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.8}
+  .b-green{color:var(--green);border-color:#BFE3D2;background:#F0FAF5}
+  .b-amber{color:var(--amber);border-color:#EAD3AE;background:#FCF6EB}
+  .b-red{color:var(--red);border-color:#EAC1C1;background:#FCF1F1}
+  .b-dim{color:var(--sub)} .b-dim::before{opacity:.35}
+
+  section{display:none;animation:rise .3s ease both}
+  section.on{display:block}
+  @keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+  .cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+  .stat .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;color:var(--sub);margin-bottom:8px}
+  .stat .v{font-size:15px;font-weight:700}
+
+  #logbar{position:fixed;left:232px;right:0;bottom:0;z-index:30;background:#181613;color:#D8D3C8;
+    border-top:1px solid #2C2924;transform:translateY(calc(100% - 36px));transition:transform .22s ease}
+  #logbar.open{transform:none}
+  #logbar .bar{display:flex;align-items:center;gap:10px;height:36px;padding:0 20px;cursor:pointer;user-select:none}
+  #logbar .bar .t{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;color:#A79F8F}
+  #logbar .bar .cnt{font-family:var(--mono);font-size:11px;color:#6EA8FF}
+  .log{font-family:var(--mono);font-size:12px;line-height:1.6;height:190px;overflow:auto;padding:6px 20px 14px;white-space:pre-wrap}
+  .log .req{color:#7FA8E8} .log .ok{color:#7CC7A1} .log .err{color:#E8918D} .log .dim{color:#6D675C}
+</style>
+</head>
+<body>
+<aside>
+  <div class="logo">PAY<b>.</b> OPS</div>
+  <div class="side-sub">BACK OFFICE · ROLE_ADMIN</div>
+  <div class="nav-group">모니터링</div>
+  <a href="#home" data-sec="home" class="on"><span class="dot"></span>개요</a>
+  <div class="nav-group">결제 정합</div>
+  <a href="#recovery" data-sec="recovery"><span class="dot"></span>미확정 결제 복구</a>
+  <a href="#comp" data-sec="comp"><span class="dot"></span>보상 태스크 (망취소)</a>
+  <a href="#recon" data-sec="recon-sec"><span class="dot"></span>정산 대사</a>
+  <div class="nav-group">자금 · 정산</div>
+  <a href="#settle" data-sec="settle-sec"><span class="dot"></span>정산 · 지급</a>
+  <a href="#dispute" data-sec="dispute"><span class="dot"></span>분쟁 · 차지백</a>
+  <div class="nav-group">리스크 · 통제</div>
+  <a href="#fc" data-sec="fc-sec"><span class="dot"></span>강제취소 (2인 승인)</a>
+  <a href="#fraud" data-sec="fraud-sec"><span class="dot"></span>FDS 심사 큐</a>
+  <a href="#dlq" data-sec="dlq-sec"><span class="dot"></span>DLQ</a>
+  <div class="back"><a href="/">← 스토어(데모)로</a></div>
+</aside>
+
+<main>
+  <div class="topbar">
+    <span class="crumb">PAY OPS / <span id="crumbCur">개요</span></span>
+    <div class="spacer"></div>
+    <span class="health" id="health">health —</span>
+    <span class="who" id="who">로그인 안 됨</span>
+    <button class="ghost" onclick="adminLogin()">관리자 로그인</button>
+  </div>
+
+  <!-- ══ 개요 ══ -->
+  <section id="home" class="on">
+    <h1>운영 개요</h1>
+    <div class="desc">모든 상태 변경은 감사 로그(AUDIT)로 남습니다. 좌측 메뉴에서 업무별 화면으로 이동하세요.</div>
+    <div class="cards3">
+      <div class="stat"><div class="k">서버 상태</div><div class="v" id="stHealth">—</div></div>
+      <div class="stat"><div class="k">로그인</div><div class="v" id="stRole">—</div></div>
+      <div class="stat"><div class="k">환경</div><div class="v">LOCAL · DEMO</div></div>
+    </div>
+    <div class="panel">
+      <h2>업무 바로가기</h2>
+      <div class="sub">일일 운영 루틴 순서 — 미확정 복구 → 보상 재처리 → 대사 확인 → 정산 실행·지급.</div>
+      <div class="row">
+        <button class="ghost" onclick="go('recovery')">미확정 결제</button>
+        <button class="ghost" onclick="go('comp')">보상 태스크</button>
+        <button class="ghost" onclick="go('recon-sec')">대사 불일치</button>
+        <button class="ghost" onclick="go('settle-sec')">정산</button>
+        <button class="ghost" onclick="go('dlq-sec')">DLQ</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 미확정 복구 ══ -->
+  <section id="recovery">
+    <h1>미확정(UNKNOWN) 결제 복구</h1>
+    <div class="desc">웹훅 누락·타임아웃으로 방치된 결제를 PG 조회로 확정합니다. UNKNOWN은 "모름"을 상태로 보존한 것 — 추측으로 성공/실패 처리하지 않습니다.</div>
+    <div class="panel">
+      <div class="row">
+        <button onclick="adm('GET','/api/v1/admin/payments/unknown','unk')">미확정 목록</button>
+        <button class="ghost" onclick="adm('POST','/api/v1/admin/payments/recover','unk')">전체 복구 실행</button>
+      </div>
+      <div class="list" id="unk"></div>
+    </div>
+  </section>
+
+  <!-- ══ 보상 태스크 ══ -->
+  <section id="comp">
+    <h1>보상 태스크 (망취소)</h1>
+    <div class="desc">승인 후 재고 부족 등으로 발생한 자동 망취소 태스크. 재시도 소진(FAILED) 건은 여기서 재처리합니다.</div>
+    <div class="panel">
+      <div class="row">
+        <button onclick="adm('GET','/api/v1/admin/compensations?status=FAILED','comp-list')">FAILED 목록</button>
+        <button class="ghost" onclick="adm('GET','/api/v1/admin/compensations?status=DONE','comp-list')">DONE 목록</button>
+      </div>
+      <div class="list" id="comp-list"></div>
+    </div>
+  </section>
+
+  <!-- ══ 대사 ══ -->
+  <section id="recon-sec">
+    <h1>정산 대사</h1>
+    <div class="desc">내부 원장 vs PG 정산 파일 대조 결과 중 사람 확인이 필요한(PENDING) 불일치 목록. 대사는 정합성의 최종 방어선입니다.</div>
+    <div class="panel">
+      <div class="row"><button onclick="adm('GET','/api/v1/admin/reconciliations/mismatches','recon')">불일치 목록</button></div>
+      <div class="list" id="recon"></div>
+    </div>
+  </section>
+
+  <!-- ══ 정산 ══ -->
+  <section id="settle-sec">
+    <h1>정산 · 지급</h1>
+    <div class="desc">구매확정(CONFIRMED) 항목을 일 단위 집계 — 수수료 2.7% + 수수료 VAT 10% → 지급액과 지급예정일(정산일+2영업일) 산출. 집계된 정산(CREATED)을 지급 확정(PAID_OUT)합니다.</div>
+    <div class="panel">
+      <div class="row">
+        <button class="ghost" onclick="settleRun()">오늘 정산 실행</button>
+        <button onclick="settleList()">정산 목록</button>
+        <label>정산ID</label><input id="stlId" type="number" value="1" style="width:70px">
+        <button onclick="settlePayout()">지급 확정</button>
+      </div>
+      <div class="list" id="settle"></div>
+    </div>
+  </section>
+
+  <!-- ══ 분쟁 ══ -->
+  <section id="dispute">
+    <h1>분쟁 · 차지백</h1>
+    <div class="desc">차지백 웹훅(HMAC 서명) 수신 → 분쟁 개시(chargebackId 멱등) → 증빙 제출 → 승/패 확정. 패소(LOST) 시 원장 역분개로 사후 정합을 맞춥니다.</div>
+    <div class="panel">
+      <h2>차지백 웹훅 시뮬레이션</h2>
+      <div class="sub">로컬 웹훅 시크릿으로 서명을 계산해 실제 웹훅 엔드포인트로 전송합니다.</div>
+      <div class="row">
+        <label>chargebackId</label><input id="dpCbId" value="cb-1001">
+        <label>orderNo</label><input id="dpOrder" value="order-1">
+        <label>결제ID</label><input id="dpPid" type="number" value="100" style="width:70px">
+        <label>금액</label><input id="dpAmt" type="number" value="10000" style="width:90px">
+        <button onclick="dpChargeback()">차지백 전송</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>분쟁 처리</h2>
+      <div class="row">
+        <button class="ghost" onclick="dpList()">분쟁 목록</button>
+        <label>분쟁ID</label><input id="dpId" type="number" value="1" style="width:60px">
+        <button class="ghost" onclick="dpEvidence()">증빙 제출</button>
+        <button onclick="dpResolve('WON')">승소</button>
+        <button class="warn" onclick="dpResolve('LOST')">패소 (역분개)</button>
+      </div>
+      <div class="list" id="disp"></div>
+    </div>
+  </section>
+
+  <!-- ══ 강제취소 ══ -->
+  <section id="fc-sec">
+    <h1>강제취소 · 2인 승인 (maker-checker)</h1>
+    <div class="desc">요청자와 승인자가 반드시 달라야 실행됩니다. 요청자 본인이 승인하면 MAKER_CHECKER_VIOLATION으로 차단.</div>
+    <div class="panel">
+      <div class="row">
+        <label>결제ID</label><input id="fcPid" type="number" value="1" style="width:80px">
+        <label>금액</label><input id="fcAmt" type="number" value="10000">
+        <button class="warn" onclick="fcRequest()">강제취소 요청</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button onclick="adm('GET','/api/v1/admin/force-cancels?status=REQUESTED','fc')">승인 대기 목록</button>
+        <label>요청ID</label><input id="fcRid" type="number" value="1" style="width:70px">
+        <button class="ghost" onclick="fcApprove()">승인 = 실행</button>
+      </div>
+      <div class="mk-note" id="fcNote"></div>
+      <div class="list" id="fc"></div>
+    </div>
+  </section>
+
+  <!-- ══ FDS ══ -->
+  <section id="fraud-sec">
+    <h1>FDS 사후 탐지 심사 큐</h1>
+    <div class="desc">결제 완료 이벤트를 비동기 평가해 REVIEW/BLOCK을 큐에 적재합니다. 거부 시 카드 블랙리스트에 등록됩니다.</div>
+    <div class="panel">
+      <div class="row">
+        <button onclick="adm('GET','/api/v1/admin/fraud-reviews?status=PENDING','fraud')">심사 대기</button>
+        <label>심사ID</label><input id="frId" type="number" value="1" style="width:70px">
+        <button class="ghost" onclick="frAct('approve')">승인</button>
+        <button class="warn" onclick="frAct('reject')">거부 + 블랙리스트</button>
+      </div>
+      <div class="list" id="fraud"></div>
+    </div>
+  </section>
+
+  <!-- ══ DLQ ══ -->
+  <section id="dlq-sec">
+    <h1>DLQ (실패 이벤트)</h1>
+    <div class="desc">멱등 컨슈머가 실패를 흡수해 격리한 데드레터. 실패가 이벤트 흐름을 막지 않게 하고, 격리 건은 여기서 재처리합니다.</div>
+    <div class="panel">
+      <div class="row"><button onclick="adm('GET','/api/v1/admin/dead-letters','dlq')">DLQ 목록</button></div>
+      <div class="list" id="dlq"></div>
+    </div>
+  </section>
+</main>
+
+<div id="logbar">
+  <div class="bar" onclick="this.parentElement.classList.toggle('open')">
+    <span class="t">DEVELOPER LOG — 실제 요청 · 응답</span><span class="cnt" id="logCnt">0</span>
+    <div class="spacer"></div><span class="t">↕</span>
+  </div>
+  <div class="log" id="log"><span class="dim">// 여기에 요청·응답이 기록됩니다</span></div>
+</div>
+
+<script>
+let token=sessionStorage.getItem('pay.token'), role=sessionStorage.getItem('pay.role'), logN=0;
+const $=id=>document.getElementById(id);
+function uuid(){return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c=='x'?r:(r&0x3|0x8)).toString(16)})}
+function logLine(cls,txt){const el=$('log');el.innerHTML+='\n<span class="'+cls+'">'+txt.replace(/</g,'&lt;')+'</span>';el.scrollTop=el.scrollHeight;$('logCnt').textContent=++logN}
+async function api(method,path,body){
+  logLine('req','→ '+method+' '+path);
+  const h={'Content-Type':'application/json'};
+  if(token) h['Authorization']='Bearer '+token;
+  if(method!=='GET') h['Idempotency-Key']=uuid();
+  let res;
+  try{res=await fetch(path,{method,headers:h,body:body?JSON.stringify(body):undefined});}
+  catch(e){logLine('err','✗ 네트워크 오류 '+e);throw e}
+  const text=await res.text(); let data;try{data=text?JSON.parse(text):null}catch{data=text}
+  logLine(res.ok?'ok':'err',(res.ok?'✓ ':'✗ ')+res.status+' '+(typeof data==='object'?JSON.stringify(data):data));
+  return {ok:res.ok,status:res.status,data};
+}
+// ── 내비게이션 (hash) ──
+const NAMES={home:'개요',recovery:'미확정 결제 복구','comp':'보상 태스크','recon-sec':'정산 대사','settle-sec':'정산 · 지급',dispute:'분쟁 · 차지백','fc-sec':'강제취소','fraud-sec':'FDS 심사','dlq-sec':'DLQ'};
+function go(sec){
+  document.querySelectorAll('main section').forEach(s=>s.classList.toggle('on',s.id===sec));
+  document.querySelectorAll('aside a[data-sec]').forEach(a=>a.classList.toggle('on',a.dataset.sec===sec));
+  $('crumbCur').textContent=NAMES[sec]||sec;
+}
+document.querySelectorAll('aside a[data-sec]').forEach(a=>a.onclick=e=>{go(a.dataset.sec)});
+// ── 인증 ──
+function setWho(){
+  $('who').innerHTML=token?('<b>'+(role||'사용자')+'</b> 로그인됨'):'로그인 안 됨';
+  $('stRole').textContent=role||'미로그인';
+}
+async function adminLogin(){
+  const r=await api('POST','/api/v1/auth/login',{username:'admin',password:'admin-local-only'});
+  if(r.ok){token=r.data.token;role='관리자';
+    sessionStorage.setItem('pay.token',token);sessionStorage.setItem('pay.role',role);setWho();}
+}
+async function health(){
+  try{const r=await fetch('/actuator/health');const d=await r.json();
+    $('health').innerHTML='health <span class="badge '+(d.status==='UP'?'b-green':'b-red')+'">'+d.status+'</span>';
+    $('stHealth').textContent=d.status;}catch{$('health').textContent='health DOWN';$('stHealth').textContent='DOWN'}
+}
+// ── 목록 렌더 ──
+function fmt(v){if(v==null)return '<span style="color:var(--sub)">null</span>';const s=String(v);
+  const map={PAID:'green',DONE:'green',EXECUTED:'green',PAID_OUT:'green',SETTLED:'green',CONFIRMED:'green',ACTIVE:'green',SUCCESS:'green',WON:'green',
+    REQUESTED:'amber',PENDING:'amber',CREATED:'amber',OPEN:'amber',IN_GRACE_PERIOD:'amber',ON_HOLD:'amber',SOFT_DECLINE:'amber',UNKNOWN:'amber',
+    FAILED:'red',REJECTED:'red',CANCELED:'red',HARD_DECLINE:'red',LOST:'red',BLOCK:'red'};
+  return map[s]?'<span class="badge b-'+map[s]+'">'+s+'</span>':s.length>26?s.slice(0,26)+'…':s}
+function renderList(target,data){
+  const el=$(target);if(!el)return;
+  if(data==null){el.innerHTML='<div class="hint">(응답 없음)</div>';return}
+  if(!Array.isArray(data)){el.innerHTML='<pre style="white-space:pre-wrap;color:var(--sub);font-size:11.5px">'+JSON.stringify(data,null,1)+'</pre>';return}
+  if(data.length===0){el.innerHTML='<div class="hint">(비어 있음)</div>';return}
+  const cols=Object.keys(data[0]).slice(0,6);
+  el.innerHTML='<table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+
+    data.map(row=>'<tr>'+cols.map(c=>'<td>'+fmt(row[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+}
+async function adm(method,path,target){
+  const r=await api(method,path);
+  renderList(target,r.data);
+}
+// ── 강제취소 ──
+async function fcRequest(){
+  const r=await api('POST','/api/v1/admin/payments/'+$('fcPid').value+'/force-cancel',{cancelAmount:+$('fcAmt').value,reason:'분쟁 정정'});
+  if(r.ok){$('fcRid').value=r.data.id;$('fcNote').textContent='요청 생성됨(id='+r.data.id+', 요청자='+r.data.requestedBy+'). 다른 관리자로 로그인해 승인하세요.';}
+  renderList('fc',r.data);
+}
+async function fcApprove(){
+  const r=await api('POST','/api/v1/admin/force-cancels/'+$('fcRid').value+'/approve');
+  $('fcNote').textContent = r.ok ? '승인=실행 완료 (EXECUTED)' : '⚠ '+(r.data&&r.data.message||r.status)+' — 요청자 본인은 승인 불가(maker-checker)';
+  renderList('fc',r.data);
+}
+// ── FDS ──
+async function frAct(act){
+  const r=await api('POST','/api/v1/admin/fraud-reviews/'+$('frId').value+'/'+act);
+  renderList('fraud',r.data);
+}
+// ── 정산 ──
+function renderSettle(data){
+  const rows=Array.isArray(data)?data:(data?[data]:[]);
+  const el=$('settle');if(!el)return;
+  if(!rows.length){el.innerHTML='<div class="hint">(정산 없음 — 오늘 정산 실행)</div>';return}
+  const cols=['id','settlementDate','grossAmount','feeAmount','feeVatAmount','netAmount','status','payoutDate'];
+  el.innerHTML='<table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+
+    rows.map(row=>'<tr>'+cols.map(c=>'<td>'+fmt(row[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+}
+async function settleList(){
+  const r=await api('GET','/api/v1/admin/settlements');
+  renderSettle(r.ok&&r.data?r.data.content:null);
+}
+async function settleRun(){
+  const today=new Date().toISOString().slice(0,10);
+  const r=await api('POST','/api/v1/admin/settlements/run?date='+today);
+  if(r.status===204){$('settle').innerHTML='<div class="hint">(재실행이거나 정산 대상 없음 — 204)</div>';return}
+  settleList();
+}
+async function settlePayout(){
+  await api('POST','/api/v1/admin/settlements/'+$('stlId').value+'/payout');
+  settleList();
+}
+// ── 분쟁 (HMAC 웹훅) ──
+const DP_SECRET='local-webhook-secret-please-override-32b';
+async function dpChargeback(){
+  const body=JSON.stringify({chargebackId:$('dpCbId').value,orderNo:$('dpOrder').value,
+    paymentId:+$('dpPid').value,amount:+$('dpAmt').value,reason:'fraudulent'});
+  const ts=Math.floor(Date.now()/1000);
+  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(DP_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const mac=await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(ts+'.'+body));
+  const sig=[...new Uint8Array(mac)].map(b=>b.toString(16).padStart(2,'0')).join('');
+  logLine('req','→ POST /api/v1/webhooks/chargeback');
+  const res=await fetch('/api/v1/webhooks/chargeback',{method:'POST',
+    headers:{'Content-Type':'application/json','X-Signature':`t=${ts},v1=${sig}`},body});
+  const txt=await res.text();logLine(res.ok?'ok':'err',(res.ok?'✓ ':'✗ ')+res.status+' '+txt);
+  dpList();
+}
+async function dpList(){ const r=await api('GET','/api/v1/admin/disputes'); renderList('disp',r.data); }
+async function dpEvidence(){ await api('POST','/api/v1/admin/disputes/'+$('dpId').value+'/evidence',{memo:'영수증·배송 증적 첨부'}); dpList(); }
+async function dpResolve(outcome){ await api('POST','/api/v1/admin/disputes/'+$('dpId').value+'/resolve',{outcome}); dpList(); }
+
+setWho(); health();
+</script>
+</body>
+</html>
