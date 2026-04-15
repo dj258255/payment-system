@@ -43,15 +43,17 @@ class PointServiceTest {
     }
 
     @Test
-    @DisplayName("earn: 잔액을 늘리고 EARN 이력을 남긴다")
+    @DisplayName("earn: 원자 증가로 잔액을 늘리고 EARN 이력을 남긴다 (낙관적 락 경로를 타지 않는다)")
     void earnAddsAndRecords() {
-        PointAccount account = PointAccount.of(1L, 1_000);
         when(historyRepository.existsByOrderNoAndType("order-1", PointHistoryType.EARN)).thenReturn(false);
-        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
 
         service.earn(1L, 200, "order-1");
 
-        assertThat(account.getBalance()).isEqualTo(1_200);
+        // 경합 실측(승인 성공률 39.6%) 후 read-modify-write 대신 DB 원자 증가로 전환 —
+        // findById/saveAndFlush를 타면 낙관적 락 충돌이 결제 실패로 전파되는 회귀다.
+        verify(accountRepository).increaseBalanceAtomically(1L, 200);
+        verify(accountRepository, never()).findById(any());
+        verify(accountRepository, never()).saveAndFlush(any());
         ArgumentCaptor<PointHistory> captor = ArgumentCaptor.forClass(PointHistory.class);
         verify(historyRepository).save(captor.capture());
         assertThat(captor.getValue().getType()).isEqualTo(PointHistoryType.EARN);
@@ -65,7 +67,7 @@ class PointServiceTest {
 
         service.earn(1L, 200, "order-1");
 
-        verify(accountRepository, never()).saveAndFlush(any());
+        verify(accountRepository, never()).increaseBalanceAtomically(anyLong(), anyLong());
         verify(historyRepository, never()).save(any());
     }
 

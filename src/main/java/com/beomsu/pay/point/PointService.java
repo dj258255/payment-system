@@ -99,6 +99,12 @@ public class PointService {
     /**
      * 포인트 적립 — 결제 완료 시 실결제액 기준으로 적립한다. 같은 주문의 EARN 이력이 이미 있으면
      * 멱등하게 skip한다(사가 성공분기·복구 재실행에도 이중적립 방지). amount==0이면 무시.
+     *
+     * <p><b>원자 증가로 적립한다(경합 실측 후 전환)</b>: 이전에는 엔티티를 읽어 고쳐 쓰는
+     * 낙관적 락 경로였는데, 같은 계정의 동시 결제에서 {@code @Version} 충돌이 결제 승인까지
+     * 실패시키는 것을 부하 실험으로 확인했다(30VU 단일 계정, 승인 성공률 39.6% — 운영에선
+     * per-user rate limit이 이 경합을 가려 왔다). 적립은 더하기라 순서가 무관하므로 DB 원자
+     * 증가(upsert)로 바꿔 경합을 제거했다. 분석·실측: docs/performance/point-accrual-contention.md
      */
     public void earn(long userId, long amount, String orderNo) {
         if (amount < 0) {
@@ -110,10 +116,7 @@ public class PointService {
         if (historyRepository.existsByOrderNoAndType(orderNo, PointHistoryType.EARN)) {
             return; // 멱등: 이미 적립함
         }
-        PointAccount account = accountRepository.findById(userId)
-                .orElseGet(() -> PointAccount.of(userId, 0));
-        account.earn(amount);
-        accountRepository.saveAndFlush(account);
+        accountRepository.increaseBalanceAtomically(userId, amount);
         historyRepository.save(PointHistory.of(userId, PointHistoryType.EARN, amount, orderNo));
     }
 
