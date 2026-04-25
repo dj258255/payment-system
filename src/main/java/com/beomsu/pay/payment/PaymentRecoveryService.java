@@ -96,6 +96,9 @@ public class PaymentRecoveryService {
                 payment.networkCancel("복구: PG에서 이미 취소됨");
                 paymentRepository.saveAndFlush(payment);
             }
+            // PG가 아직 진행 중이라고 답하면 확정하지 않는다. 여기서 실패로 단정하면
+            // 승인이 곧 끝날 결제를 우리만 실패로 기록하는 사고가 된다 → 다음 주기에 다시 묻는다
+            case IN_PROGRESS -> log.info("복구 보류: PG 진행 중 orderNo={}", payment.getOrderNo());
         }
     }
 }
