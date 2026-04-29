@@ -129,15 +129,29 @@ public class Payment {
      * 취소(전액/부분). 잔액을 초과하면 예외. 잔액이 0이 되면 CANCELED, 남으면 PARTIAL_CANCELED.
      */
     public void cancel(Money cancelAmount, TriggeredBy by, String reason) {
+        validateCancelable(cancelAmount);
+        long newBalance = balanceAmount - cancelAmount.amount();
+        transitionTo(cancelTargetOf(newBalance), by, reason);
+        this.balanceAmount = newBalance;
+    }
+
+    /**
+     * 취소 가능 여부만 검사한다(상태 변경 없음). 취소 사가 1단계가 <b>PG를 부르기 전에</b> 불가능한
+     * 취소를 걸러내는 데 쓴다. {@link #cancel}도 같은 검사를 통과한 뒤 전이하므로 규칙이 한 곳에 있다.
+     */
+    public void validateCancelable(Money cancelAmount) {
         if (cancelAmount.amount() > balanceAmount) {
             throw PaymentException.cancelAmountExceeded(cancelAmount.amount(), balanceAmount);
         }
-        long newBalance = balanceAmount - cancelAmount.amount();
-        PaymentStatus target = (newBalance == 0)
-                ? PaymentStatus.CANCELED
-                : PaymentStatus.PARTIAL_CANCELED;
-        transitionTo(target, by, reason);
-        this.balanceAmount = newBalance;
+        PaymentStatus target = cancelTargetOf(balanceAmount - cancelAmount.amount());
+        if (!status.canTransitionTo(target)) {
+            throw PaymentException.invalidTransition(status, target);
+        }
+    }
+
+    /** 취소 후 잔액이 0이면 전액 취소, 남으면 부분 취소. */
+    private static PaymentStatus cancelTargetOf(long newBalance) {
+        return (newBalance == 0) ? PaymentStatus.CANCELED : PaymentStatus.PARTIAL_CANCELED;
     }
 
     private void transitionTo(PaymentStatus target, TriggeredBy by, String reason) {

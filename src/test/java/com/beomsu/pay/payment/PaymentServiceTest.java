@@ -34,7 +34,7 @@ class PaymentServiceTest {
         pg = new FakePgClient();
         meterRegistry = new SimpleMeterRegistry();
         when(repository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
-        service = new PaymentService(repository, pg, events, meterRegistry);
+        service = new PaymentService(repository, pg, new PaymentCancelTx(repository, events), events, meterRegistry);
     }
 
     /** IN_PROGRESS(예약 완료) 상태의 결제를 id를 심어 만든다 — applyResult 테스트용. */
@@ -132,7 +132,7 @@ class PaymentServiceTest {
     @DisplayName("resolveStuckPayment: UNKNOWN 결제도 PG 재조회 — APPROVED면 DONE 확정 + SUCCESS 매핑")
     void resolveStuckPaymentRequeriesUnknownToSuccess() {
         PgClient mockPg = mock(PgClient.class);
-        PaymentService svc = new PaymentService(repository, mockPg, events, meterRegistry);
+        PaymentService svc = new PaymentService(repository, mockPg, new PaymentCancelTx(repository, events), events, meterRegistry);
         Payment stuck = inProgress("order-r", "pk-r", 8_000, 5L);
         stuck.markUnknown("타임아웃"); // IN_PROGRESS → UNKNOWN
         when(repository.findFirstByOrderNoOrderByRequestedAtDesc("order-r")).thenReturn(Optional.of(stuck));
@@ -151,7 +151,7 @@ class PaymentServiceTest {
     @DisplayName("resolveStuckPayment: PG가 CANCELED면 ABORTED로 확정 — IN_PROGRESS→CANCELED 불법 전이 회피")
     void resolveStuckPaymentCanceledMapsToAborted() {
         PgClient mockPg = mock(PgClient.class);
-        PaymentService svc = new PaymentService(repository, mockPg, events, meterRegistry);
+        PaymentService svc = new PaymentService(repository, mockPg, new PaymentCancelTx(repository, events), events, meterRegistry);
         Payment stuck = inProgress("order-c", "pk-c", 8_000, 6L); // IN_PROGRESS
         when(repository.findFirstByOrderNoOrderByRequestedAtDesc("order-c")).thenReturn(Optional.of(stuck));
         when(mockPg.query("pk-c")).thenReturn(new PgQueryResult(PgPaymentStatus.CANCELED, null));
@@ -178,6 +178,8 @@ class PaymentServiceTest {
         done.startApproval("pk-4");
         done.approve("CARD");
         when(repository.findById(1L)).thenReturn(Optional.of(done));
+        // 취소 사가 3단계는 PG 취소에 쓴 paymentKey로 결제를 다시 집는다.
+        when(repository.findByPaymentKey("pk-4")).thenReturn(Optional.of(done));
 
         service.cancel(1L, Money.of(3_000), "부분 변심");
 
@@ -200,6 +202,7 @@ class PaymentServiceTest {
         done.approve("CARD");
         when(repository.findFirstByOrderNoAndStatusIn(any(), any()))
                 .thenReturn(Optional.of(done));
+        when(repository.findByPaymentKey("pk-5")).thenReturn(Optional.of(done));
 
         service.cancelByOrderNo("order-5", Money.of(10_000), "전액 변심");
 
