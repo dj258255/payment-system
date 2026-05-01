@@ -87,7 +87,14 @@ public class IdempotencyService {
             repository.save(record);
             return result;
         } catch (RuntimeException e) {
-            // 재시도 소진/일반 실패 시 레코드 제거 → 클라이언트 재시도 가능(action은 트랜잭션이라 이미 롤백됨).
+            // 재시도 소진/일반 실패 시 레코드를 제거해 클라이언트가 다시 시도할 수 있게 한다.
+            //
+            // 주의: action이 하나의 트랜잭션이라고 가정하면 안 된다. 체크아웃은 예약(tx) → PG 승인
+            // (tx 밖) → 확정(tx) 3단계 사가라, 예약이 커밋된 뒤 뒤 단계에서 예외가 나면 롤백되는 것은
+            // 마지막 트랜잭션뿐이다. 주문은 PAYMENT_IN_PROGRESS로, 포인트·월렛은 선점된 채 남는다.
+            // 그래도 안전한 이유는 두 겹이다. 재시도가 들어와도 order.startPayment()의 조건부 전이가
+            // 이미 진행 중인 주문을 막고, 멈춘 주문은 CheckoutRecoveryService가 PG 조회로 완결하거나
+            // 되돌린다. 이 레코드 삭제는 "재시도 허용"이지 "이전 시도 무효화"가 아니다.
             repository.delete(record);
             throw e;
         }
