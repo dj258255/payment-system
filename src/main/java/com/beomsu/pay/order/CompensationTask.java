@@ -105,6 +105,16 @@ public class CompensationTask {
     }
 
     /** 재시도를 소진해 자동 처리를 포기한 상태인지. */
+    /**
+     * 재시도해도 결과가 같다고 PG가 확정한 실패 — 남은 예산과 무관하게 즉시 FAILED로 닫는다.
+     * 자동 처리를 포기했다는 뜻이라 운영 알림의 대상이 된다.
+     */
+    public void markNotRetryable(String error) {
+        this.retryCount = this.maxRetries;
+        this.lastError = error;
+        this.status = CompensationStatus.FAILED;
+    }
+
     public boolean isExhausted() {
         return this.status == CompensationStatus.FAILED;
     }

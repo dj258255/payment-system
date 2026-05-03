@@ -2,6 +2,7 @@ package com.beomsu.pay.payment;
 
 import com.beomsu.pay.payment.pg.PgApproveCommand;
 import com.beomsu.pay.payment.pg.PgApproveResult;
+import com.beomsu.pay.payment.pg.PgCancelNotRetryableException;
 import com.beomsu.pay.payment.pg.PgClient;
 import com.beomsu.pay.payment.pg.PgQueryResult;
 import com.beomsu.pay.shared.Money;
@@ -166,7 +167,13 @@ public class PaymentService {
      */
     public void cancelByOrderNo(String orderNo, Money cancelAmount, String reason) {
         PaymentCancelTx.CancelTarget target = cancelTx.resolveByOrderNo(orderNo, cancelAmount);
-        pgClient.cancel(target.paymentKey(), cancelAmount.amount(), reason);
+        try {
+            pgClient.cancel(target.paymentKey(), cancelAmount.amount(), reason);
+        } catch (PgCancelNotRetryableException e) {
+            // PG 내부 예외를 모듈 밖으로 새게 두지 않는다. 호출자(보상 실행기)는 "재시도해도 같다"는
+            // 사실만 알면 되므로 payment 모듈의 코드로 번역해 넘긴다.
+            throw new PaymentException("CANCEL_NOT_RETRYABLE", e.getMessage());
+        }
         cancelTx.apply(target.paymentKey(), cancelAmount, reason);
     }
 
