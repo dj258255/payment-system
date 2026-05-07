@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 import java.nio.charset.StandardCharsets;
@@ -79,8 +80,15 @@ public class TossPgClient implements PgClient {
                 // 일시 오류·미등록 코드 — 승인 여부를 모른다. 던져서 UNKNOWN으로 보존한다
                 case RETRYABLE -> throw e;
             };
+        } catch (ResourceAccessException e) {
+            // 연결조차 못 맺었으면 요청 바이트가 나가지 않았다 → 다른 PG로 넘겨도 안전하다는 신호.
+            // 읽기 타임아웃처럼 전송 뒤에 끊긴 경우는 승인이 났을 수 있으므로 그대로 던져 미확정으로 남긴다.
+            if (PgUnreachableException.isConnectFailure(e)) {
+                throw new PgUnreachableException("토스에 연결하지 못함 order=" + command.orderNo(), e);
+            }
+            throw e;
         }
-        // 5xx·네트워크 예외는 여기서 잡지 않는다 → ResilientPgClient가 UNKNOWN으로 변환
+        // 5xx는 여기서 잡지 않는다 → ResilientPgClient가 UNKNOWN으로 변환
     }
 
     /**
@@ -99,14 +107,17 @@ public class TossPgClient implements PgClient {
     }
 
     @Override
-    public PgCancelResult cancel(String paymentKey, long cancelAmount, String reason) {
+    public PgCancelResult cancel(PgCancelCommand command) {
+        String paymentKey = command.paymentKey();
         try {
             TossPayment resp = restClient.post()
                     .uri("/v1/payments/{key}/cancel", paymentKey)
-                    // 같은 결제·같은 금액의 취소는 같은 키를 쓴다 → 재시도해도 두 번 취소되지 않는다
-                    .header("Idempotency-Key", paymentKey + ":" + cancelAmount)
+                    // 취소 건 단위 멱등키. 같은 취소의 재시도는 같은 키라 두 번 취소되지 않고,
+                    // 같은 금액의 서로 다른 부분취소는 순번이 달라 키가 갈린다.
+                    .header("Idempotency-Key", command.idempotencyKey())
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("cancelReason", reason, "cancelAmount", cancelAmount))
+                    .body(Map.of("cancelReason", command.reason(),
+                            "cancelAmount", command.cancelAmount()))
                     .retrieve()
                     .body(TossPayment.class);
             return new PgCancelResult(transactionKeyOf(resp, paymentKey));

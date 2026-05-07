@@ -20,14 +20,29 @@ class RoutingPgClientTest {
         StubPg(String name) { this.name = name; }
 
         StubPg returns(PgApproveResult r) { this.result = r; return this; }
-        StubPg unavailable() { this.error = new RuntimeException(name + " 연결 실패"); return this; }
+
+        /** 요청이 PG에 닿지도 못한 경우 — 연결 수립 실패. 넘겨도 안전한 유일한 실패다. */
+        StubPg unreachable() {
+            this.error = new PgUnreachableException(name + " 연결 실패", new java.net.ConnectException());
+            return this;
+        }
+
+        /**
+         * <b>실 어댑터가 미확정을 표현하는 방식</b> — 응답은 왔는데 승인 여부를 모른다.
+         * {@code TossPgClient}는 일시 오류 응답을 예외로 던지고, 승인 금액 불일치도 예외다.
+         * 더블이 "연결 실패"만 흉내 내면 이 경로를 영영 태우지 못한다.
+         */
+        StubPg respondsUncertain() {
+            this.error = new IllegalStateException(name + " 일시 오류 응답 — 승인 여부 불명");
+            return this;
+        }
 
         @Override public PgApproveResult approve(PgApproveCommand c) {
             approveCalls.incrementAndGet();
             if (error != null) throw error;
             return result;
         }
-        @Override public PgCancelResult cancel(String k, long a, String r) { return new PgCancelResult("tx"); }
+        @Override public PgCancelResult cancel(PgCancelCommand c) { return new PgCancelResult("tx"); }
         @Override public PgQueryResult query(String k) { return new PgQueryResult(PgPaymentStatus.NOT_FOUND, null); }
     }
 
@@ -50,9 +65,9 @@ class RoutingPgClientTest {
     }
 
     @Test
-    @DisplayName("주 PG 장애(예외) 시 보조 PG로 failover")
-    void failoverOnUnavailable() {
-        StubPg toss = new StubPg("TOSS").unavailable();
+    @DisplayName("요청이 PG에 닿지도 못하면 보조 PG로 failover")
+    void failoverOnUnreachable() {
+        StubPg toss = new StubPg("TOSS").unreachable();
         StubPg nice = new StubPg("NICE").returns(PgApproveResult.success("CARD"));
         RoutingPgClient router = new RoutingPgClient(List.of(
                 RoutingPgClient.PgRoute.of("TOSS", toss, 10),
@@ -63,6 +78,26 @@ class RoutingPgClientTest {
         assertThat(r.outcome()).isEqualTo(PgOutcome.SUCCESS);
         assertThat(toss.approveCalls.get()).isEqualTo(1);  // 시도했고
         assertThat(nice.approveCalls.get()).isEqualTo(1);  // 넘어갔다
+    }
+
+    @Test
+    @DisplayName("어댑터가 미확정을 예외로 던져도 failover하지 않는다 — 예외를 '요청 미도달'로 읽으면 이중 결제")
+    void noFailoverWhenAdapterThrowsForUncertainOutcome() {
+        StubPg toss = new StubPg("TOSS").respondsUncertain();
+        StubPg nice = new StubPg("NICE").returns(PgApproveResult.success("CARD"));
+        RoutingPgClient router = new RoutingPgClient(List.of(
+                RoutingPgClient.PgRoute.of("TOSS", toss, 10),
+                RoutingPgClient.PgRoute.of("NICE", nice, 5)));
+
+        PgApproveResult r = router.approve(cmd);
+
+        assertThat(r.outcome())
+                .as("응답이 왔으면 승인이 났을 수 있다 → 미확정으로 보존하고 복구 배치가 확정한다")
+                .isEqualTo(PgOutcome.TIMEOUT);
+        assertThat(toss.approveCalls.get()).isEqualTo(1);
+        assertThat(nice.approveCalls.get())
+                .as("여기서 넘기면 원 PG에서 승인된 결제에 카드가 한 번 더 긁힌다")
+                .isZero();
     }
 
     @Test
@@ -96,10 +131,10 @@ class RoutingPgClientTest {
     }
 
     @Test
-    @DisplayName("모든 PG 장애면 UNKNOWN(TIMEOUT)으로 돌린다")
-    void allUnavailableBecomesTimeout() {
-        StubPg toss = new StubPg("TOSS").unavailable();
-        StubPg nice = new StubPg("NICE").unavailable();
+    @DisplayName("모든 PG에 요청이 닿지 못하면 UNKNOWN(TIMEOUT)으로 돌린다")
+    void allUnreachableBecomesTimeout() {
+        StubPg toss = new StubPg("TOSS").unreachable();
+        StubPg nice = new StubPg("NICE").unreachable();
         RoutingPgClient router = new RoutingPgClient(List.of(
                 RoutingPgClient.PgRoute.of("TOSS", toss, 10),
                 RoutingPgClient.PgRoute.of("NICE", nice, 5)));
@@ -112,7 +147,7 @@ class RoutingPgClientTest {
     @Test
     @DisplayName("주 PG 서킷이 열리면 건너뛰고 보조 PG로 간다")
     void skipsOpenCircuit() {
-        StubPg toss = new StubPg("TOSS").unavailable();
+        StubPg toss = new StubPg("TOSS").unreachable();
         StubPg nice = new StubPg("NICE").returns(PgApproveResult.success("CARD"));
         RoutingPgClient router = new RoutingPgClient(List.of(
                 RoutingPgClient.PgRoute.of("TOSS", toss, 10),
