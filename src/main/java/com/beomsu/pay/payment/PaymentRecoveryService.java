@@ -93,7 +93,7 @@ public class PaymentRecoveryService {
                 paymentRepository.saveAndFlush(payment);
             }
             case CANCELED -> {
-                payment.networkCancel("복구: PG에서 이미 취소됨");
+                payment.markCanceledByPg("복구: PG에서 이미 취소됨");
                 paymentRepository.saveAndFlush(payment);
             }
             // PG가 아직 진행 중이라고 답하면 확정하지 않는다. 여기서 실패로 단정하면
