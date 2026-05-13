@@ -82,9 +82,9 @@ public class ResilientPgClient implements PgClient {
     }
 
     @Override
-    public PgCancelResult cancel(String paymentKey, long cancelAmount, String reason) {
+    public PgCancelResult cancel(PgCancelCommand command) {
         // 취소도 서킷으로 보호하되 재시도는 하지 않는다(호출부가 실패를 처리).
-        return circuitBreaker.executeSupplier(() -> delegate.cancel(paymentKey, cancelAmount, reason));
+        return circuitBreaker.executeSupplier(() -> delegate.cancel(command));
     }
 
     @Override

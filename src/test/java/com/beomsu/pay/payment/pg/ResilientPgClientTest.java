@@ -27,7 +27,7 @@ class ResilientPgClientTest {
         }
 
         @Override
-        public PgCancelResult cancel(String k, long a, String r) {
+        public PgCancelResult cancel(PgCancelCommand c) {
             return new PgCancelResult("tx");
         }
 

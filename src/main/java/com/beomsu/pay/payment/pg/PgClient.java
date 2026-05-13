@@ -7,7 +7,7 @@ public interface PgClient {
 
     PgApproveResult approve(PgApproveCommand command);
 
-    PgCancelResult cancel(String paymentKey, long cancelAmount, String reason);
+    PgCancelResult cancel(PgCancelCommand command);
 
     /** 결제의 실제 상태를 PG에 조회한다. UNKNOWN 복구·대사의 핵심. */
     PgQueryResult query(String paymentKey);

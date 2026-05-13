@@ -62,9 +62,9 @@ public class FakePgClient implements PgClient {
     }
 
     @Override
-    public PgCancelResult cancel(String paymentKey, long cancelAmount, String reason) {
-        pgSide.put(paymentKey, PgPaymentStatus.CANCELED);
-        return new PgCancelResult("fake-tx-" + paymentKey + "-" + System.nanoTime());
+    public PgCancelResult cancel(PgCancelCommand command) {
+        pgSide.put(command.paymentKey(), PgPaymentStatus.CANCELED);
+        return new PgCancelResult("fake-tx-" + command.idempotencyKey());
     }
 
     @Override

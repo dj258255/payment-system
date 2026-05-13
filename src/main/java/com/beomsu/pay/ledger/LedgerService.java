@@ -54,14 +54,14 @@ public class LedgerService {
 
     @Transactional
     public void recordPaymentCanceled(PaymentCanceledEvent event) {
-        // 취소 건마다 별도 소스 키를 쓴다(부분취소가 여러 번일 수 있으므로 취소 금액 기반 구분).
+        // 취소 건마다 다른 순번을 쓴다. 원결제 ID만 보면 두 번째 부분취소가 조용히 사라진다.
         long cancelAmount = event.cancelAmount();
-        if (alreadyRecorded("PAYMENT_CANCELED", event.paymentId())) {
+        if (alreadyRecorded("PAYMENT_CANCELED", event.paymentId(), event.cancelSeq())) {
             return;
         }
         LedgerTransaction tx = LedgerTransaction.of(
-                "PAYMENT_CANCELED", SOURCE_PAYMENT, event.paymentId(),
-                "결제 취소 " + event.orderNo(),
+                "PAYMENT_CANCELED", SOURCE_PAYMENT, event.paymentId(), event.cancelSeq(),
+                "결제 취소 " + event.orderNo() + " #" + event.cancelSeq(),
                 List.of(
                         LedgerEntry.debit(AccountType.SALES, cancelAmount),          // 역분개
                         LedgerEntry.credit(AccountType.PG_RECEIVABLE, cancelAmount)
@@ -77,7 +77,8 @@ public class LedgerService {
      */
     @Transactional
     public void recordDisputeLost(DisputeLostEvent event) {
-        if (repository.existsByTxTypeAndSourceTypeAndSourceId("DISPUTE_LOST", SOURCE_DISPUTE, event.disputeId())) {
+        if (repository.existsByTxTypeAndSourceTypeAndSourceIdAndSourceSeq(
+                "DISPUTE_LOST", SOURCE_DISPUTE, event.disputeId(), 0)) {
             return; // 멱등: 이미 역분개함
         }
         long amount = event.amount();
@@ -98,6 +99,11 @@ public class LedgerService {
     }
 
     private boolean alreadyRecorded(String txType, long paymentId) {
-        return repository.existsByTxTypeAndSourceTypeAndSourceId(txType, SOURCE_PAYMENT, paymentId);
+        return alreadyRecorded(txType, paymentId, 0);
+    }
+
+    private boolean alreadyRecorded(String txType, long paymentId, int sourceSeq) {
+        return repository.existsByTxTypeAndSourceTypeAndSourceIdAndSourceSeq(
+                txType, SOURCE_PAYMENT, paymentId, sourceSeq);
     }
 }

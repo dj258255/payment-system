@@ -12,9 +12,13 @@ import org.springframework.modulith.events.Externalized;
  * 정산 가능 잔액(절대값)</b>이다. 정산은 델타를 빼는 대신 이 절대 잔액으로 항목 금액을 세팅해,
  * at-least-once 재배달에도 이중 차감되지 않게 한다(멱등). 델타는 원장 역분개·에스크로 환불이 쓴다.
  *
+ * <p>{@code cancelSeq}는 이 결제의 몇 번째 취소인가다. 한 결제는 여러 번 취소될 수 있어서
+ * 원결제 식별자만으로는 취소 건을 구분할 수 없다. 원장 역분개가 이 순번으로 중복을 판정한다.
+ *
+ * @param cancelSeq 이 결제의 취소 순번(1부터)
  * @param settleableBalance 이 취소가 반영된 뒤의 취소 가능 잔액(=정산 대상 금액). 전액취소면 0.
  */
 @Externalized("payment.canceled::#{orderNo}")
-public record PaymentCanceledEvent(String orderNo, Long paymentId, long cancelAmount,
+public record PaymentCanceledEvent(String orderNo, Long paymentId, int cancelSeq, long cancelAmount,
                                    long settleableBalance, boolean fullyCanceled) {
 }
