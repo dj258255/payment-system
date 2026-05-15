@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.InputStream;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -29,13 +30,17 @@ public class ReconciliationAdminService {
      * PG 정산 파일(CSV)을 파싱해 대사 매칭 엔진을 돌리고 결과를 분류별로 집계한다.
      *
      * <p>파싱은 헤더 기반이라 컬럼 순서·부가 컬럼에 강하고, 불량/요약 행은 건너뛴다(스킵 수 집계).
-     * 매칭 엔진({@link ReconciliationService#reconcile})이 결과를 {@code saveAll}로 이미 영속하므로,
+     * <p>거래일을 받는 이유는 대사가 날짜 단위 작업이기 때문이다. PG 정산 파일은 하루치로 끊겨 오고,
+     * 그 하루의 내부 기록과만 대조해야 한다. 전체와 비교하면 지난 날짜가 전부 불일치로 잡힌다.
+     *
+     * <p>매칭 엔진({@link ReconciliationService#reconcile})이 결과를 이미 영속하므로,
      * 여기서는 반환된 결과를 타입별로 세어 요약만 만든다. 불일치는 PENDING 예외 큐로 남아 수기 확정을 기다린다.
      */
     @Transactional
-    public ReconRunSummary run(InputStream file) {
+    public ReconRunSummary run(LocalDate tradeDate, InputStream file) {
         ParseResult parsed = parser.parse(file);
-        List<ReconciliationResult> results = reconciliationService.reconcile(parsed.records());
+        List<ReconciliationResult> results =
+                reconciliationService.reconcile(tradeDate, parsed.records());
 
         int matched = 0, internalOnly = 0, externalOnly = 0, amountMismatch = 0;
         for (ReconciliationResult r : results) {

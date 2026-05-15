@@ -1,6 +1,7 @@
 package com.beomsu.pay.payment;
 
 import com.beomsu.pay.payment.pg.PgCancelCommand;
+import com.beomsu.pay.payment.pg.PgCancelResult;
 import com.beomsu.pay.payment.pg.PgClient;
 import com.beomsu.pay.shared.Money;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -39,6 +40,10 @@ class PaymentCancelSagaTest {
         ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
         MeterRegistry meterRegistry = new SimpleMeterRegistry();
         service = new PaymentService(repository, pg, cancelTx, events, meterRegistry);
+        // PG 취소는 거래키를 준다. 오케스트레이터가 그 키를 3단계로 넘겨 이력에 남기므로,
+        // 스텁이 null을 주면 실제 경로와 다른 것을 검증하게 된다.
+        lenient().when(pg.cancel(any(PgCancelCommand.class)))
+                .thenReturn(new PgCancelResult("pg-tx-1"));
     }
 
     @Test
@@ -52,7 +57,7 @@ class PaymentCancelSagaTest {
         InOrder ordered = inOrder(cancelTx, pg);
         ordered.verify(cancelTx).resolveByOrderNo("order-9", Money.of(5_000));
         ordered.verify(pg).cancel(new PgCancelCommand("pk-9", 5_000, "고객변심", 1));
-        ordered.verify(cancelTx).apply("pk-9", 1, Money.of(5_000), "고객변심");
+        ordered.verify(cancelTx).apply("pk-9", 1, Money.of(5_000), "고객변심", "pg-tx-1");
     }
 
     @Test
@@ -66,7 +71,7 @@ class PaymentCancelSagaTest {
         InOrder ordered = inOrder(cancelTx, pg);
         ordered.verify(cancelTx).resolveById(7L, Money.of(3_000));
         ordered.verify(pg).cancel(new PgCancelCommand("pk-7", 3_000, "부분 변심", 1));
-        ordered.verify(cancelTx).apply("pk-7", 1, Money.of(3_000), "부분 변심");
+        ordered.verify(cancelTx).apply("pk-7", 1, Money.of(3_000), "부분 변심", "pg-tx-1");
     }
 
     @Test
@@ -79,7 +84,7 @@ class PaymentCancelSagaTest {
                 .isInstanceOf(PaymentException.class);
 
         verify(pg, never()).cancel(any(PgCancelCommand.class));
-        verify(cancelTx, never()).apply(anyString(), anyInt(), any(Money.class), anyString());
+        verify(cancelTx, never()).apply(anyString(), anyInt(), any(Money.class), anyString(), anyString());
     }
 
     @Test
@@ -93,6 +98,6 @@ class PaymentCancelSagaTest {
         assertThatThrownBy(() -> service.cancelByOrderNo("order-9", Money.of(5_000), "고객변심"))
                 .isInstanceOf(IllegalStateException.class);
 
-        verify(cancelTx, never()).apply(anyString(), anyInt(), any(Money.class), anyString());
+        verify(cancelTx, never()).apply(anyString(), anyInt(), any(Money.class), anyString(), anyString());
     }
 }

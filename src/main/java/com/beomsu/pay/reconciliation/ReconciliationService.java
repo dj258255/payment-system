@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,7 +37,8 @@ public class ReconciliationService {
         if (internalRecords.existsByOrderNo(event.orderNo())) {
             return; // 멱등: 이미 적재함
         }
-        internalRecords.save(InternalRecord.of(event.orderNo(), event.amount()));
+        internalRecords.save(
+                InternalRecord.of(event.orderNo(), event.amount(), event.approvedAt()));
     }
 
     /**
@@ -60,13 +62,17 @@ public class ReconciliationService {
      *   <li>외부에만 → EXTERNAL_ONLY (내부 유실 의심)</li>
      * </ul>
      *
+     * <p><b>범위는 거래일 하나다.</b> 내부 기록 전체와 비교하면 어제치 파일을 올릴 때마다 그제 이전
+     * 전건이 "PG에 없음"으로 잡혀 예외 큐가 첫 주에 수만 건이 된다. 대사는 날짜 단위로만 성립한다.
+     *
      * <p>결정적: 모든 orderNo를 정렬한 순서로 판정하므로, 같은 입력이면 결과의 내용·순서가 항상 같다.
-     * 각 판정을 {@link ReconciliationResult}로 저장하고 리스트로 돌려준다.
+     * <b>재실행도 멱등이다</b> — 그 거래일의 이전 판정을 지우고 다시 쓰므로, 운영자가 같은 파일을
+     * 두 번 올려도 예외 큐가 두 배가 되지 않는다.
      */
     @Transactional
-    public List<ReconciliationResult> reconcile(List<ExternalRecord> external) {
+    public List<ReconciliationResult> reconcile(LocalDate tradeDate, List<ExternalRecord> external) {
         Map<String, Long> internalMap = new LinkedHashMap<>();
-        for (InternalRecord record : internalRecords.findAll()) {
+        for (InternalRecord record : internalRecords.findByTradeDate(tradeDate)) {
             internalMap.put(record.getOrderNo(), record.getAmount());
         }
         Map<String, Long> externalMap = new LinkedHashMap<>();
@@ -87,16 +93,19 @@ public class ReconciliationService {
             ReconciliationResult result;
             if (internalAmount != null && externalAmount != null) {
                 result = internalAmount.longValue() == externalAmount.longValue()
-                        ? ReconciliationResult.matched(orderNo, internalAmount)
-                        : ReconciliationResult.amountMismatch(orderNo, internalAmount, externalAmount);
+                        ? ReconciliationResult.matched(tradeDate, orderNo, internalAmount)
+                        : ReconciliationResult.amountMismatch(tradeDate, orderNo, internalAmount, externalAmount);
             } else if (internalAmount != null) {
-                result = ReconciliationResult.internalOnly(orderNo, internalAmount);
+                result = ReconciliationResult.internalOnly(tradeDate, orderNo, internalAmount);
             } else {
-                result = ReconciliationResult.externalOnly(orderNo, externalAmount);
+                result = ReconciliationResult.externalOnly(tradeDate, orderNo, externalAmount);
             }
             reconciled.add(result);
         }
 
+        // 재실행 멱등: 그 거래일 판정을 통째로 갈아끼운다. (trade_date, order_no) 유니크와 짝이다.
+        results.deleteByTradeDate(tradeDate);
+        results.flush();
         results.saveAll(reconciled);
         return reconciled;
     }

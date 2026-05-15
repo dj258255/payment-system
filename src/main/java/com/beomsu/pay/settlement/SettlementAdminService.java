@@ -1,6 +1,7 @@
 package com.beomsu.pay.settlement;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ public class SettlementAdminService {
 
     private final SettlementRepository repository;
     private final SettlementService settlementService;
+    private final ApplicationEventPublisher events;
 
     /** 정산 집계 페이지(뷰 record로 노출). */
     @Transactional(readOnly = true)
@@ -40,8 +42,15 @@ public class SettlementAdminService {
     public SettlementView confirmPayout(long settlementId) {
         Settlement settlement = repository.findById(settlementId)
                 .orElseThrow(() -> SettlementException.notFound(settlementId));
-        settlement.markPaidOut();
+        boolean transitioned = settlement.markPaidOut();
         repository.saveAndFlush(settlement);
+        if (transitioned) {
+            // 원장이 PG 미수금을 회수 처리한다. 이 사건이 없으면 미수금이 단조 증가만 한다.
+            events.publishEvent(new SettlementPaidOutEvent(
+                    settlement.getId(), settlement.getGrossAmount(),
+                    settlement.getFeeAmount() + settlement.getFeeVatAmount(),
+                    settlement.getNetAmount()));
+        }
         return SettlementView.from(settlement);
     }
 

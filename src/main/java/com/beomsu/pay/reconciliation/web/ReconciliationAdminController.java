@@ -18,7 +18,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.springframework.format.annotation.DateTimeFormat;
+
 import java.io.IOException;
+import java.time.LocalDate;
 import java.io.UncheckedIOException;
 import java.security.Principal;
 
@@ -40,15 +43,19 @@ class ReconciliationAdminController {
     /**
      * PG 정산 파일(CSV)을 업로드해 대사를 실행한다. 결과는 분류별 집계({@link ReconRunSummary})로 응답하고,
      * 불일치는 PENDING 예외 큐로 남아 {@code /mismatches} 조회 → {@code /{id}/resolve} 수기 확정으로 이어진다.
+     *
+     * <p>{@code tradeDate}는 <b>어느 날짜의 정산 파일인가</b>다. 대사는 날짜 단위 작업이라 이 값이 없으면
+     * 범위를 정할 수 없다. 같은 날짜로 다시 올리면 그 날의 판정을 갈아끼운다(재실행 멱등).
      */
     @PostMapping("/run")
-    ReconRunSummary run(@RequestParam("file") MultipartFile file, Principal caller) {
+    ReconRunSummary run(@RequestParam("tradeDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate tradeDate,
+                        @RequestParam("file") MultipartFile file, Principal caller) {
         String who = caller != null ? caller.getName() : "unknown";
-        audit.info("정산 파일 대사 실행 요청 by={} filename={} size={}",
-                who, file.getOriginalFilename(), file.getSize());
+        audit.info("정산 파일 대사 실행 요청 by={} tradeDate={} filename={} size={}",
+                who, tradeDate, file.getOriginalFilename(), file.getSize());
         ReconRunSummary summary;
         try {
-            summary = adminService.run(file.getInputStream());
+            summary = adminService.run(tradeDate, file.getInputStream());
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

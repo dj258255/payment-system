@@ -4,6 +4,7 @@ import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import java.time.LocalDate;
 
 import java.time.Instant;
 import java.util.List;
@@ -29,20 +30,49 @@ class ReconciliationServiceTest {
     }
 
     @Test
+    @DisplayName("대사는 그 거래일만 본다 — 전체를 비교하면 지난 날짜가 전부 불일치로 쏟아진다")
+    void reconcileIsScopedToOneTradeDate() {
+        LocalDate target = LocalDate.of(2026, 7, 5);
+        // 그 날짜의 내부 기록만 조회된다. 지난 날짜(7/4)는 이 조회에 애초에 들어오지 않는다.
+        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+                InternalRecord.of("today-1", 1000, Instant.parse("2026-07-05T05:00:00Z"))));
+
+        List<ReconciliationResult> reconciled =
+                service.reconcile(target, List.of(new ExternalRecord("today-1", 1000)));
+
+        assertThat(reconciled).hasSize(1);
+        assertThat(reconciled.get(0).getResult()).isEqualTo(ReconResultType.MATCHED);
+        verify(internalRecords, never()).findAll();
+        verify(internalRecords).findByTradeDate(target);
+    }
+
+    @Test
+    @DisplayName("같은 거래일을 다시 대사하면 이전 판정을 갈아끼운다 — 두 번 눌러도 예외 큐가 안 늘어난다")
+    void rerunReplacesPreviousResultsForThatDate() {
+        LocalDate target = LocalDate.of(2026, 7, 5);
+        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+                InternalRecord.of("A", 1000, Instant.parse("2026-07-05T05:00:00Z"))));
+
+        service.reconcile(target, List.of(new ExternalRecord("A", 1000)));
+
+        verify(results).deleteByTradeDate(target);
+    }
+
+    @Test
     @DisplayName("대사 매칭 엔진: 4분류를 정확히 낸다 (MATCHED/AMOUNT_MISMATCH/INTERNAL_ONLY/EXTERNAL_ONLY)")
     void reconcileClassifiesFourCases() {
         // 내부 {A:1000, B:2000, C:3000}
-        when(internalRecords.findAll()).thenReturn(List.of(
-                InternalRecord.of("A", 1000),
-                InternalRecord.of("B", 2000),
-                InternalRecord.of("C", 3000)));
+        when(internalRecords.findByTradeDate(LocalDate.of(2026, 7, 5))).thenReturn(List.of(
+                InternalRecord.of("A", 1000, Instant.parse("2026-07-05T05:00:00Z")),
+                InternalRecord.of("B", 2000, Instant.parse("2026-07-05T05:00:00Z")),
+                InternalRecord.of("C", 3000, Instant.parse("2026-07-05T05:00:00Z"))));
         // 외부 {A:1000, B:2500, D:4000}
         List<ExternalRecord> external = List.of(
                 new ExternalRecord("A", 1000),
                 new ExternalRecord("B", 2500),
                 new ExternalRecord("D", 4000));
 
-        List<ReconciliationResult> reconciled = service.reconcile(external);
+        List<ReconciliationResult> reconciled = service.reconcile(LocalDate.of(2026, 7, 5), external);
 
         Map<String, ReconciliationResult> byOrder = reconciled.stream()
                 .collect(Collectors.toMap(ReconciliationResult::getOrderNo, Function.identity()));
@@ -82,16 +112,16 @@ class ReconciliationServiceTest {
     @Test
     @DisplayName("매칭 엔진은 결정적: 같은 입력이면 결과 순서·내용이 동일하다")
     void reconcileIsDeterministic() {
-        when(internalRecords.findAll()).thenReturn(List.of(
-                InternalRecord.of("B", 2000),
-                InternalRecord.of("A", 1000)));
+        when(internalRecords.findByTradeDate(LocalDate.of(2026, 7, 5))).thenReturn(List.of(
+                InternalRecord.of("B", 2000, Instant.parse("2026-07-05T05:00:00Z")),
+                InternalRecord.of("A", 1000, Instant.parse("2026-07-05T05:00:00Z"))));
         List<ExternalRecord> external = List.of(
                 new ExternalRecord("A", 1000),
                 new ExternalRecord("B", 2000));
 
-        List<String> first = service.reconcile(external).stream()
+        List<String> first = service.reconcile(LocalDate.of(2026, 7, 5), external).stream()
                 .map(ReconciliationResult::getOrderNo).toList();
-        List<String> second = service.reconcile(external).stream()
+        List<String> second = service.reconcile(LocalDate.of(2026, 7, 5), external).stream()
                 .map(ReconciliationResult::getOrderNo).toList();
 
         assertThat(first).containsExactly("A", "B"); // orderNo 정렬 순서

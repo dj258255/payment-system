@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
@@ -67,9 +68,13 @@ public class TossPgClient implements PgClient {
                     .retrieve()
                     .body(TossPayment.class);
             return mapConfirm(resp, command.amount());
-        } catch (HttpClientErrorException e) {
+        } catch (HttpStatusCodeException e) {
             TossError err = parseError(e);
-            TossErrorCodes.Kind kind = TossErrorCodes.classify(err.code());
+            // 5xx는 코드와 무관하게 미확정이다. 토스 문서상 RETRYABLE인 코드 중 넷은 500번대라,
+            // 4xx만 잡으면 분류표에 적어 두고도 실행 경로에 닿지 않는 죽은 매핑이 된다.
+            TossErrorCodes.Kind kind = e.getStatusCode().is5xxServerError()
+                    ? TossErrorCodes.Kind.RETRYABLE
+                    : TossErrorCodes.classify(err.code());
             log.info("토스 승인 실패 응답 order={} status={} code={} kind={}",
                     command.orderNo(), e.getStatusCode(), err.code(), kind);
             return switch (kind) {
@@ -88,7 +93,6 @@ public class TossPgClient implements PgClient {
             }
             throw e;
         }
-        // 5xx는 여기서 잡지 않는다 → ResilientPgClient가 UNKNOWN으로 변환
     }
 
     /**
@@ -121,9 +125,11 @@ public class TossPgClient implements PgClient {
                     .retrieve()
                     .body(TossPayment.class);
             return new PgCancelResult(transactionKeyOf(resp, paymentKey));
-        } catch (HttpClientErrorException e) {
+        } catch (HttpStatusCodeException e) {
             TossError err = parseError(e);
-            TossErrorCodes.Kind kind = TossErrorCodes.classify(err.code());
+            TossErrorCodes.Kind kind = e.getStatusCode().is5xxServerError()
+                    ? TossErrorCodes.Kind.RETRYABLE
+                    : TossErrorCodes.classify(err.code());
             log.info("토스 취소 실패 응답 paymentKey={} status={} code={} kind={}",
                     paymentKey, e.getStatusCode(), err.code(), kind);
             // 이미 취소돼 있으면 우리가 원하던 상태다 — 보상 재시도가 멱등하게 끝난다
@@ -203,7 +209,7 @@ public class TossPgClient implements PgClient {
         return "toss-" + paymentKey;
     }
 
-    TossError parseError(HttpClientErrorException e) {
+    TossError parseError(HttpStatusCodeException e) {
         try {
             return objectMapper.readValue(e.getResponseBodyAsString(), TossError.class);
         } catch (Exception ignore) {
