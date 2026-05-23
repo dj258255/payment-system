@@ -76,7 +76,9 @@ public class PaymentRecoveryService {
     }
 
     private void resolve(Payment payment) {
-        PgQueryResult pg = pgClient.query(payment.getPaymentKey());
+        // 승인한 PG에 물어야 한다. 다른 PG는 없는 거래라고 답하고, 그것을 "승인 안 됨"으로
+        // 읽으면 살아 있는 결제를 실패로 확정한다
+        PgQueryResult pg = pgClient.query(payment.getPaymentKey(), payment.getPgProvider());
         // 상태 전이를 saveAndFlush로 명시 영속한다. dirty-check 자동 flush는 readOnly 조회로 세션
         // FlushMode가 MANUAL이거나 detached 엔티티인 경우 신뢰할 수 없어(pay-26 교훈), 확정 상태를
         // DB에 강제 반영한다(APPROVED는 이벤트 발행 전에).

@@ -44,7 +44,12 @@ class PaymentCancelTx {
      * <p>{@code cancelSeq}는 이 결제의 몇 번째 취소인가다. 실패한 취소는 순번을 소비하지 않으므로
      * 재시도는 같은 순번을 다시 계산하고(멱등), 같은 금액의 서로 다른 부분취소는 순번이 갈린다.
      */
-    record CancelTarget(String paymentKey, int cancelSeq) {}
+    /**
+     * 취소 대상.
+     *
+     * <p>{@code provider}는 이 결제를 승인한 PG다. 취소를 그리로 보내야 한다.
+     */
+    record CancelTarget(String paymentKey, int cancelSeq, String provider) {}
 
     /**
      * Phase 1 — 취소 대상 확정(짧은 tx, 읽기 전용). 취소 가능 여부까지 여기서 걸러
@@ -56,7 +61,8 @@ class PaymentCancelTx {
                 .orElseThrow(() -> new PaymentException("PAYMENT_NOT_FOUND",
                         "취소할 결제를 찾을 수 없습니다: " + orderNo));
         payment.validateCancelable(cancelAmount);
-        return new CancelTarget(payment.getPaymentKey(), payment.getCancelCount() + 1);
+        return new CancelTarget(payment.getPaymentKey(), payment.getCancelCount() + 1,
+                payment.getPgProvider());
     }
 
     /** Phase 1 — 결제 식별자로 취소 대상을 확정한다. */
@@ -66,7 +72,8 @@ class PaymentCancelTx {
                 .orElseThrow(() -> new PaymentException("PAYMENT_NOT_FOUND",
                         "결제를 찾을 수 없습니다: " + paymentId));
         payment.validateCancelable(cancelAmount);
-        return new CancelTarget(payment.getPaymentKey(), payment.getCancelCount() + 1);
+        return new CancelTarget(payment.getPaymentKey(), payment.getCancelCount() + 1,
+                payment.getPgProvider());
     }
 
     /**

@@ -63,7 +63,8 @@ public class PaymentService {
         meterRegistry.counter("payment.confirm", "outcome", result.outcome().name().toLowerCase())
                 .increment();
         return new ApprovalOutcome(
-                ApprovalOutcome.Result.valueOf(result.outcome().name()), result.method(), result.failReason());
+                ApprovalOutcome.Result.valueOf(result.outcome().name()), result.method(),
+                result.failReason(), result.provider());
     }
 
     /**
@@ -85,7 +86,8 @@ public class PaymentService {
 
         ConfirmResult confirmResult = switch (outcome.result()) {
             case SUCCESS -> {
-                payment.approve(outcome.method());
+                // 어느 PG가 승인했는지 함께 적는다. 취소를 어디로 보낼지가 여기서 정해진다
+                payment.approve(outcome.method(), outcome.provider());
                 events.publishEvent(new PaymentConfirmedEvent(
                         payment.getOrderNo(), payment.getId(), payment.getAmount(), payment.getApprovedAt()));
                 yield new ConfirmResult(payment.getId(), payment.getStatus(), outcome.method(), "승인 완료");
@@ -125,7 +127,7 @@ public class PaymentService {
         // 체크아웃이 이 배치 단독으로 영구 미완결된다.
         if (payment.getStatus() == PaymentStatus.IN_PROGRESS
                 || payment.getStatus() == PaymentStatus.UNKNOWN) {
-            PgQueryResult pg = pgClient.query(payment.getPaymentKey());
+            PgQueryResult pg = pgClient.query(payment.getPaymentKey(), payment.getPgProvider());
             switch (pg.status()) {
                 case APPROVED -> {
                     payment.confirmByRecovery(pg.method());
@@ -160,7 +162,8 @@ public class PaymentService {
     public void cancel(Long paymentId, Money cancelAmount, String reason) {
         PaymentCancelTx.CancelTarget target = cancelTx.resolveById(paymentId, cancelAmount);
         PgCancelResult result = pgClient.cancel(new PgCancelCommand(
-                target.paymentKey(), cancelAmount.amount(), reason, target.cancelSeq()));
+                target.paymentKey(), cancelAmount.amount(), reason, target.cancelSeq(),
+                target.provider()));
         cancelTx.apply(target.paymentKey(), target.cancelSeq(), cancelAmount, reason,
                 result.transactionKey());
     }
@@ -174,7 +177,8 @@ public class PaymentService {
         PgCancelResult result;
         try {
             result = pgClient.cancel(new PgCancelCommand(
-                    target.paymentKey(), cancelAmount.amount(), reason, target.cancelSeq()));
+                    target.paymentKey(), cancelAmount.amount(), reason, target.cancelSeq(),
+                    target.provider()));
         } catch (PgCancelNotRetryableException e) {
             // PG 내부 예외를 모듈 밖으로 새게 두지 않는다. 호출자(보상 실행기)는 "재시도해도 같다"는
             // 사실만 알면 되므로 payment 모듈의 코드로 번역해 넘긴다.
