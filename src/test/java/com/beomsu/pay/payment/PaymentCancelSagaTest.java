@@ -50,7 +50,7 @@ class PaymentCancelSagaTest {
     @DisplayName("주문번호 취소: 대상 확정(tx) → PG 취소(tx 밖) → 결과 반영(tx) 순서로 실행된다")
     void cancelByOrderNoRunsThreePhasesInOrder() {
         when(cancelTx.resolveByOrderNo("order-9", Money.of(5_000)))
-                .thenReturn(new PaymentCancelTx.CancelTarget("pk-9", 1));
+                .thenReturn(new PaymentCancelTx.CancelTarget("pk-9", 1, null));
 
         service.cancelByOrderNo("order-9", Money.of(5_000), "고객변심");
 
@@ -64,7 +64,7 @@ class PaymentCancelSagaTest {
     @DisplayName("결제 식별자 취소도 같은 3단계를 지킨다")
     void cancelByIdRunsThreePhasesInOrder() {
         when(cancelTx.resolveById(7L, Money.of(3_000)))
-                .thenReturn(new PaymentCancelTx.CancelTarget("pk-7", 1));
+                .thenReturn(new PaymentCancelTx.CancelTarget("pk-7", 1, null));
 
         service.cancel(7L, Money.of(3_000), "부분 변심");
 
@@ -91,7 +91,7 @@ class PaymentCancelSagaTest {
     @DisplayName("PG 취소가 실패하면 결과 반영을 하지 않는다 — 우리만 취소로 남지 않게")
     void doesNotApplyWhenPgCancelFails() {
         when(cancelTx.resolveByOrderNo("order-9", Money.of(5_000)))
-                .thenReturn(new PaymentCancelTx.CancelTarget("pk-9", 1));
+                .thenReturn(new PaymentCancelTx.CancelTarget("pk-9", 1, null));
         when(pg.cancel(new PgCancelCommand("pk-9", 5_000, "고객변심", 1)))
                 .thenThrow(new IllegalStateException("PG 취소 실패"));
 
