@@ -30,8 +30,8 @@ import java.util.Optional;
  * <p>서비스 루프로 집계하지만, 대용량은 Spring Batch로 확장한다
  * (chunk 단위 커밋 · cursor 기반 읽기 · 날짜/가맹점 partitioning).
  *
- * <p><b>후속 과제</b>: 수수료(fee)·수수료 부가세(feeVat)를 원장(ledger) 비용 계정으로 분개하는 것은
- * 이번 범위 밖이다(모듈 경계·이벤트 추가 리스크). 정산은 원장으로부터 재구성 가능한 집계로 남긴다.
+ * <p>수수료(fee)와 수수료 부가세(feeVat)는 지급 확정 시 원장 비용 계정(PG_FEE)으로 분개된다.
+ * settlement 는 {@link SettlementPaidOutEvent} 를 발행만 하고, 분개는 ledger 모듈이 한다.
  */
 @Service
 public class SettlementService {
@@ -199,7 +199,7 @@ public class SettlementService {
      * 수수료를 basis point로 계산해 내림한다. floor(gross * feeBps / 10000)을 정수 연산으로 확정한다
      * (double 금지 — 화폐 정수 연산 원칙). 오버플로는 {@code Math.multiplyExact}로 방어한다.
      *
-     * <p>수수료 부가세를 원장 비용 계정으로 분개하는 것은 후속 과제로 남긴다(모듈 경계 밖).
+     * <p>수수료 부가세는 지급 확정 시 원장 비용 계정으로 분개된다(ledger 모듈이 한다).
      */
     private long calculateFee(long gross) {
         return Math.multiplyExact(gross, feeBps) / 10000;

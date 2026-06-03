@@ -26,9 +26,13 @@ import java.util.List;
  * 높은 primary부터 시도하고, primary가 <b>장애</b>(예외/서킷 오픈)면 secondary로 failover한다. 단
  * TIMEOUT(미확정)은 이중결제 위험 때문에 failover하지 않는다({@link RoutingPgClient} 참고).
  *
- * <p><b>한계</b>: cancel/query는 원 결제를 처리한 PG로 가야 정확하지만({@code Payment.pgProvider}에 기록됨),
- * 현재 {@link PgClient} 인터페이스는 provider를 받지 않아 "가용한 첫 PG"로 시도한다. 원 PG 라우팅은
- * 인터페이스에 provider 힌트를 추가하는 후속 과제로 남긴다.
+ * <p><b>취소·조회는 원 결제를 처리한 PG로만 간다.</b> 승인 결과에 어느 PG가 처리했는지를 실어
+ * {@code Payment.pgProvider}에 적고, 취소와 조회가 그 값을 목적지로 쓴다. 다른 PG에 보내면
+ * "그런 거래 없음"이 <b>정상 응답</b>으로 돌아오고 그것이 그대로 취소 결과가 된다 — 고객 돈은 원 PG에
+ * 잡혀 있는데 우리 장부에는 취소로 남는다. 요청이 닿았으므로 failover 조건도 아니다.
+ *
+ * <p>승인 PG가 경로에 없으면 아무 데도 보내지 않는다. 설정에서 빠졌거나 이름이 바뀐 경우인데,
+ * 그때는 사람이 봐야 한다. 조회는 확정하지 않고 다음 주기로 넘긴다.
  */
 @Configuration
 @ConditionalOnProperty(name = "app.pg.routing.enabled", havingValue = "true")
