@@ -368,7 +368,7 @@ CREATE TABLE stock (
 append-only 이력 테이블에 남겨 감사·복구의 진실 원천으로 삼는다**(원장 발상과 동일).
 
 - **회원**: `members`(id PK — auto_increment **1000부터**, 데모 InMemory userId 1/2와 충돌 방지 / `email` 유니크 /
-  `password_hash` BCrypt / `role`). 로그인은 복합 `UserDetailsService`가 이메일→회원 조회 후 username을 숫자 id로 반환.
+  `password_hash` **Argon2id**(접두사 포함 105자라 `varchar(255)` — V23) / `role`). 로그인은 복합 `UserDetailsService`가 이메일→회원 조회 후 username을 숫자 id로 반환.
 - **월렛**: `wallet_accounts`(user_id PK, balance, @Version) + `wallet_transactions`(append-only:
   `type` = CHARGE/USE/**RESTORE**/REFUND, `order_no` — 주문 단위 멱등/역산용). USE−RESTORE−REFUND = 활성 예약.
 - **포인트**: `point_accounts`(user_id PK, balance, @Version) + `point_histories`(append-only:

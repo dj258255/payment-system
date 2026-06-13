@@ -89,7 +89,8 @@ com.beomsu.pay
 ├── point          포인트 원장 (복합결제 차감·보상·환불 + 실결제액 적립/회수)
 ├── subscription   빌링키 정기결제 + dunning
 ├── wallet         선불 충전 월렛 (전금법 한도) — 카드·포인트와 함께 복합결제 수단
-├── member         JPA 회원(이메일·BCrypt) + 가입, 복합 UserDetailsService (숫자 userId 계약 보존)
+├── member         JPA 회원(이메일·Argon2id) + 가입, 복합 UserDetailsService (숫자 userId 계약 보존)
+│                   로그인 시 옛 해시를 현재 알고리즘으로 점진 이관(ADR-009)
 ├── dispute        분쟁/차지백 상태머신 — 웹훅 수신 → 증빙 → 승/패, 패소 시 원장 역분개
 ├── fraud          이상거래탐지(FDS) 룰 엔진
 ├── queue          선착순 대기열 (Redis Sorted Set 입장권)
@@ -143,7 +144,10 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
 결제의 실패·정합성 처리 설계에 집중한 데모다. 아래는 범위를 좁히기 위해 둔 의도적 단순화이며,
 실서비스라면 어떻게 확장할지를 함께 적는다.
 
-- **회원/인증**: JPA 회원 도메인(이메일 + BCrypt 저장 + 가입 REST `POST /api/v1/members/signup`)을 제공한다.
+- **회원/인증**: JPA 회원 도메인(이메일 + **Argon2id** 저장 + 가입 REST `POST /api/v1/members/signup`)을 제공한다.
+  비밀번호 해시는 OWASP 1순위인 Argon2id(19MiB·t=2·p=1)로 저장하고, 알고리즘 접두사를 붙여 **로그인 시
+  옛 해시를 자동 재인코딩**한다(ADR-009). 남은 레거시 해시 수는 `password_hash_legacy_count` 게이지로
+  본다 — 0이 되면 레거시 인코더를 제거할 수 있다.
   로그인 시 **복합 `UserDetailsService`**가 이메일로 회원을 조회하되 `UserDetails.username`을 회원의 **숫자 id**로
   반환해, 전 모듈의 `Long.parseLong(principal.getName())` 소유권 계약을 그대로 유지한다(회원 id는 데모 계정과
   충돌하지 않게 1000부터). 데모/운영 계정(admin/admin2/1/2)은 InMemory로 병행 유지한다. 이메일 인증·비밀번호

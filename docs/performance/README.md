@@ -181,3 +181,47 @@ USER_PASSWORD=user-local-only k6 run k6/spike-test.js
 ./gradlew bootRun                                           # 후(기본 on)
 USER_PASSWORD=user-local-only k6 run k6/spike-test.js
 ```
+
+## 8. 비밀번호 해싱: BCrypt → Argon2id 실측 (실측 완료)
+
+느린 것이 목적인 연산이라 **"빨라졌다"가 개선이 아니다.** 잰 이유는 두 가지다. ① 로그인 응답에 얼마가 붙는지 ② `/auth/login`의 DoS 표면이 얼마나 커지는지.
+
+**로컬(Apple Silicon), 워밍업 후 7회 중앙값** (`PasswordEncoderBenchTest`)
+
+| | 소요 | 메모리 |
+|---|---|---|
+| BCrypt (strength 10) | 87ms | ~4KB |
+| **Argon2id (19MiB·t=2·p=1)** | **32ms** | **19MiB** |
+
+**예상과 반대로 더 강한 쪽이 더 빨랐다.** BCrypt의 비용은 반복 횟수에서 나오고 Argon2id는 상당 부분을 메모리에서 가져오기 때문이다. **시간을 덜 쓰면서 공격자에게는 더 비싸다** — 메모리 하드의 목적이 그것이다.
+
+### 대신 메모리를 쓴다 — 이 교체는 DoS 표면을 키운다
+
+로그인 1건마다 19MiB를 잡는다.
+
+```
+동시 로그인 100건 → 순간 약 1.9GB
+```
+
+`/auth/login`은 **인증 없이 누구나 부를 수 있는 경로**다. 이전에는 CPU만 태웠지만 이제 메모리도 잡는다. 즉 **알고리즘을 강화하면서 그 경로의 DoS 표면은 오히려 커졌다.**
+
+그래서 이 교체는 **유입 제어가 먼저 있었기 때문에** 안전한 변경이 됐다. `RateLimitFilter`가 `/auth/login`·`/members/signup`을 IP 기준으로 막는다(사용자별 제한은 principal이 없어 이 경로를 그냥 통과한다). 유입 제한이 없었다면 파라미터를 더 낮게 잡거나 교체를 미뤘어야 했다.
+
+**함께 볼 것**: 3절 JWT 전환은 **요청마다** 하던 BCrypt 재검증(min ~110ms)을 없앤 것이다. 로그인 1회의 해싱은 **비밀번호를 실제로 대조하는 자리라 없앨 수 없다.** 같은 비용이 성능에서는 제거 대상이고 보안에서는 유지 대상이다.
+
+### 이관 진행은 지표로 본다
+
+해시 이관은 **끝을 코드로 강제할 수 없다.** 원문 비밀번호가 로그인 순간에만 존재하므로, 로그인하지 않는 계정은 옛 해시로 남는다. 그래서 남은 수를 게이지로 올렸다.
+
+```
+password_hash_legacy_count   현재 알고리즘으로 안 옮겨진 해시 수
+```
+
+**0이 되면 레거시 인코더를 제거할 수 있다.** 그 시점이 이관의 진짜 종료이고, 판정을 사람의 기억이 아니라 이 값으로 한다. 7일 이상 남아 있으면 `PasswordHashMigrationStalled`(severity: info)가 뜬다 — 경보가 아니라 **언제 끝나는지 보이게** 하는 용도다.
+
+재현:
+```bash
+JAVA_HOME=<jdk21> ./gradlew test --tests "*PasswordEncoderBenchTest" -i
+```
+
+상세 결정과 트레이드오프는 [ADR-009](../adr/ADR-009-password-hashing-and-migration-path.md).
