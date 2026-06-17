@@ -78,6 +78,7 @@ class RateLimitFilterTest {
         assertThat(response.getHeader("Retry-After")).isEqualTo("1");
         assertThat(response.getContentType()).contains("application/json");
         assertThat(response.getContentAsString()).contains("RATE_LIMITED");
+        assertThat(response.getHeader("X-RateLimit-Scope")).isEqualTo("user");  // 이 사용자만 물러나면 됨
         assertThat(chain.getRequest()).isNull();                    // 컨트롤러까지 안 감(싸게 거절)
         // per-user에서 이미 초과 → global 카운터는 소비하지 않는다.
         verify(rateLimiter, never()).tryAcquire(eq("global:/api/v1/orders"), anyInt(), any(Duration.class));
@@ -94,6 +95,8 @@ class RateLimitFilterTest {
         filter(true).doFilter(post("/api/v1/payments/confirm"), response, chain);
 
         assertThat(response.getStatus()).isEqualTo(429);
+        // 시스템 전체 포화 — 이 클라이언트가 얌전해져도 안 풀린다. user와 대응이 정반대라 구분이 필요하다.
+        assertThat(response.getHeader("X-RateLimit-Scope")).isEqualTo("global");
         assertThat(chain.getRequest()).isNull();
     }
 
@@ -149,5 +152,56 @@ class RateLimitFilterTest {
 
         assertThat(chain.getRequest()).isNotNull();
         verify(rateLimiter, never()).tryAcquire(anyString(), anyInt(), any(Duration.class));
+    }
+
+    @Test
+    @DisplayName("로그인은 미인증이라 IP로 제한한다 — 초과 시 429 + scope:ip, global 미소비")
+    void loginLimitedByIpNotPrincipal() throws ServletException, IOException {
+        SecurityContextHolder.clearContext();          // 로그인 시점엔 principal이 없다
+        MockHttpServletRequest request = post("/api/v1/auth/login");
+        request.setRemoteAddr("10.0.0.7");
+        when(rateLimiter.tryAcquire(eq("ip:10.0.0.7:/api/v1/auth/login"), eq(PER_USER), any(Duration.class)))
+                .thenReturn(false);
+
+        filter(true).doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(429);
+        assertThat(response.getHeader("X-RateLimit-Scope")).isEqualTo("ip");
+        assertThat(chain.getRequest()).isNull();       // Argon2 검증(~32ms)까지 가지 않는다 — 비대칭 DoS 차단
+        verify(rateLimiter, never())
+                .tryAcquire(eq("global:/api/v1/auth/login"), anyInt(), any(Duration.class));
+    }
+
+    @Test
+    @DisplayName("가입도 같은 IP 제한을 탄다 — 한도 이내면 통과")
+    void signupWithinIpLimitPasses() throws ServletException, IOException {
+        SecurityContextHolder.clearContext();
+        MockHttpServletRequest request = post("/api/v1/members/signup");
+        request.setRemoteAddr("10.0.0.8");
+        when(rateLimiter.tryAcquire(anyString(), anyInt(), any(Duration.class))).thenReturn(true);
+
+        filter(true).doFilter(request, response, chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        verify(rateLimiter).tryAcquire(eq("ip:10.0.0.8:/api/v1/members/signup"), eq(PER_USER), any(Duration.class));
+        verify(rateLimiter).tryAcquire(eq("global:/api/v1/members/signup"), eq(GLOBAL), any(Duration.class));
+    }
+
+    @Test
+    @DisplayName("로그인 전체 한도 초과: scope:global — 한 IP가 얌전해도 안 풀린다")
+    void loginGlobalOverLimitRejected() throws ServletException, IOException {
+        SecurityContextHolder.clearContext();
+        MockHttpServletRequest request = post("/api/v1/auth/login");
+        request.setRemoteAddr("10.0.0.9");
+        when(rateLimiter.tryAcquire(eq("ip:10.0.0.9:/api/v1/auth/login"), eq(PER_USER), any(Duration.class)))
+                .thenReturn(true);
+        when(rateLimiter.tryAcquire(eq("global:/api/v1/auth/login"), eq(GLOBAL), any(Duration.class)))
+                .thenReturn(false);
+
+        filter(true).doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(429);
+        assertThat(response.getHeader("X-RateLimit-Scope")).isEqualTo("global");
+        assertThat(chain.getRequest()).isNull();
     }
 }
