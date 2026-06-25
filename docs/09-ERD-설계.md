@@ -186,6 +186,12 @@ CREATE TABLE compensation_tasks (
 
 ## 5. 이벤트 (outbox_events / processed_events / webhook_events)
 
+> **실물과 다르다 — 아래 `outbox_events`는 채택되지 않은 설계다.** ADR-002에서 직접 만드는 대신
+> Spring Modulith의 Event Publication Registry를 쓰기로 했고, 실제 테이블은
+> **`event_publication`**(+ `event_publication_archive`)이다. 이 절의 `outbox_events` DDL은
+> "직접 짰다면 이렇게 했을 것"의 기록으로 남긴다 — 아래 5-1에 실물 스키마를 적었다.
+> `processed_events`와 `webhook_events`는 설명대로 실재한다.
+
 ```sql
 CREATE TABLE outbox_events (                            -- Transactional Outbox
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -224,6 +230,43 @@ CREATE TABLE webhook_events (                           -- 수신 웹훅 원본 
 **설계 결정**
 - `processed_events` PK에 `consumer_group`을 포함한다. 컨슈머가 여러 종류(알림·포인트·정산)일 때 각각 독립적으로 멱등
 - 웹훅은 **"저장 먼저, 해석은 나중"**: raw_payload 저장 + 200 응답까지가 동기 구간, 상태 전이는 비동기 워커가 조회 API 재검증 후 수행 (03 문서 파이프라인)
+
+### 5-1. 실물 아웃박스 (event_publication / event_publication_archive)
+
+Modulith가 정의하는 스키마이고, 이 프로젝트는 Flyway가 생성·관리한다(V1, V24).
+
+```sql
+CREATE TABLE event_publication (                        -- 미소비 이벤트만 남는 "핫" 테이블
+    id               BINARY(16)   NOT NULL,            -- UUID
+    publication_date DATETIME(6),                      -- 발행 시각 (= 발행 트랜잭션 커밋 시점)
+    completion_date  DATETIME(6),                      -- 소비 완료 시각. NULL = 아직 처리 안 됨
+    event_type       VARCHAR(255),
+    listener_id      VARCHAR(255),                     -- 리스너 메서드 시그니처. 리스너마다 행이 1개씩
+    serialized_event VARCHAR(255),                     -- 이벤트 JSON. 실측 최대 116자
+    PRIMARY KEY (id),
+    KEY idx_event_pub_lookup (listener_id, serialized_event(191)),   -- ★ V24. 완료 처리 핫패스
+    KEY idx_event_pub_incomplete (completion_date, publication_date) -- ★ V24. 재기동 시 미완료 재발행
+);
+
+CREATE TABLE event_publication_archive (                -- ★ V24. 완료분이 여기로 옮겨진다
+    ...                                                 -- 컬럼 구성은 위와 동일
+);
+```
+
+**설계 결정**
+- **리스너 1개당 행 1개다.** 이벤트 1건이 아니다. `PaymentConfirmedEvent`는 리스너가 6개
+  (정산·알림·원장·대사·에스크로·이상거래)라 결제 한 건이 행 6개를 만든다. 이 배수를 놓치면
+  테이블 증가 속도를 6배 과소평가한다.
+- **완료분은 아카이브로 옮긴다**(`completion-mode: archive`). 기본값 `update`는 완료 행을
+  영원히 남겨 무한히 자란다 — 부하 실험 6회에 150,372행이 됐다. `delete`가 아니라 `archive`인
+  이유는 "무엇이 언제 발행됐는가"가 결제 시스템에서 감사 자료이기 때문이다.
+- **인덱스 둘은 실측 후에 넣었다.** Modulith가 만드는 기본 스키마에는 PK밖에 없어서, 리스너
+  완료마다 도는 갱신이 전부 풀스캔이었다(`EXPLAIN`: `type=ALL`, `rows=150372`).
+  결제 지연이 현재 부하가 아니라 **누적 이벤트 수**에 비례해 나빠지고 있었다.
+  경위와 수치는 성능 리포트 10절, 판단은 ADR-002 말미에 있다.
+- **소비는 비동기다.** 결제가 200으로 응답한 시점에 정산·원장은 아직일 수 있다. 이건 정상이고,
+  구분해야 할 건 "밀리는 중"과 "멈춤"이다. `outbox.pending.oldest.age` 게이지로 본다 —
+  개수가 아니라 나이여야 둘이 갈린다.
 
 ## 6. 원장 (ledger_accounts / ledger_transactions / ledger_entries)
 
