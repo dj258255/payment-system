@@ -41,9 +41,10 @@ Outbox를 직접 구현하지 않고 **Spring Modulith의 Event Publication Regi
 기본값이 우리 부하 특성에 맞는다는 뜻은 아니다.** 다계정 부하 실험 중 회차마다 결과가 달라져
 원인을 쫓다 두 가지가 나왔다(성능 리포트 10절).
 
-**① `completion-mode` 기본값이 `update`다.** 완료된 발행 행이 `completion_date`만 채워진 채
-영원히 남는다. 발행량에 비례해 `event_publication`이 무한히 자란다. 부하 실험 6회에
-150,372행이 됐다.
+**① 안전한 기본값이 아니었다.** Modulith의 `completion-mode` 기본값은 `update`라 완료 행이
+`completion_date`만 채워진 채 남는다. 이 프로젝트에는 `OutboxCleanupScheduler`가 이미 있었지만
+기본값이 off(`APP_OUTBOX_CLEANUP_ENABLED=false`)라, **켜지 않은 모든 환경에서 무한히 자란다.**
+부하 실험 6회에 150,372행이 됐다. 정리 로직이 없어서가 아니라, 켜야만 안전한 구조였다.
 
 **② Modulith가 만드는 스키마에는 PK 외 인덱스가 없다.** 리스너 완료마다 도는
 `where serialized_event = ? and listener_id = ?` 갱신이 전부 풀스캔이다(`EXPLAIN`: `type=ALL`,
@@ -54,6 +55,9 @@ Outbox를 직접 구현하지 않고 **Spring Modulith의 Event Publication Regi
 운영에서라면 서서히, 되돌리기 어렵게 나빠졌을 것이다.
 
 조치는 `V24__event_publication_archive_and_index.sql`과 `completion-mode: archive`다.
+아카이브 모드에서는 핫 테이블에 "아직 처리 안 된 것"만 남으므로, **크기 상한이 운영 플래그가
+아니라 구조에서 나온다.** 기존 스케줄러는 그대로 짝을 이룬다 — `CompletedEventPublications`가
+`completion-mode`에 따라 대상 테이블을 바꾸므로, 스케줄러는 이제 아카이브를 보존기간 뒤에 비운다.
 `delete`가 아니라 `archive`를 고른 이유는 "무엇이 언제 발행됐는가"가 결제 시스템에서
 감사 자료이기 때문이다. 인덱스는 아카이브가 있어도 넣는다 — 아카이브만 하면 평시엔 빠르지만
 장애로 미완료가 쌓인 순간 다시 풀스캔으로 돌아간다. 하필 가장 급할 때.
