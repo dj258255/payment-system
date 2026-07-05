@@ -48,3 +48,13 @@ management:
 logging:
   level:
     org.springframework.modulith: INFO
+
+# 애플리케이션 시크릿 — 운영에서는 반드시 환경변수/시크릿 매니저로 주입한다.
+# 아래 값은 로컬 개발 전용 기본값(env가 우선). 코드에는 키를 두지 않는다.
+app:
+  crypto:
+    key: ${APP_CRYPTO_KEY:devlocalkey_0123456789abcdef0123}   # AES-256 = 32바이트, 운영은 KMS/env
+  admin:
+    password: ${APP_ADMIN_PASSWORD:admin-local-only}
+  user:
+    password: ${APP_USER_PASSWORD:user-local-only}
