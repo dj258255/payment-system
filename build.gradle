@@ -46,6 +46,7 @@ dependencies {
     implementation 'org.springframework.modulith:spring-modulith-starter-core'
     implementation 'org.springframework.modulith:spring-modulith-starter-jpa'
     implementation 'org.springframework.modulith:spring-modulith-events-api'
+    implementation 'org.springframework.modulith:spring-modulith-events-kafka'   // 결제 이벤트 Kafka 외부화(프로세스 밖 소비자용). spring-kafka를 전이 의존으로 가져온다
 
     // --- Redis (멱등키 선체크 / 분산락) ---
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
