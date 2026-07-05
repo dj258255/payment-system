@@ -39,7 +39,8 @@ public class CheckoutController {
         CheckoutResult result = idempotencyService.execute(
                 idempotencyKey, PATH, "POST", request, CheckoutResult.class,
                 () -> checkoutService.confirm(
-                        request.orderNo(), request.paymentKey(), Money.of(request.amount())));
+                        request.orderNo(), request.paymentKey(),
+                        Money.of(request.amount()), request.pointAmount()));
 
         HttpStatus status = switch (result.paymentStatus()) {
             case DONE -> HttpStatus.OK;               // 승인 완료
@@ -49,6 +50,12 @@ public class CheckoutController {
         return ResponseEntity.status(status).body(result);
     }
 
-    public record ConfirmRequest(String paymentKey, String orderNo, long amount) {
+    /**
+     * 결제 승인 요청.
+     *
+     * @param amount      카드로 결제할 금액(복합결제 재정의: 카드 몫)
+     * @param pointAmount 포인트로 결제할 금액. JSON에 없으면 0(순수 카드결제 = 기존 동작)
+     */
+    public record ConfirmRequest(String paymentKey, String orderNo, long amount, long pointAmount) {
     }
 }

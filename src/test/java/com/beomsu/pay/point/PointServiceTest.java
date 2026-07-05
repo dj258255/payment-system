@@ -1,0 +1,104 @@
+package com.beomsu.pay.point;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+class PointServiceTest {
+
+    private PointAccountRepository accountRepository;
+    private PointHistoryRepository historyRepository;
+    private PointService service;
+
+    @BeforeEach
+    void setUp() {
+        accountRepository = mock(PointAccountRepository.class);
+        historyRepository = mock(PointHistoryRepository.class);
+        service = new PointService(accountRepository, historyRepository);
+    }
+
+    @Test
+    @DisplayName("use: 계정 잔액을 차감하고 USE 이력을 남긴다")
+    void useDeductsAndRecords() {
+        PointAccount account = PointAccount.of(1L, 10_000);
+        when(historyRepository.existsByOrderNoAndType("order-1", PointHistoryType.USE)).thenReturn(false);
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+
+        service.use(1L, 6_000, "order-1");
+
+        assertThat(account.getBalance()).isEqualTo(4_000);
+        verify(accountRepository).save(account);
+        ArgumentCaptor<PointHistory> captor = ArgumentCaptor.forClass(PointHistory.class);
+        verify(historyRepository).save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo(PointHistoryType.USE);
+        assertThat(captor.getValue().getAmount()).isEqualTo(6_000);
+    }
+
+    @Test
+    @DisplayName("use: 잔액 부족이면 INSUFFICIENT_POINT 예외, 이력 저장 안 함")
+    void useInsufficientThrows() {
+        PointAccount account = PointAccount.of(1L, 2_000);
+        when(historyRepository.existsByOrderNoAndType("order-1", PointHistoryType.USE)).thenReturn(false);
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+
+        assertThatThrownBy(() -> service.use(1L, 6_000, "order-1"))
+                .isInstanceOf(PointException.class)
+                .satisfies(e -> assertThat(((PointException) e).code()).isEqualTo("INSUFFICIENT_POINT"));
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("use: 같은 주문의 USE 이력이 이미 있으면 멱등 skip (이중 차감 없음)")
+    void useIsIdempotent() {
+        when(historyRepository.existsByOrderNoAndType("order-1", PointHistoryType.USE)).thenReturn(true);
+
+        service.use(1L, 6_000, "order-1");
+
+        verify(accountRepository, never()).findById(anyLong());
+        verify(accountRepository, never()).save(any());
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("restore: 차감분을 되돌리고 RESTORE 이력을 남긴다 (보상)")
+    void restoreAddsAndRecords() {
+        PointAccount account = PointAccount.of(1L, 4_000);
+        when(historyRepository.existsByOrderNoAndType("order-1", PointHistoryType.RESTORE)).thenReturn(false);
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+
+        service.restore(1L, 6_000, "order-1");
+
+        assertThat(account.getBalance()).isEqualTo(10_000);
+        verify(accountRepository).save(account);
+        ArgumentCaptor<PointHistory> captor = ArgumentCaptor.forClass(PointHistory.class);
+        verify(historyRepository).save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo(PointHistoryType.RESTORE);
+    }
+
+    @Test
+    @DisplayName("restore: 같은 주문의 RESTORE 이력이 이미 있으면 멱등 skip (이중 복원 없음)")
+    void restoreIsIdempotent() {
+        when(historyRepository.existsByOrderNoAndType("order-1", PointHistoryType.RESTORE)).thenReturn(true);
+
+        service.restore(1L, 6_000, "order-1");
+
+        verify(accountRepository, never()).save(any());
+        verify(historyRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("balance: 계정이 없으면 0")
+    void balanceZeroWhenNoAccount() {
+        when(accountRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThat(service.balance(99L)).isZero();
+    }
+}
