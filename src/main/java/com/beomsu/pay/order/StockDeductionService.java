@@ -32,6 +32,18 @@ public class StockDeductionService {
         }
     }
 
+    /**
+     * 예외 없는 조건부 차감 — 성공 true, 재고부족 false.
+     *
+     * <p>승인 후 보상 경로(재고 부족 시 자동 망취소)에서 트랜잭션 오염을 피하려고 예외 대신 boolean을 쓴다.
+     * {@link OrderException} 같은 RuntimeException을 던지면 잡아도 트랜잭션이 rollback-only로 오염돼
+     * 승인·보상태스크 적재까지 함께 롤백되기 때문이다.
+     */
+    @Transactional
+    public boolean tryDeduct(long productId, int qty) {
+        return stockRepository.deductConditionally(productId, qty) > 0;
+    }
+
     /** 전액 취소 시 재고 복원 — 차감했던 수량을 되돌린다. */
     @Transactional
     public void restore(long productId, int qty) {
