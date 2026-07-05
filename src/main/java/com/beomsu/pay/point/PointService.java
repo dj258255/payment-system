@@ -24,7 +24,10 @@ public class PointService {
      * 롤백이 확실한 내부 자원이므로 복합결제에서 카드보다 먼저 선점된다.
      */
     public void use(long userId, long amount, String orderNo) {
-        if (amount <= 0) {
+        if (amount < 0) {
+            throw new PointException("INVALID_AMOUNT", "포인트 금액은 음수일 수 없습니다: " + amount);
+        }
+        if (amount == 0) {
             return;
         }
         if (historyRepository.existsByOrderNoAndType(orderNo, PointHistoryType.USE)) {
@@ -42,7 +45,10 @@ public class PointService {
      * 같은 주문의 RESTORE 이력이 이미 있으면 멱등하게 skip한다.
      */
     public void restore(long userId, long amount, String orderNo) {
-        if (amount <= 0) {
+        if (amount < 0) {
+            throw new PointException("INVALID_AMOUNT", "포인트 금액은 음수일 수 없습니다: " + amount);
+        }
+        if (amount == 0) {
             return;
         }
         if (historyRepository.existsByOrderNoAndType(orderNo, PointHistoryType.RESTORE)) {
@@ -60,7 +66,10 @@ public class PointService {
      * 부분취소는 한 주문에 여러 번 발생할 수 있으므로 REFUND는 멱등 skip하지 않는다.
      */
     public void refund(long userId, long amount, String orderNo) {
-        if (amount <= 0) {
+        if (amount < 0) {
+            throw new PointException("INVALID_AMOUNT", "포인트 금액은 음수일 수 없습니다: " + amount);
+        }
+        if (amount == 0) {
             return;
         }
         PointAccount account = accountRepository.findById(userId)

@@ -23,6 +23,11 @@ public class OrderException extends DomainException {
         return new OrderException("PRODUCT_NOT_FOUND", "상품을 찾을 수 없습니다: " + productId);
     }
 
+    /** 주문 소유자가 아닌 사용자의 접근 — IDOR 방지. */
+    public static OrderException notOwner(String orderNo) {
+        return new OrderException("ORDER_FORBIDDEN", "이 주문에 대한 권한이 없습니다: " + orderNo);
+    }
+
     public static OrderException outOfStock(long productId) {
         return new OrderException("OUT_OF_STOCK", "재고가 부족합니다: 상품 " + productId);
     }

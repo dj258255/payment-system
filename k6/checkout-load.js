@@ -1,6 +1,10 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import encoding from 'k6/encoding';
 import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
+
+// 주문/결제 엔드포인트는 ROLE_USER 인증 필요. 데모 유저 "1"(=userId). userId는 principal에서 얻는다.
+const AUTH = 'Basic ' + encoding.b64encode(`1:${__ENV.USER_PASSWORD || 'user-local-only'}`);
 
 /**
  * 체크아웃 부하테스트 — 주문 생성 → 결제 승인 흐름을 실제 사용자 시나리오로 두들긴다.
@@ -37,11 +41,13 @@ export const options = {
 };
 
 export default function () {
-  // 1) 주문 생성 — 클라이언트는 productId·quantity만 보낸다(가격은 서버 권위)
+  // 1) 주문 생성 — 클라이언트는 productId·quantity만 보낸다(가격·소유자는 서버 권위)
   const orderRes = http.post(`${BASE}/api/v1/orders`, JSON.stringify({
-    userId: 1,
     items: [{ productId: 1, quantity: 1 }],
-  }), { headers: { 'Content-Type': 'application/json' }, tags: { name: 'order' } });
+  }), {
+    headers: { 'Content-Type': 'application/json', Authorization: AUTH },
+    tags: { name: 'order' },
+  });
 
   check(orderRes, { 'order 201': (r) => r.status === 201 });
   if (orderRes.status !== 201) return;
@@ -54,7 +60,11 @@ export default function () {
     orderNo: order.orderNo,
     amount: order.totalAmount,
   }), {
-    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': uuidv4() },
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': uuidv4(),
+      Authorization: AUTH,
+    },
     tags: { name: 'confirm' },
   });
 
