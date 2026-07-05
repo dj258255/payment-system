@@ -138,9 +138,4 @@ public class CheckoutService {
         String message = (result != null) ? result.message() : "포인트 전액 결제 완료";
         return new CheckoutResult(orderNo, order.getStatus(), paymentStatus, message);
     }
-
-    // NOTE: 주문 취소(cancel)는 Phase 2/3으로 미룬다.
-    // 결제-주문 연결이 orderNo 기반이고 order가 paymentId를 보유하지 않으므로,
-    // 취소 위임은 payment 조회 경로가 정리되는 Phase 2에서 구현한다.
-    // (PAID → CANCELED 전이와 Order.cancel()은 미리 마련해 두었다.)
 }

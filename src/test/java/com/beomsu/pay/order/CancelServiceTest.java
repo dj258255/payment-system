@@ -1,0 +1,158 @@
+package com.beomsu.pay.order;
+
+import com.beomsu.pay.payment.PaymentService;
+import com.beomsu.pay.point.PointService;
+import com.beomsu.pay.shared.Money;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+class CancelServiceTest {
+
+    private OrderRepository orderRepository;
+    private PaymentService paymentService;
+    private PointService pointService;
+    private StockDeductionService stockDeductionService;
+    private CancelService service;
+
+    @BeforeEach
+    void setUp() {
+        orderRepository = mock(OrderRepository.class);
+        paymentService = mock(PaymentService.class);
+        pointService = mock(PointService.class);
+        stockDeductionService = mock(StockDeductionService.class);
+        service = new CancelService(orderRepository, paymentService, pointService, stockDeductionService);
+    }
+
+    /** userId 1 소유의 10,000 x 2 = 20,000 짜리 PAID 주문. */
+    private Order paidOrderOf(long productId, int quantity) {
+        Order order = Order.create(1L, List.of(
+                OrderItem.of(productId, "상품A", 10_000, quantity)));
+        order.startPayment(); // PENDING_PAYMENT → PAYMENT_IN_PROGRESS
+        order.markPaid();     // PAYMENT_IN_PROGRESS → PAID
+        when(orderRepository.findByOrderNo(order.getOrderNo())).thenReturn(Optional.of(order));
+        return order;
+    }
+
+    @Test
+    @DisplayName("전액취소(포인트+카드): 포인트 우선 환불 + 카드 취소 + 재고 복원 + 주문 CANCELED")
+    void fullCancelWithPointAndCard() {
+        Order order = paidOrderOf(100L, 2); // total 20,000
+        when(pointService.refundableAmount(order.getOrderNo())).thenReturn(6_000L);
+        when(paymentService.cardBalance(order.getOrderNo())).thenReturn(14_000L);
+
+        CancelResult result = service.cancel(order.getOrderNo(), 20_000, "고객변심", 1L);
+
+        // 포인트 먼저(6,000) 환불하고, 나머지 14,000을 카드에서 취소한다.
+        verify(pointService).refund(1L, 6_000, order.getOrderNo());
+        verify(paymentService).cancelByOrderNo(order.getOrderNo(), Money.of(14_000), "고객변심");
+        verify(stockDeductionService).restore(100L, 2); // 전액취소 재고 복원
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELED);
+        assertThat(result.fullyCanceled()).isTrue();
+        assertThat(result.refundedPoint()).isEqualTo(6_000);
+        assertThat(result.refundedCard()).isEqualTo(14_000);
+    }
+
+    @Test
+    @DisplayName("전액취소(전액 포인트 결제, 카드잔액 0): 포인트만 환불, 카드 취소 미호출, 재고 복원, CANCELED")
+    void fullCancelPointOnly() {
+        Order order = paidOrderOf(100L, 2); // total 20,000
+        when(pointService.refundableAmount(order.getOrderNo())).thenReturn(20_000L);
+        when(paymentService.cardBalance(order.getOrderNo())).thenReturn(0L);
+
+        CancelResult result = service.cancel(order.getOrderNo(), 20_000, "고객변심", 1L);
+
+        verify(pointService).refund(1L, 20_000, order.getOrderNo());
+        verify(paymentService, never()).cancelByOrderNo(anyString(), any(Money.class), anyString());
+        verify(stockDeductionService).restore(100L, 2);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELED);
+        assertThat(result.fullyCanceled()).isTrue();
+        assertThat(result.refundedCard()).isZero();
+    }
+
+    @Test
+    @DisplayName("부분취소(포인트 잔액 내): 포인트만 환불, 카드 미호출, 재고 복원 안 함, 주문 PAID 유지")
+    void partialCancelWithinPoint() {
+        Order order = paidOrderOf(100L, 2); // total 20,000
+        when(pointService.refundableAmount(order.getOrderNo())).thenReturn(6_000L);
+        when(paymentService.cardBalance(order.getOrderNo())).thenReturn(14_000L);
+
+        CancelResult result = service.cancel(order.getOrderNo(), 5_000, "일부변심", 1L);
+
+        verify(pointService).refund(1L, 5_000, order.getOrderNo());     // 포인트 잔액 내라 전액 포인트로
+        verify(paymentService, never()).cancelByOrderNo(anyString(), any(Money.class), anyString());
+        verify(stockDeductionService, never()).restore(anyLong(), anyInt()); // 부분취소 재고 복원 안 함
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);      // 주문 PAID 유지
+        assertThat(result.fullyCanceled()).isFalse();
+        assertThat(result.refundedPoint()).isEqualTo(5_000);
+        assertThat(result.refundedCard()).isZero();
+    }
+
+    @Test
+    @DisplayName("남의 주문을 취소하려 하면 ORDER_FORBIDDEN — 검증·환불 전에 차단")
+    void rejectsNonOwner() {
+        Order order = paidOrderOf(100L, 2); // 주인은 userId 1
+
+        // userId 2가 주인이 1인 주문을 취소 시도
+        assertThatThrownBy(() -> service.cancel(order.getOrderNo(), 20_000, "고객변심", 2L))
+                .isInstanceOf(OrderException.class)
+                .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("ORDER_FORBIDDEN"));
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID); // 상태 전이 없음
+        verify(pointService, never()).refund(anyLong(), anyLong(), anyString());
+        verify(paymentService, never()).cancelByOrderNo(anyString(), any(Money.class), anyString());
+        verify(stockDeductionService, never()).restore(anyLong(), anyInt());
+        // 소유권 검증 이전이라 잔액 조회조차 하지 않는다.
+        verify(pointService, never()).refundableAmount(anyString());
+        verify(paymentService, never()).cardBalance(anyString());
+    }
+
+    @Test
+    @DisplayName("PAID 아닌 주문 취소는 INVALID_STATE_TRANSITION")
+    void rejectsNonPaidOrder() {
+        Order order = Order.create(1L, List.of(OrderItem.of(100L, "상품A", 10_000, 2)));
+        // PENDING_PAYMENT 상태 그대로
+        when(orderRepository.findByOrderNo(order.getOrderNo())).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> service.cancel(order.getOrderNo(), 20_000, "고객변심", 1L))
+                .isInstanceOf(OrderException.class)
+                .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("INVALID_STATE_TRANSITION"));
+
+        verify(pointService, never()).refund(anyLong(), anyLong(), anyString());
+        verify(paymentService, never()).cancelByOrderNo(anyString(), any(Money.class), anyString());
+    }
+
+    @Test
+    @DisplayName("취소액이 잔여 결제분을 초과하면 CANCEL_AMOUNT_EXCEEDED")
+    void rejectsExceedingAmount() {
+        Order order = paidOrderOf(100L, 2); // total 20,000
+        when(pointService.refundableAmount(order.getOrderNo())).thenReturn(6_000L);
+        when(paymentService.cardBalance(order.getOrderNo())).thenReturn(14_000L); // 잔여 20,000
+
+        assertThatThrownBy(() -> service.cancel(order.getOrderNo(), 25_000, "고객변심", 1L))
+                .isInstanceOf(OrderException.class)
+                .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("CANCEL_AMOUNT_EXCEEDED"));
+
+        verify(pointService, never()).refund(anyLong(), anyLong(), anyString());
+        verify(paymentService, never()).cancelByOrderNo(anyString(), any(Money.class), anyString());
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+    }
+
+    @Test
+    @DisplayName("취소 금액이 0 이하면 INVALID_REQUEST — 주문 로드 전에 차단")
+    void rejectsNonPositiveAmount() {
+        assertThatThrownBy(() -> service.cancel("any", 0, "고객변심", 1L))
+                .isInstanceOf(OrderException.class)
+                .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("INVALID_REQUEST"));
+
+        verify(orderRepository, never()).findByOrderNo(anyString());
+    }
+}
