@@ -109,6 +109,19 @@ public class CompensationTask {
         return this.status == CompensationStatus.FAILED;
     }
 
+    /**
+     * 재무장(reopen) — 근본 원인을 고친 뒤 운영이 소진(FAILED)된 태스크를 다시 시도하게 한다.
+     * 상태를 PENDING으로 되돌리고 retryCount를 0으로 리셋해 새 재시도 예산을 주며, 즉시 시도 가능하게
+     * nextAttemptAt을 now로 당긴다. lastError는 진단 근거로 남긴다.
+     */
+    public void reopen() {
+        Instant now = Instant.now();
+        this.status = CompensationStatus.PENDING;
+        this.retryCount = 0;
+        this.nextAttemptAt = now;
+        this.updatedAt = now;
+    }
+
     private static String truncate(String error) {
         if (error == null) {
             return null;
