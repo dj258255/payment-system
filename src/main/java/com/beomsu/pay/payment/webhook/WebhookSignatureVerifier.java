@@ -1,5 +1,6 @@
 package com.beomsu.pay.payment.webhook;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -34,6 +35,7 @@ public class WebhookSignatureVerifier {
     private final String secret;
     private final Clock clock;
 
+    @Autowired
     public WebhookSignatureVerifier(
             @Value("${payment.webhook.secret:test-webhook-secret}") String secret) {
         this(secret, Clock.systemUTC());

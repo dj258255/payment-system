@@ -13,15 +13,14 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class CheckoutServiceTest {
 
     private PaymentService paymentService;
     private OrderRepository orderRepository;
-    private StockRepository stockRepository;
+    private StockDeductionService stockDeductionService;
     private ProductRepository productRepository;
     private CheckoutService service;
 
@@ -29,9 +28,9 @@ class CheckoutServiceTest {
     void setUp() {
         paymentService = mock(PaymentService.class);
         orderRepository = mock(OrderRepository.class);
-        stockRepository = mock(StockRepository.class);
+        stockDeductionService = mock(StockDeductionService.class);
         productRepository = mock(ProductRepository.class);
-        service = new CheckoutService(paymentService, orderRepository, stockRepository, productRepository);
+        service = new CheckoutService(paymentService, orderRepository, stockDeductionService, productRepository);
     }
 
     /** 10,000 x 2 = 20,000 짜리 단일 항목 주문. */
@@ -50,14 +49,12 @@ class CheckoutServiceTest {
     @DisplayName("승인 성공 시 재고를 차감하고 주문을 PAID로 만든다 (ADR-003)")
     void confirmApprovedDeductsStockAndMarksPaid() {
         Order order = orderOf(100L, 2);
-        Stock stock = Stock.of(100L, 10);
-        when(stockRepository.findById(100L)).thenReturn(Optional.of(stock));
         when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
 
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000));
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
-        assertThat(stock.getQuantity()).isEqualTo(8); // 10 - 2
+        verify(stockDeductionService).deductConditional(100L, 2); // 조건부 UPDATE 전략(ADR-004)
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
     }
 
@@ -72,6 +69,7 @@ class CheckoutServiceTest {
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT); // 상태 전이도 없음
         verify(paymentService, never()).confirm(anyString(), anyString(), any(Money.class));
+        verify(stockDeductionService, never()).deductConditional(anyLong(), anyInt());
     }
 
     @Test
@@ -85,7 +83,7 @@ class CheckoutServiceTest {
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_IN_PROGRESS);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.UNKNOWN);
-        verify(stockRepository, never()).findById(any());
+        verify(stockDeductionService, never()).deductConditional(anyLong(), anyInt());
     }
 
     @Test
@@ -99,16 +97,15 @@ class CheckoutServiceTest {
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.ABORTED);
-        verify(stockRepository, never()).findById(any());
+        verify(stockDeductionService, never()).deductConditional(anyLong(), anyInt());
     }
 
     @Test
     @DisplayName("승인은 성공했으나 재고가 부족하면 OUT_OF_STOCK 예외 (Phase 2 보상 대상)")
     void confirmApprovedButOutOfStock() {
         Order order = orderOf(100L, 3);
-        Stock stock = Stock.of(100L, 1); // 부족
-        when(stockRepository.findById(100L)).thenReturn(Optional.of(stock));
         when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
+        doThrow(OrderException.outOfStock(100L)).when(stockDeductionService).deductConditional(100L, 3);
 
         assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(30_000)))
                 .isInstanceOf(OrderException.class)
