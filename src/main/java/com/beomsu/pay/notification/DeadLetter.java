@@ -9,7 +9,8 @@ import java.time.Instant;
 
 /**
  * 죽은 메시지(Dead Letter). 컨슈머 처리가 실패한 이벤트를 격리해, 리스너가 계속 터지며
- * 파티션을 막는 것을 방지한다. 운영/배치가 여기서 재처리한다.
+ * 이벤트 처리를 막는 것을 방지한다. 재처리에 필요한 이벤트 데이터를 함께 보관해, 백오피스
+ * 어드민이 나중에 다시 시도할 수 있게 한다.
  */
 @Entity
 @Table(name = "dead_letters")
@@ -27,6 +28,16 @@ class DeadLetter {
     @Column(nullable = false, length = 200)
     private String eventKey;
 
+    // --- 재처리에 필요한 이벤트 데이터 ---
+    @Column(nullable = false, length = 64)
+    private String orderNo;
+
+    @Column(nullable = false)
+    private Long paymentId;
+
+    @Column(nullable = false)
+    private long amount;
+
     @Column(length = 1000)
     private String failReason;
 
@@ -36,15 +47,24 @@ class DeadLetter {
     @Column(nullable = false)
     private Instant createdAt;
 
-    private DeadLetter(String eventType, String eventKey, String failReason) {
+    private DeadLetter(String eventType, String eventKey, String orderNo, Long paymentId,
+                       long amount, String failReason) {
         this.eventType = eventType;
         this.eventKey = eventKey;
+        this.orderNo = orderNo;
+        this.paymentId = paymentId;
+        this.amount = amount;
         this.failReason = failReason;
         this.retryCount = 0;
         this.createdAt = Instant.now();
     }
 
-    static DeadLetter of(String eventType, String eventKey, String failReason) {
-        return new DeadLetter(eventType, eventKey, failReason);
+    static DeadLetter of(String eventType, String eventKey, String orderNo, Long paymentId,
+                         long amount, String failReason) {
+        return new DeadLetter(eventType, eventKey, orderNo, paymentId, amount, failReason);
+    }
+
+    void incrementRetry() {
+        this.retryCount++;
     }
 }

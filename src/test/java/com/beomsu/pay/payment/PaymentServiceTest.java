@@ -3,6 +3,7 @@ package com.beomsu.pay.payment;
 import com.beomsu.pay.payment.pg.FakePgClient;
 import com.beomsu.pay.payment.pg.PgApproveResult;
 import com.beomsu.pay.shared.Money;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ class PaymentServiceTest {
     private PaymentRepository repository;
     private ApplicationEventPublisher events;
     private FakePgClient pg;
+    private SimpleMeterRegistry meterRegistry;
     private PaymentService service;
 
     @BeforeEach
@@ -27,12 +29,13 @@ class PaymentServiceTest {
         repository = mock(PaymentRepository.class);
         events = mock(ApplicationEventPublisher.class);
         pg = new FakePgClient();
+        meterRegistry = new SimpleMeterRegistry();
         when(repository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
-        service = new PaymentService(repository, pg, events);
+        service = new PaymentService(repository, pg, events, meterRegistry);
     }
 
     @Test
-    @DisplayName("승인 성공 시 DONE + PaymentConfirmedEvent 발행")
+    @DisplayName("승인 성공 시 DONE + PaymentConfirmedEvent 발행 + 성공 메트릭 증가")
     void confirmSuccess() {
         pg.setNextResult(PgApproveResult.success("CARD"));
 
@@ -42,6 +45,8 @@ class PaymentServiceTest {
         assertThat(result.status()).isEqualTo(PaymentStatus.DONE);
         assertThat(result.method()).isEqualTo("CARD");
         verify(events).publishEvent(any(PaymentConfirmedEvent.class));
+        // 관측성: 결과별 카운터가 증가한다 (Grafana 결제 성공률의 소스)
+        assertThat(meterRegistry.counter("payment.confirm", "outcome", "success").count()).isEqualTo(1.0);
     }
 
     @Test
