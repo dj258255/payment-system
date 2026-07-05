@@ -1,0 +1,40 @@
+package com.beomsu.pay.order.web;
+
+import com.beomsu.pay.shared.DomainException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.util.UUID;
+
+/**
+ * 도메인 예외 → HTTP 응답 변환.
+ *
+ * <p>{@link DomainException}의 {@code code}를 10-API-스펙 문서의 에러 코드 체계에 맞는 HTTP 상태로
+ * 매핑하고, {@code {code, message, traceId}} JSON으로 응답한다. traceId는 요청 추적용으로 생성한다.
+ */
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(DomainException.class)
+    public ResponseEntity<ErrorResponse> handleDomain(DomainException ex) {
+        HttpStatus status = statusOf(ex.code());
+        ErrorResponse body = new ErrorResponse(ex.code(), ex.getMessage(), UUID.randomUUID().toString());
+        return ResponseEntity.status(status).body(body);
+    }
+
+    private HttpStatus statusOf(String code) {
+        return switch (code) {
+            case "AMOUNT_MISMATCH" -> HttpStatus.FORBIDDEN;                                  // 403
+            case "ORDER_NOT_FOUND", "PAYMENT_NOT_FOUND", "PRODUCT_NOT_FOUND"
+                    -> HttpStatus.NOT_FOUND;                                                 // 404
+            case "INVALID_STATE_TRANSITION", "CANCEL_AMOUNT_EXCEEDED", "OUT_OF_STOCK"
+                    -> HttpStatus.CONFLICT;                                                  // 409
+            default -> HttpStatus.BAD_REQUEST;                                               // 400
+        };
+    }
+
+    public record ErrorResponse(String code, String message, String traceId) {
+    }
+}
