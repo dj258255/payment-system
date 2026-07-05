@@ -36,6 +36,10 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     runtimeOnly 'com.mysql:mysql-connector-j'
 
+    // --- Schema migration (원장을 지키기 위해 ddl-auto=validate + Flyway로 스키마 관리) ---
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-mysql'
+
     // --- Spring Modulith ---
     // 모듈 경계 검증 + 이벤트 발행 레지스트리(= Transactional Outbox)
     implementation 'org.springframework.modulith:spring-modulith-starter-core'
