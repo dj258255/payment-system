@@ -118,6 +118,16 @@ public class PaymentService {
         return paymentRepository.findById(paymentId).map(Payment::getOrderNo);
     }
 
+    /**
+     * 결제의 PG 결제 키 — fraud 모듈의 비동기 사후탐지가 결제 완료 이벤트를 받아 카드(=paymentKey)
+     * 기준 룰을 재평가하기 위해 조회한다. 결제 이벤트는 Zero-Payload라 카드 키를 싣지 않으므로,
+     * fraud가 paymentId로 여기서 키를 되읽는다. 없으면 empty(사후탐지는 조용히 skip).
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> paymentKeyOf(long paymentId) {
+        return paymentRepository.findById(paymentId).map(Payment::getPaymentKey);
+    }
+
     /** 결제 상세(이력·취소 포함). 엔티티가 아닌 뷰 record로 반환해 모듈 경계를 지킨다. 없으면 empty. */
     @Transactional(readOnly = true)
     public Optional<PaymentDetailView> getDetail(long paymentId) {
