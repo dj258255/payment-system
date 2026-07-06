@@ -63,6 +63,8 @@ class CheckoutServiceTest {
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(stockDeductionService).tryDeduct(100L, 2); // 조건부 UPDATE 전략(ADR-004), 예외 없는 boolean
+        // 주문 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
+        verify(orderRepository).saveAndFlush(order);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
         verifyNoInteractions(pointService); // pointAmount=0 → 포인트 경로는 완전히 우회
         verifyNoInteractions(compensationService); // 정상 차감이므로 보상 없음
@@ -121,6 +123,8 @@ class CheckoutServiceTest {
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(30_000), 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
+        // 실패(FAILED) 상태 전이도 명시 saveAndFlush로 영속된다.
+        verify(orderRepository).saveAndFlush(order);
         verify(compensationService).enqueueNetworkCancel(order.getOrderNo(), 30_000L,
                 "재고 부족: 카드 승인 후 자동 망취소");
         verify(stockDeductionService, never()).restore(anyLong(), anyInt()); // 차감된 게 없어 원복 불필요

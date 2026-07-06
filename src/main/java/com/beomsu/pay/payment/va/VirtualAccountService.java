@@ -53,6 +53,9 @@ public class VirtualAccountService {
         PgQueryResult pg = pgClient.query(paymentKey);
         if (pg.isApproved()) {
             va.confirmDeposit();
+            // 상태 전이(DONE)를 명시적으로 영속한다. OSIV off 환경에서 detached 엔티티는
+            // dirty-checking 자동 flush가 일어나지 않으므로 저장을 명시한다(flush 강제).
+            repository.saveAndFlush(va);
         } else {
             // 조회로 재검증했더니 아직 승인 아님 — 위조/조기 웹훅으로 보고 상태를 바꾸지 않는다.
             log.warn("입금 웹훅 무시: PG 미승인 paymentKey={} pgStatus={}", paymentKey, pg.status());
@@ -83,6 +86,9 @@ public class VirtualAccountService {
                 } else {
                     va.expire();
                 }
+                // 상태 전이(DONE/EXPIRED)를 명시적으로 영속한다. OSIV off 환경에서 detached
+                // 엔티티는 dirty-checking 자동 flush가 일어나지 않으므로 저장을 명시한다(flush 강제).
+                repository.saveAndFlush(va);
                 processed++;
             } catch (Exception e) {
                 // 한 건 실패가 배치 전체를 멈추지 않게 한다. 다음 주기에 다시 시도된다.
@@ -99,6 +105,9 @@ public class VirtualAccountService {
     public void handleDepositReversal(String paymentKey, String reason) {
         VirtualAccount va = requireByPaymentKey(paymentKey);
         va.reverseDeposit(reason);
+        // 상태 전이(역전이: DONE → WAITING_FOR_DEPOSIT)를 명시적으로 영속한다. OSIV off 환경에서
+        // detached 엔티티는 dirty-checking 자동 flush가 일어나지 않으므로 저장을 명시한다(flush 강제).
+        repository.saveAndFlush(va);
     }
 
     private VirtualAccount requireByPaymentKey(String paymentKey) {
