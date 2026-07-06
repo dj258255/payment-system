@@ -2,6 +2,12 @@ spring:
   application:
     name: pay
 
+  # PG 정산 파일 업로드 대사용. 정산 CSV는 수만 행이어도 수 MB 수준 → 여유 있게 잡되 무제한은 아님.
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+
   datasource:
     url: jdbc:mysql://localhost:3306/pay?serverTimezone=UTC&characterEncoding=UTF-8
     username: pay
