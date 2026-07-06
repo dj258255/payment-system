@@ -116,4 +116,66 @@ class PaymentServiceTest {
         assertThat(captor.getValue()).isInstanceOfSatisfying(PaymentCanceledEvent.class,
                 ce -> assertThat(ce.fullyCanceled()).isTrue());
     }
+
+    // --- 조회(read-only) 지원 ---
+
+    @Test
+    @DisplayName("orderNoOf: 결제의 주문번호 반환 / 없으면 empty")
+    void orderNoOf() {
+        Payment done = Payment.initiate("order-6", Money.of(10_000));
+        when(repository.findById(1L)).thenReturn(Optional.of(done));
+        when(repository.findById(2L)).thenReturn(Optional.empty());
+
+        assertThat(service.orderNoOf(1L)).contains("order-6");
+        assertThat(service.orderNoOf(2L)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("getDetail: 상태/이력 매핑 + 취소 전이만 cancels로 투영")
+    void getDetailMapsHistoryAndCancels() {
+        Payment payment = Payment.initiate("order-7", Money.of(10_000));
+        payment.startApproval("pk-7");        // READY → IN_PROGRESS
+        payment.approve("CARD");              // IN_PROGRESS → DONE
+        payment.cancel(Money.of(3_000), TriggeredBy.USER, "부분 변심"); // DONE → PARTIAL_CANCELED
+        // id는 DB 생성분(persist된 엔티티)이라 단위 테스트에선 직접 심는다.
+        org.springframework.test.util.ReflectionTestUtils.setField(payment, "id", 1L);
+        when(repository.findById(1L)).thenReturn(Optional.of(payment));
+
+        PaymentDetailView view = service.getDetail(1L).orElseThrow();
+
+        assertThat(view.orderNo()).isEqualTo("order-7");
+        assertThat(view.status()).isEqualTo("PARTIAL_CANCELED");
+        assertThat(view.amount()).isEqualTo(10_000);
+        assertThat(view.balanceAmount()).isEqualTo(7_000);
+        // history: 세 번의 전이가 모두 실린다.
+        assertThat(view.history()).extracting(PaymentHistoryView::to)
+                .containsExactly("IN_PROGRESS", "DONE", "PARTIAL_CANCELED");
+        // cancels: 취소 전이(→ PARTIAL_CANCELED)만 투영된다.
+        assertThat(view.cancels()).singleElement().satisfies(c -> {
+            assertThat(c.to()).isEqualTo("PARTIAL_CANCELED");
+            assertThat(c.reason()).isEqualTo("부분 변심");
+        });
+    }
+
+    @Test
+    @DisplayName("getDetail: 없는 결제는 empty")
+    void getDetailEmpty() {
+        when(repository.findById(9L)).thenReturn(Optional.empty());
+        assertThat(service.getDetail(9L)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("paymentStatusByOrderNo: 최신 결제 상태 반환 / 결제 없으면 empty")
+    void paymentStatusByOrderNo() {
+        Payment done = Payment.initiate("order-8", Money.of(10_000));
+        done.startApproval("pk-8");
+        done.approve("CARD");
+        when(repository.findFirstByOrderNoOrderByRequestedAtDesc("order-8"))
+                .thenReturn(Optional.of(done));
+        when(repository.findFirstByOrderNoOrderByRequestedAtDesc("order-none"))
+                .thenReturn(Optional.empty());
+
+        assertThat(service.paymentStatusByOrderNo("order-8")).contains("DONE");
+        assertThat(service.paymentStatusByOrderNo("order-none")).isEmpty();
+    }
 }

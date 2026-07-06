@@ -63,6 +63,24 @@
 
 ### `GET /api/v1/orders/{orderNo}` — 주문 조회 (결제 상태 포함)
 
+```json
+// Response 200
+{
+  "orderNo": "01J9XYZABC...",
+  "status": "PAID",
+  "totalAmount": 20000,
+  "items": [
+    { "productId": 1, "productName": "상품A", "unitPrice": 10000, "quantity": 2 }
+  ],
+  "paymentStatus": "DONE",           // 대표(최신) 결제 상태. 결제 시도가 없으면 null
+  "expiresAt": "2026-07-05T12:30:00Z",
+  "createdAt": "2026-07-05T12:00:00Z"
+}
+```
+
+- `paymentStatus`는 이 주문의 **최신 결제 시도** 상태를 대표로 싣는다 — 승인이 `202 UNKNOWN`이었다면 이 값이 `UNKNOWN`으로 보이고, 복구 배치가 확정하면 `DONE`으로 바뀐다. **주문 단위 폴링으로도 확정을 확인할 수 있다.**
+- 소유권 검증: principal의 userId로 주문 소유자만 조회할 수 있다(IDOR 방지). 남의 주문은 403 `ORDER_FORBIDDEN`.
+
 ---
 
 ## 2. 결제 — 핵심 API
@@ -145,6 +163,10 @@
   ]
 }
 ```
+
+- **202 UNKNOWN 폴링의 확정 경로다** — 승인이 `202 UNKNOWN`(checkAfterSeconds 후 재확인 안내)으로 응답되면, 클라이언트는 응답의 `paymentId`로 이 API를 폴링해 `status`가 `DONE`/`CANCELED`/`ABORTED`로 확정됐는지 확인한다. UNKNOWN 3-상태 모델의 "나중에 확인하라"는 계약이 이 조회로 완성된다.
+- `cancels`는 별도 취소 엔티티 없이 상태 이력에서 취소 전이(→ CANCELED/PARTIAL_CANCELED)를 투영한다.
+- 소유권 검증: 결제가 속한 주문의 소유자만 조회할 수 있다(IDOR 방지). 남의 결제는 403 `ORDER_FORBIDDEN`, 없는 결제는 404 `PAYMENT_NOT_FOUND`.
 
 ### `POST /api/v1/payments/{paymentId}/cancel` — 취소 (전액/부분)
 
