@@ -21,13 +21,17 @@
 
 ![maker-checker 본인 승인 차단](docs/images/demo-maker-checker.png)
 
+**폭주 유입 제어** — 같은 사용자의 연타는 rate limiter가 `429 RATE_LIMITED`로 쳐내고(사용자별 5/s + 전역 상한), 한정판 상품은 대기열 입장권 없이 주문하면 `429 QUEUE_PASS_REQUIRED`로 막힌다(입장 후 성공). 스파이크 실측: 폭주의 97.5%를 429로 거절하면서 성공 요청 p95는 738ms→52ms([docs/performance §7](docs/performance/README.md)).
+
+![폭주 제어 데모 — rate limit 429 + 대기열 게이트](docs/images/demo-overload.png)
+
 ## 기술 스택
 
 - **Java 21**, **Spring Boot 3.4**, **Spring Modulith 1.3**
 - **MySQL 8.4** + JPA(도메인 모델) + QueryDSL, **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화 — 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito, H2(동시성 실측), **359 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
+- 테스트: JUnit5 + Mockito, H2(동시성 실측), **377 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
 
 ## 아키텍처 — 모듈형 모놀리스
 

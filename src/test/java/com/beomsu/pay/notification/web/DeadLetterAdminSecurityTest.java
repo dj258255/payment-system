@@ -1,5 +1,6 @@
 package com.beomsu.pay.notification.web;
 
+import com.beomsu.pay.RateLimiter;
 import com.beomsu.pay.SecurityConfig;
 import com.beomsu.pay.notification.NotificationAdminService;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +40,11 @@ class DeadLetterAdminSecurityTest {
 
     @MockitoBean
     JwtDecoder jwtDecoder;
+
+    // SecurityConfig가 시큐리티 체인에 RateLimitFilter를 끼우며 요구하는 협력자 — 슬라이스에선 목.
+    // (어드민 경로는 rate limit 대상이 아니라 목의 기본 동작으로 충분하다)
+    @MockitoBean
+    RateLimiter rateLimiter;
 
     @Test
     @DisplayName("인증 없이 DLQ 조회 → 401 Unauthorized")

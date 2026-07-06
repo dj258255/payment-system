@@ -139,3 +139,37 @@ resilience4j 데코레이터의 동작을 순수 단위로 못박는다(부팅·
 카오스 테스트는 컨테이너 2개 + 앱 부팅이 필요해 무겁고, 머신에 따라 부팅이 불안정하다. CI 기본
 스위트의 **결정성과 속도**를 지키려고 `@Tag("chaos")`로 분리해 기본 `test`에서 제외하고, 네트워크가
 준비된 전용 환경에서만 `chaosTest`로 돌린다.
+
+## 7. 폭주 유입 제어 — 스파이크 실측 (실측 완료)
+
+순간 트래픽 폭증(선착순 등)에 대한 유입 제어를 넣고, **같은 스파이크(0→150 VU 10초 급증)**를
+제어 전/후로 두 번 실측했다(`k6/spike-test.js`, `app.ratelimit.enabled`로 전환).
+
+제어 3층: ① Redis 분산 rate limiter(사용자별 5/s + 전역 100/s → 초과분 `429 + Retry-After`)
+② 한정판 상품 대기열 게이트 강제(입장권 없으면 `429 QUEUE_PASS_REQUIRED`)
+③ 빠른 실패 풀 설정(Hikari connection-timeout 3s·pool 20, Tomcat threads 100 — 매달리지 않고 실패).
+
+| 지표 | 제어 없음 | **제어 있음** |
+|---|---|---|
+| 유입 | 304 req/s, **전량 DB까지 처리** | 398 req/s 중 **97.5%를 429로 거절** |
+| DB 도달 요청 | 15,445건 (100%) | ~510건 (2.5%) |
+| 성공 요청 p95 | 737.81ms | **52.01ms (14배↓)** |
+| 성공 요청 max | 1.48s | 105ms |
+| 5xx | 0% | 0.55% (아래) |
+
+**해석**: 제어가 없으면 폭주가 전량 DB로 흘러 정상 요청까지 같이 느려진다(p95 738ms — 평시 37ms의
+20배). 제어를 켜면 감당 못 할 요청을 바깥 층에서 싸게(429) 거절하고, **통과한 요청은 평시에 가까운
+속도(p95 52ms)를 유지**한다 — "모두가 느려지는 것"에서 "일부는 기다리고 나머지는 정상"으로.
+
+**부수 발견**: 제어 ON에서만 5xx 113건(0.55%, 임계 1% 이내) — 고정 윈도우 경계에 통과 요청이
+버스트로 몰리며 `event_publication`(outbox) INSERT가 MySQL 데드락. 제어가 없을 땐 지연이 자연
+직렬화해 0건이었다. 윈도우 경계 버스트의 전형적 부작용으로, 후속 과제(데드락 재시도 또는
+sliding window)로 남긴다 — 스파이크 실측이 아니면 드러나지 않았을 특성이다.
+
+재현:
+```bash
+./gradlew bootRun --args='--app.ratelimit.enabled=false'   # 전
+USER_PASSWORD=user-local-only k6 run k6/spike-test.js
+./gradlew bootRun                                           # 후(기본 on)
+USER_PASSWORD=user-local-only k6 run k6/spike-test.js
+```
