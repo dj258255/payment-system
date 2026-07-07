@@ -60,9 +60,18 @@ spring:
         # 운영/데모에서 kafka 프로파일로 켠다(아래 --- kafka 문서 참고).
         enabled: false
 
+  # 우아한 종료(graceful shutdown) — SIGTERM을 받으면 새 요청은 받지 않고(수용 중단),
+  # 진행 중인 결제 요청은 완료까지 드레이닝한 뒤 종료한다(배포 시 인플라이트 결제 강제 중단 방지).
+  # 드레이닝이 아래 timeout-per-shutdown-phase(20초)를 넘기면 남은 요청을 끊고 강제 종료한다.
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
 # 폭주 시 스레드 무한 증식 대신 상한 — 초과 유입은 컨테이너 수용 큐에서 대기·거절되어
 # 힙/컨텍스트 스위칭 폭발로 번지지 않는다(기본 200 → 100, DB 풀 20과 균형).
 server:
+  # SIGTERM 시 새 요청은 안 받고 진행 중 결제는 완료까지 드레이닝(위 timeout 안에서). 최대 대기 후 강제 종료.
+  # (k8s면 LB 디레지스터 경합을 없애려 preStop sleep 지연도 필요하나, 단일 프로세스라 여기선 설정만 둔다.)
+  shutdown: graceful
   tomcat:
     threads:
       max: 100

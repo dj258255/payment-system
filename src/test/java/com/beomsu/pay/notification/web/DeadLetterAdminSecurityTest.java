@@ -9,11 +9,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.data.domain.Page;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-
-import java.util.List;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -63,7 +62,8 @@ class DeadLetterAdminSecurityTest {
     @Test
     @DisplayName("ROLE_ADMIN 토큰이면 DLQ 조회 통과")
     void listWithAdminIsOk() throws Exception {
-        org.mockito.Mockito.when(adminService.listDeadLetters()).thenReturn(List.of());
+        org.mockito.Mockito.when(adminService.listDeadLetters(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Page.empty());
 
         mockMvc.perform(get("/api/v1/admin/dead-letters")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
