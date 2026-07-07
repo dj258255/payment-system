@@ -6,6 +6,7 @@ import com.beomsu.pay.payment.PaymentService;
 import com.beomsu.pay.payment.PaymentStatus;
 import com.beomsu.pay.point.PointService;
 import com.beomsu.pay.shared.Money;
+import com.beomsu.pay.wallet.WalletService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,26 +29,33 @@ class CheckoutTx {
     private final OrderRepository orderRepository;
     private final StockDeductionService stockDeductionService;
     private final PointService pointService;
+    private final WalletService walletService;
     private final CompensationService compensationService;
 
     /** 예약 결과 — 확정 단계로 넘길 최소 정보. cardAmount==0(전액 포인트)이면 paymentId는 null. */
     record Reservation(Long paymentId) {}
 
     /**
-     * Phase 1 — 예약(짧은 tx). 검증 → 주문 상태 전이(이중지불 잠금) → 포인트 선점 → 결제 IN_PROGRESS 적재.
-     * PG 콜 <b>전</b>에 커밋되어 커넥션을 반납한다. 크래시 시에도 이 상태(주문 IN_PROGRESS + 결제 IN_PROGRESS
-     * + 포인트 예약)가 남아 복구 배치가 완결/롤백할 수 있다.
+     * Phase 1 — 예약(짧은 tx). 검증 → 주문 상태 전이(이중지불 잠금) → 포인트 선점 → 결제 IN_PROGRESS 적재
+     * → 월렛 차감. PG 콜 <b>전</b>에 커밋되어 커넥션을 반납한다. 크래시 시에도 이 상태(주문 IN_PROGRESS +
+     * 결제 IN_PROGRESS + 포인트/월렛 예약)가 남아 복구 배치가 완결/롤백할 수 있다.
+     *
+     * <p><b>결제수단별 롤백 계약</b>: 포인트({@link PointService})는 이 tx에 합류하므로(클래스 @Transactional)
+     * 예약 실패 시 자동 롤백된다. 월렛({@link WalletService#use})은 자체 짧은 tx로 <b>커밋되는</b> 부수효과라
+     * 자동 롤백되지 않는다 — 그래서 월렛 차감을 이 메서드의 <b>맨 마지막</b>(order 저장 후)에 두어, 이후 in-tx
+     * 실패로 커밋된 차감이 고아가 되는 창을 없앤다. 월렛 잔액이 부족하면 여기서 예외가 나 이 tx 전체가
+     * 롤백되고(월렛은 아직 안 건드림), 보상은 {@link #settle}의 거절/재고부족 분기가 orderNo 멱등 환불로 한다.
      */
     @Transactional
     public Reservation reserve(String orderNo, String paymentKey, Money cardAmount,
-                               long pointAmount, long authenticatedUserId) {
+                               long pointAmount, long walletAmount, long authenticatedUserId) {
         Order order = orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> OrderException.orderNotFound(orderNo));
         order.verifyOwner(authenticatedUserId); // IDOR 방지 — 무엇보다 먼저
 
         long requestedTotal;
         try {
-            requestedTotal = Math.addExact(cardAmount.amount(), pointAmount);
+            requestedTotal = Math.addExact(Math.addExact(cardAmount.amount(), pointAmount), walletAmount);
         } catch (ArithmeticException e) {
             throw new OrderException("AMOUNT_OVERFLOW", "결제 금액이 허용 범위를 초과했습니다.");
         }
@@ -56,7 +64,7 @@ class CheckoutTx {
         order.startPayment(); // PENDING_PAYMENT → PAYMENT_IN_PROGRESS (조건부 전이, 이중지불 차단)
 
         if (pointAmount > 0) {
-            pointService.use(order.getUserId(), pointAmount, orderNo); // 롤백 확실한 내부 자원 선점
+            pointService.use(order.getUserId(), pointAmount, orderNo); // 롤백 확실한 내부 자원 선점(in-tx)
         }
 
         Long paymentId = null;
@@ -64,6 +72,11 @@ class CheckoutTx {
             paymentId = paymentService.beginApproval(orderNo, paymentKey, cardAmount);
         }
         orderRepository.saveAndFlush(order);
+
+        // 월렛 차감은 맨 마지막 — 커밋되는 부수효과라 이후 단계 실패로 고아가 되지 않게 한다. orderNo로 멱등.
+        if (walletAmount > 0) {
+            walletService.use(order.getUserId(), walletAmount, orderNo);
+        }
         return new Reservation(paymentId);
     }
 
@@ -76,7 +89,7 @@ class CheckoutTx {
      */
     @Transactional
     public CheckoutResult settle(String orderNo, Long paymentId, Money cardAmount,
-                                 long pointAmount, ApprovalOutcome outcome) {
+                                 long pointAmount, long walletAmount, ApprovalOutcome outcome) {
         Order order = orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> OrderException.orderNotFound(orderNo));
 
@@ -112,6 +125,9 @@ class CheckoutTx {
                 if (pointAmount > 0) {
                     pointService.restore(order.getUserId(), pointAmount, orderNo);
                 }
+                if (walletAmount > 0) {
+                    walletService.refund(order.getUserId(), walletAmount, orderNo); // orderNo 멱등 보상
+                }
                 if (cardAmount.amount() > 0) {
                     compensationService.enqueueNetworkCancel(orderNo, cardAmount.amount(),
                             "재고 부족: 카드 승인 후 자동 망취소");
@@ -123,14 +139,17 @@ class CheckoutTx {
                         "재고가 부족해 결제를 취소 처리했습니다. 승인된 카드는 자동으로 취소됩니다.");
             }
         } else if (result.isUnknown()) {
-            // 미확정: 포인트는 <b>예약 상태 그대로 유지</b>한다(결제가 실제로 승인됐을 수 있으므로). 주문은
-            // PAYMENT_IN_PROGRESS로 두고, 복구 배치가 PG 조회로 확정한다 — DONE이면 예약 포인트가 그대로
-            // 소비된 채 PAID가 되고, ABORTED면 아래 거절 분기가 그때 복원한다. 여기서 미리 복원하면, 이후
-            // 완결(SUCCESS 분기)이 포인트를 재소비하지 않아 가맹점이 포인트분만큼 덜 걷는다(자금 손실).
+            // 미확정: 포인트·월렛 예약을 <b>그대로 유지</b>한다(결제가 실제로 승인됐을 수 있으므로). 주문은
+            // PAYMENT_IN_PROGRESS로 두고, 복구 배치가 PG 조회로 확정한다 — DONE이면 예약분이 그대로 소비된 채
+            // PAID가 되고, ABORTED면 아래 거절 분기가 그때 복원한다. 여기서 미리 복원하면, 이후 완결(SUCCESS
+            // 분기)이 예약분을 재소비하지 않아 가맹점이 그만큼 덜 걷는다(자금 손실).
         } else {
-            // 명시적 거절: 선점 포인트 복원, 재시도 위해 주문 PENDING_PAYMENT로 복귀.
+            // 명시적 거절: 선점 포인트·월렛 복원, 재시도 위해 주문 PENDING_PAYMENT로 복귀.
             if (pointAmount > 0) {
                 pointService.restore(order.getUserId(), pointAmount, orderNo);
+            }
+            if (walletAmount > 0) {
+                walletService.refund(order.getUserId(), walletAmount, orderNo); // orderNo 멱등 보상
             }
             order.revertToPending();
         }

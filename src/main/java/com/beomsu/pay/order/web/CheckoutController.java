@@ -45,7 +45,7 @@ public class CheckoutController {
                 idempotencyKey, PATH, "POST", request, CheckoutResult.class,
                 () -> checkoutService.confirm(
                         request.orderNo(), request.paymentKey(),
-                        Money.of(request.amount()), request.pointAmount(), userId));
+                        Money.of(request.amount()), request.pointAmount(), request.walletAmount(), userId));
 
         HttpStatus status = switch (result.paymentStatus()) {
             case DONE -> HttpStatus.OK;               // 승인 완료
@@ -58,9 +58,11 @@ public class CheckoutController {
     /**
      * 결제 승인 요청.
      *
-     * @param amount      카드로 결제할 금액(복합결제 재정의: 카드 몫)
-     * @param pointAmount 포인트로 결제할 금액. JSON에 없으면 0(순수 카드결제 = 기존 동작)
+     * @param amount       카드로 결제할 금액(복합결제 재정의: 카드 몫)
+     * @param pointAmount  포인트로 결제할 금액. JSON에 없으면 0(순수 카드결제 = 기존 동작)
+     * @param walletAmount 선불 월렛으로 결제할 금액. JSON에 없으면 0. 카드+포인트+월렛 == 주문 총액이어야 한다.
      */
-    public record ConfirmRequest(String paymentKey, String orderNo, long amount, long pointAmount) {
+    public record ConfirmRequest(String paymentKey, String orderNo, long amount,
+                                 long pointAmount, long walletAmount) {
     }
 }
