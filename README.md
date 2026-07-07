@@ -25,6 +25,10 @@
 
 ![정산 데모 — 수수료·부가세·지급액·지급예정일 분해](docs/images/demo-settlement.png)
 
+**구독 정기결제(빌링키)** — 빌링키로 구독을 개시하고, 내 구독 조회·즉시청구·해지·청구 이력을 제공한다. 정기청구는 dunning 스케줄러가 주기 실행하며 soft/hard decline을 재시도·유예로 처리한다. 본인 구독만 접근 가능(IDOR 방지).
+
+![구독 정기결제 데모 — 개시·상태·청구주기·해지](docs/images/demo-subscription.png)
+
 **폭주 유입 제어** — 같은 사용자의 연타는 rate limiter가 `429 RATE_LIMITED`로 쳐내고(사용자별 5/s + 전역 상한), 한정판 상품은 대기열 입장권 없이 주문하면 `429 QUEUE_PASS_REQUIRED`로 막힌다(입장 후 성공). 스파이크 실측: 폭주의 97.5%를 429로 거절하면서 성공 요청 p95는 738ms→52ms([docs/performance §7](docs/performance/README.md)).
 
 ![폭주 제어 데모 — rate limit 429 + 대기열 게이트](docs/images/demo-overload.png)
@@ -43,7 +47,7 @@
 - **MySQL 8.4** + JPA(도메인 모델), **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화 — 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito, H2(동시성 실측), **438 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
+- 테스트: JUnit5 + Mockito, H2(동시성 실측), **460 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
 
 ## 아키텍처 — 모듈형 모놀리스
 
@@ -121,7 +125,10 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
 - **멀티 PG**: `RoutingPgClient`(다중 PG failover)를 `app.pg.routing.enabled=true`로 켜면 opt-in
   배선된다(가중치 순 시도, 장애 시 failover, TIMEOUT은 이중결제 방지로 failover 안 함). 기본은 단일
   PG(Toss)다. 취소·조회의 원 결제 PG 라우팅은 `PgClient`에 provider 힌트를 넣는 후속 과제로 남겼다.
-- **가상계좌·구독**: 서비스 계층까지 구현한 데모로, 외부 HTTP 발급 표면(엔드포인트)은 두지 않았다.
+- **가상계좌**: 서비스 계층까지 구현한 데모로, 외부 HTTP 발급 표면(엔드포인트)은 두지 않았다.
+- **구독(정기결제)**: 빌링키로 구독 개시·조회·해지·즉시청구 REST + dunning(soft/hard decline 재시도·유예)
+  스케줄러까지 제공한다. 빌링키는 envelope 암호화 + 블라인드 인덱스로 저장. 실 카드 등록(빌링키 발급)은
+  PG 위임 표면이라 데모에선 빌링키 문자열을 직접 받는다.
 - **정산**: 일 단위 배치 집계를 서비스 루프로 처리한다(대용량이면 Spring Batch로 확장 여지). 수수료율은
   bps(기본 270=2.7%)로 정수 연산하고 수수료 VAT 10%를 뗀다. 지급예정일은 정산일+2영업일로 **주말만
   skip**하며 법정공휴일은 미반영 — 실서비스라면 공휴일 캘린더를 붙인다. 수수료를 원장 비용 계정으로

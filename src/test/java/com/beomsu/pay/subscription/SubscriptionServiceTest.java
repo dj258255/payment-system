@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
@@ -188,6 +189,82 @@ class SubscriptionServiceTest {
         assertThat(proration).isEqualTo(10_000);
         assertThat(sub.getPlanAmount()).isEqualTo(30_000);
         // 플랜 변경 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
+        verify(subscriptionRepository).saveAndFlush(sub);
+    }
+
+    // --- 외부 표면(사용자 API) ---
+
+    private Subscription ownedSub(long userId, long id) {
+        Subscription sub = Subscription.create(userId, "billing-1", 10_000, TODAY.minusMonths(1), TODAY);
+        org.springframework.test.util.ReflectionTestUtils.setField(sub, "id", id);
+        when(subscriptionRepository.findById(id)).thenReturn(Optional.of(sub));
+        return sub;
+    }
+
+    @Test
+    @DisplayName("내 구독 목록 조회: userId 소유 구독을 뷰로 매핑")
+    void subscriptionsOfMapsToViews() {
+        Subscription sub = Subscription.create(1L, "billing-1", 10_000, TODAY.minusMonths(1), TODAY);
+        when(subscriptionRepository.findByUserIdOrderByIdDesc(1L)).thenReturn(List.of(sub));
+
+        List<SubscriptionView> views = service.subscriptionsOf(1L);
+
+        assertThat(views).singleElement().satisfies(v -> {
+            assertThat(v.planAmount()).isEqualTo(10_000);
+            assertThat(v.status()).isEqualTo("ACTIVE");
+        });
+    }
+
+    @Test
+    @DisplayName("구독 해지: 소유자면 CANCELED 전이 + saveAndFlush")
+    void cancelByOwner() {
+        Subscription sub = ownedSub(1L, 5L);
+
+        SubscriptionView view = service.cancel(5L, 1L);
+
+        assertThat(sub.getStatus()).isEqualTo(SubscriptionStatus.CANCELED);
+        assertThat(view.status()).isEqualTo("CANCELED");
+        verify(subscriptionRepository).saveAndFlush(sub);
+    }
+
+    @Test
+    @DisplayName("남의 구독 해지 시도: SUBSCRIPTION_FORBIDDEN (IDOR 방지) — 전이·저장 없음")
+    void cancelByNonOwnerForbidden() {
+        Subscription sub = ownedSub(1L, 5L); // 주인은 userId 1
+
+        assertThatThrownBy(() -> service.cancel(5L, 2L)) // userId 2가 시도
+                .isInstanceOf(SubscriptionException.class)
+                .satisfies(e -> assertThat(((SubscriptionException) e).code()).isEqualTo("SUBSCRIPTION_FORBIDDEN"));
+
+        assertThat(sub.getStatus()).isEqualTo(SubscriptionStatus.ACTIVE); // 미변경
+        verify(subscriptionRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("구독 상세: 소유자에게 구독 + 청구 이력을 반환")
+    void detailWithHistory() {
+        Subscription sub = ownedSub(1L, 5L);
+        when(dunningAttemptRepository.findBySubscriptionIdOrderByIdAsc(5L)).thenReturn(List.of(
+                DunningAttempt.of(5L, 1, BillingResult.SOFT_DECLINE, TODAY.plusDays(3)),
+                DunningAttempt.of(5L, 2, BillingResult.SUCCESS, null)));
+
+        SubscriptionDetailView detail = service.detail(5L, 1L);
+
+        assertThat(detail.billingHistory()).hasSize(2);
+        assertThat(detail.billingHistory().get(0).result()).isEqualTo("SOFT_DECLINE");
+    }
+
+    @Test
+    @DisplayName("즉시 청구(billNow): 소유자의 ACTIVE 구독을 즉시 청구 — 성공 시 renew")
+    void billNowChargesActive() {
+        Subscription sub = ownedSub(1L, 5L);
+        gateway.setNextResult(BillingResult.SUCCESS);
+
+        SubscriptionView view = service.billNow(5L, 1L);
+
+        assertThat(view.status()).isEqualTo("ACTIVE");
+        // 성공 청구는 다음 청구일을 한 달 뒤로 갱신한다.
+        assertThat(sub.getNextBillingDate()).isEqualTo(TODAY.plusMonths(1));
         verify(subscriptionRepository).saveAndFlush(sub);
     }
 }
