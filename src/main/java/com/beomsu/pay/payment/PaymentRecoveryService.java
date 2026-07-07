@@ -77,8 +77,9 @@ public class PaymentRecoveryService {
 
     private void resolve(Payment payment) {
         PgQueryResult pg = pgClient.query(payment.getPaymentKey());
-        // 상태 전이를 명시적으로 영속한다. OSIV off 환경에서 detached 엔티티는 dirty-checking 자동
-        // flush가 일어나지 않으므로, 확정 상태가 DB에 반영되도록(APPROVED는 이벤트 발행 전에) 저장한다.
+        // 상태 전이를 saveAndFlush로 명시 영속한다. dirty-check 자동 flush는 readOnly 조회로 세션
+        // FlushMode가 MANUAL이거나 detached 엔티티인 경우 신뢰할 수 없어(pay-26 교훈), 확정 상태를
+        // DB에 강제 반영한다(APPROVED는 이벤트 발행 전에).
         switch (pg.status()) {
             case APPROVED -> {
                 payment.confirmByRecovery(pg.method());

@@ -69,8 +69,8 @@ public class EscrowService {
 
         Instant now = Instant.now();
         hold.release(now);
-        // 상태 전이(RELEASED)를 명시적으로 영속한다. OSIV off 환경에서 detached 엔티티는
-        // dirty-checking 자동 flush가 일어나지 않으므로, 이벤트 발행 전에 저장을 명시한다(flush 강제).
+        // 상태 전이(RELEASED)를 saveAndFlush로 명시 영속한다. dirty-check 자동 flush는 readOnly 조회로 세션
+        // FlushMode가 MANUAL이거나 detached 엔티티인 경우 신뢰할 수 없어(pay-26 교훈), 이벤트 발행 전에 확정을 강제한다.
         repository.saveAndFlush(hold);
         events.publishEvent(new EscrowReleasedEvent(hold.getOrderNo(), hold.getAmount(), now));
     }
@@ -92,8 +92,8 @@ public class EscrowService {
             return; // 멱등: 이미 릴리스/환불됨 — skip
         }
         hold.refund(Instant.now());
-        // 상태 전이(REFUNDED)를 명시적으로 영속한다. OSIV off 환경에서 detached 엔티티는
-        // dirty-checking 자동 flush가 일어나지 않으므로 저장을 명시한다(flush 강제).
+        // 상태 전이(REFUNDED)를 saveAndFlush로 명시 영속한다. dirty-check 자동 flush는 readOnly 조회로
+        // 세션 FlushMode가 MANUAL이거나 detached 엔티티인 경우 신뢰할 수 없어(pay-26 교훈) 확정을 강제한다.
         repository.saveAndFlush(hold);
     }
 
