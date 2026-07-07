@@ -4,9 +4,9 @@ import com.beomsu.pay.payment.PaymentRecoveryService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,36 +17,43 @@ import org.springframework.transaction.annotation.Transactional;
  * 페이로드의 상태를 신뢰하지 않는다. 실제 상태 확정({@link #process})은 페이로드가 아니라
  * {@link PaymentRecoveryService#resolveByPaymentKey}로 <b>PG 조회 API를 통해 재검증</b>한다.
  *
- * <p>{@link #receive}와 {@link #process}를 분리해 둔 것은 지금은 동기로 이어 호출하지만
- * 나중에 {@code process}만 {@code @Async}로 떼어내 "빠른 200 응답 후 비동기 해석"으로 전환하기 위함이다.
+ * <p><b>빠른 200 + 비동기 해석</b>: PG는 웹훅에 <b>10초 내 2xx</b>를 요구하고, 못 주면 재전송을
+ * 반복한다. 그런데 {@link #process}는 PG 조회 API를 <b>동기 호출</b>하므로, 수신 스레드에서 이어
+ * 하면 그 네트워크 왕복이 응답 시간에 얹혀 10초를 넘길 위험이 있다. 그래서 {@link #receive}는
+ * 신규 이벤트에 대해 {@link WebhookReceivedEvent}만 발행하고 즉시 반환하며, 실제 해석은 커밋 이후
+ * {@link #onWebhookReceived}가 <b>별도 스레드</b>에서 수행한다. 발행은 Modulith 아웃박스에 수신
+ * 트랜잭션과 함께 기록되므로, 해석 전에 앱이 죽어도 재기동 시 재발행된다({@code @Async}와 달리 유실 없음).
  */
 @Service
 @RequiredArgsConstructor
 public class WebhookService {
 
-    private static final Logger log = LoggerFactory.getLogger(WebhookService.class);
-
     private final WebhookEventRepository repository;
     private final WebhookSignatureVerifier signatureVerifier;
     private final PaymentRecoveryService paymentRecoveryService;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher events;
 
     /**
-     * 수신 후 해석까지 이어서 수행하는 진입점. 컨트롤러가 호출한다.
-     * 새로 저장된 이벤트만 해석하고, 중복 수신(이미 저장됨)은 조용히 넘긴다.
+     * 컨트롤러 진입점 — 수신(서명 검증·멱등 저장)만 하고 즉시 반환한다. 실제 PG 조회 해석은
+     * {@link #receive}가 발행한 {@link WebhookReceivedEvent}를 받아 비동기로 이뤄진다.
+     *
+     * <p><b>이 메서드가 트랜잭션 경계다</b>: {@code @ApplicationModuleListener}의 {@code AFTER_COMMIT}
+     * 발화는 발행이 <b>커밋되는 트랜잭션 안</b>에서 일어나야 걸린다. {@link #receive}는 자기호출로
+     * 진입하므로(프록시 미경유) 자체 {@code @Transactional}이 무시된다 — 그래서 진입점인 여기에
+     * 트랜잭션을 열어, 발행이 이 트랜잭션에 실려 커밋되고 그 커밋에 비동기 해석이 걸리게 한다.
      */
+    @Transactional
     public void handle(String signatureHeader, String rawBody) {
-        WebhookEvent event = receive(signatureHeader, rawBody);
-        if (event.getStatus() == WebhookEventStatus.RECEIVED) {
-            process(event);
-        }
+        receive(signatureHeader, rawBody);
     }
 
     /**
-     * 서명 검증 → 멱등 저장. 원본만 저장하고 상태 해석은 하지 않는다.
+     * 서명 검증 → 멱등 저장 → (신규면) 비동기 해석 트리거 발행. 원본만 저장하고 상태 해석은 하지 않는다.
      *
      * <p>서명 검증 실패 시 예외를 던진다(컨트롤러가 401). 이미 받은 이벤트면 저장하지 않고
-     * 기존 이벤트를 반환한다(멱등) — UNIQUE 제약 위반도 잡아 동일하게 흡수한다.
+     * 기존 이벤트를 반환한다(멱등) — UNIQUE 제약 위반도 잡아 동일하게 흡수한다. 이 경우
+     * 트리거를 발행하지 않는다(원 수신의 아웃박스 발행이 해석 재시도를 이미 보장).
      */
     @Transactional
     public WebhookEvent receive(String signatureHeader, String rawBody) {
@@ -61,42 +68,55 @@ public class WebhookService {
         }
         String eventType = text(root, "eventType");
 
-        // 3. 멱등 수신 — 이미 있으면 그대로 반환(중복 재전송은 정상 동작)
+        // 3. 멱등 수신 — 이미 있으면 그대로 반환(중복 재전송은 정상 동작, 트리거 미발행)
         var existing = repository.findByExternalEventId(externalEventId);
         if (existing.isPresent()) {
             return existing.get();
         }
 
-        // 4. 원본 저장 → 빠른 응답. 페이로드 상태는 믿지 않는다.
+        // 4. 원본 저장 → 비동기 해석 트리거 발행 → 빠른 응답. 페이로드 상태는 믿지 않는다.
         try {
-            return repository.save(WebhookEvent.received(externalEventId, eventType, rawBody));
+            WebhookEvent saved = repository.save(WebhookEvent.received(externalEventId, eventType, rawBody));
+            // 수신 트랜잭션 안에서 발행 → 아웃박스에 함께 커밋. 커밋 후 리스너가 별도 스레드로 해석.
+            events.publishEvent(new WebhookReceivedEvent(saved.getId()));
+            return saved;
         } catch (DataIntegrityViolationException e) {
-            // 동시 수신으로 UNIQUE 제약 위반 → 멱등 처리(기존 이벤트 반환)
+            // 동시 수신으로 UNIQUE 제약 위반 → 멱등 처리(기존 이벤트 반환, 트리거 미발행)
             return repository.findByExternalEventId(externalEventId)
                     .orElseThrow(() -> e);
         }
     }
 
     /**
-     * 페이로드를 믿지 않고 PG 조회로 실제 상태를 확정한다.
-     * 성공이면 PROCESSED, 예외면 FAILED로 남기되(다음 주기 재처리 대상) 예외를 밖으로 던지지 않는다.
+     * 비동기 해석 리스너 — 수신 커밋 이후 <b>별도 스레드</b>에서 PG 조회로 실제 상태를 확정한다.
+     * Modulith 아웃박스가 발행을 영속화·재발행하므로, 앱이 해석 전에 죽어도 재기동 시 다시 처리된다.
+     * id로 다시 로드해 최신 상태로 해석한다(발행 시점 엔티티가 아니라 현재 행).
+     */
+    @ApplicationModuleListener
+    void onWebhookReceived(WebhookReceivedEvent event) {
+        repository.findById(event.webhookEventId()).ifPresent(this::process);
+    }
+
+    /**
+     * 페이로드를 믿지 않고 PG 조회로 실제 상태를 확정한다. 성공이면 PROCESSED로 마감한다.
+     *
+     * <p><b>실패는 삼키지 않고 전파한다</b>: 비동기 해석은 아웃박스({@link WebhookReceivedEvent})에
+     * 실려 오므로, 여기서 예외를 던지면 Modulith가 발행을 <b>미완료로 남겨 재시도</b>한다(at-least-once).
+     * 예외를 catch해 같은 트랜잭션에 FAILED를 쓰려 하면, PG 조회 예외가 이미 그 트랜잭션을
+     * rollback-only로 오염시켜 그 write마저 커밋되지 않는다 — 그래서 "포기하고 FAILED" 대신
+     * "재시도에 맡긴다". 조회 대상이 아닌 경우(paymentKey 없음)만 SKIPPED로 종결한다(정상 커밋).
      */
     @Transactional
     public void process(WebhookEvent event) {
-        try {
-            String paymentKey = extractPaymentKey(event.getRawPayload());
-            if (paymentKey == null || paymentKey.isBlank()) {
-                event.markSkipped("paymentKey 없음 — 조회 대상 아님");
-            } else {
-                // 페이로드가 아니라 조회 API로 실상태 재검증
-                paymentRecoveryService.resolveByPaymentKey(paymentKey);
-                event.markProcessed();
-            }
-        } catch (Exception e) {
-            // 한 건 실패가 수신 응답(200)을 막지 않게 한다. 다음 주기(폴링/대사)에서 재처리된다.
-            log.warn("웹훅 처리 실패 externalEventId={} : {}", event.getExternalEventId(), e.getMessage());
-            event.markFailed(e.getMessage());
+        String paymentKey = extractPaymentKey(event.getRawPayload());
+        if (paymentKey == null || paymentKey.isBlank()) {
+            event.markSkipped("paymentKey 없음 — 조회 대상 아님");
+            repository.save(event);
+            return;
         }
+        // 페이로드가 아니라 조회 API로 실상태 재검증. 실패 시 예외 전파 → 아웃박스가 재시도.
+        paymentRecoveryService.resolveByPaymentKey(paymentKey);
+        event.markProcessed();
         repository.save(event);
     }
 
