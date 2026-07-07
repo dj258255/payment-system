@@ -126,6 +126,12 @@ app:
     password: ${APP_ADMIN_PASSWORD:admin-local-only}
   user:
     password: ${APP_USER_PASSWORD:user-local-only}
+  # 멀티 PG 라우팅 — 기본 off(단일 PG). 켜면 RoutingPgClient가 pgDelegate가 되어 여러 PG를
+  # 가중치 순으로 시도하고 장애 시 failover한다(TIMEOUT은 이중결제 방지로 failover 안 함).
+  # PgRoutingConfig + FakePgClient의 @ConditionalOnProperty가 이 값으로 함께 토글된다.
+  pg:
+    routing:
+      enabled: ${APP_PG_ROUTING_ENABLED:false}
   # 이상거래탐지(FDS) 설정.
   fds:
     velocity:
