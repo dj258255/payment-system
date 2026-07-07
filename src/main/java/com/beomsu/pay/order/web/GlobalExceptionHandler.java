@@ -32,10 +32,10 @@ public class GlobalExceptionHandler {
             case "ORDER_NOT_FOUND", "PAYMENT_NOT_FOUND", "PRODUCT_NOT_FOUND",
                  "FORCE_CANCEL_NOT_FOUND", "FRAUD_REVIEW_NOT_FOUND",
                  "SETTLEMENT_NOT_FOUND", "SUBSCRIPTION_NOT_FOUND",
-                 "MEMBER_NOT_FOUND" -> HttpStatus.NOT_FOUND;                                  // 404
+                 "MEMBER_NOT_FOUND", "DISPUTE_NOT_FOUND" -> HttpStatus.NOT_FOUND;             // 404
             case "INVALID_STATE_TRANSITION", "CANCEL_AMOUNT_EXCEEDED", "OUT_OF_STOCK",
                  "INVALID_FRAUD_REVIEW_STATE", "SUBSCRIPTION_NOT_ACTIVE",
-                 "INVALID_SUBSCRIPTION_TRANSITION",
+                 "INVALID_SUBSCRIPTION_TRANSITION", "INVALID_DISPUTE_TRANSITION",
                  "INSUFFICIENT_BALANCE", "LIMIT_EXCEEDED", "WALLET_CONCURRENCY",
                  "IDEMPOTENT_REQUEST_PROCESSING", "EMAIL_ALREADY_EXISTS" -> HttpStatus.CONFLICT; // 409
             case "IDEMPOTENCY_KEY_REUSED" -> HttpStatus.UNPROCESSABLE_ENTITY;                // 422
