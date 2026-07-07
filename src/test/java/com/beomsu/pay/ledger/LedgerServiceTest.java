@@ -1,5 +1,6 @@
 package com.beomsu.pay.ledger;
 
+import com.beomsu.pay.dispute.DisputeLostEvent;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -67,6 +68,39 @@ class LedgerServiceTest {
                 .thenReturn(true);
 
         service.recordPaymentConfirmed(event);
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("분쟁 패소: 매출(차변) ↔ PG미수금(대변) 역분개, 균형 잡힌 분개 저장")
+    void recordsBalancedReversalOnDisputeLost() {
+        when(repository.existsByTxTypeAndSourceTypeAndSourceId(anyString(), anyString(), anyLong()))
+                .thenReturn(false);
+
+        service.recordDisputeLost(new DisputeLostEvent("order-1", 100L, 10_000, 42L));
+
+        ArgumentCaptor<LedgerTransaction> captor = ArgumentCaptor.forClass(LedgerTransaction.class);
+        verify(repository).save(captor.capture());
+        LedgerTransaction tx = captor.getValue();
+        assertThat(tx.imbalance()).isZero();                 // 차변=대변
+        assertThat(tx.getEntries()).hasSize(2);
+        assertThat(tx.getTxType()).isEqualTo("DISPUTE_LOST");
+        assertThat(tx.getSourceType()).isEqualTo("DISPUTE");
+        assertThat(tx.getSourceId()).isEqualTo(42L);
+        // 역분개 방향: SALES 차변, PG_RECEIVABLE 대변(결제취소와 동일)
+        LedgerEntry sales = tx.getEntries().stream()
+                .filter(e -> e.getAccount() == AccountType.SALES).findFirst().orElseThrow();
+        assertThat(sales.getDirection()).isEqualTo(EntryDirection.DEBIT);
+    }
+
+    @Test
+    @DisplayName("같은 분쟁 패소 이벤트가 두 번 와도 역분개는 한 번만 (멱등, disputeId 기준)")
+    void idempotentOnDuplicateDisputeLost() {
+        when(repository.existsByTxTypeAndSourceTypeAndSourceId("DISPUTE_LOST", "DISPUTE", 42L))
+                .thenReturn(true);
+
+        service.recordDisputeLost(new DisputeLostEvent("order-1", 100L, 10_000, 42L));
 
         verify(repository, never()).save(any());
     }
