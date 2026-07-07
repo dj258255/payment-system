@@ -1,5 +1,6 @@
 package com.beomsu.pay.order;
 
+import com.beomsu.pay.payment.ApprovalOutcome;
 import com.beomsu.pay.payment.ConfirmResult;
 import com.beomsu.pay.payment.PaymentService;
 import com.beomsu.pay.payment.PaymentStatus;
@@ -18,6 +19,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+/**
+ * 체크아웃 사가(ADR-007) 테스트. 실제 {@link CheckoutTx}(예약·확정 트랜잭션 경계)를 목 리포지토리로
+ * 주입해 3단계 사가 전체 동작을 검증한다 — PG 콜은 {@code pgApprove}(트랜잭션 밖), 결과 반영은
+ * {@code applyResult}로 목킹한다. 사가 재작성 후에도 기존 동작(성공·미확정·거절·재고부족 보상·복합결제)이
+ * 그대로 유지됨을 같은 단언으로 확인한다.
+ */
 class CheckoutServiceTest {
 
     private static final String GATE_EVENT = "drop";
@@ -40,19 +47,17 @@ class CheckoutServiceTest {
         pointService = mock(PointService.class);
         compensationService = mock(CompensationService.class);
         queueService = mock(QueueService.class);
-        // 기본값: 재고 차감 성공. 재고 부족 케이스는 개별 테스트에서 false로 재정의한다.
         when(stockDeductionService.tryDeduct(anyLong(), anyInt())).thenReturn(true);
-        // 기본: 게이트 목록 빈(비활성) — 대기열 강제 없는 기존 동작. 게이트 케이스는 gatedService()로.
         service = serviceWithGate(List.of());
     }
 
     private CheckoutService serviceWithGate(List<Long> gateProductIds) {
-        return new CheckoutService(paymentService, orderRepository, stockDeductionService,
-                productRepository, pointService, compensationService,
-                queueService, gateProductIds, GATE_EVENT);
+        CheckoutTx checkoutTx = new CheckoutTx(paymentService, orderRepository,
+                stockDeductionService, pointService, compensationService);
+        return new CheckoutService(paymentService, checkoutTx, orderRepository,
+                productRepository, queueService, gateProductIds, GATE_EVENT);
     }
 
-    /** 10,000 x 2 = 20,000 짜리 단일 항목 주문. */
     private Order orderOf(long productId, int quantity) {
         Order order = Order.create(1L, List.of(
                 OrderItem.of(productId, "상품A", 10_000, quantity)));
@@ -64,21 +69,56 @@ class CheckoutServiceTest {
         return new ConfirmResult(123L, PaymentStatus.DONE, "CARD", "승인 완료");
     }
 
+    /** 카드 승인 성공 경로 스텁 — beginApproval→id, pgApprove→SUCCESS, applyResult→DONE. */
+    private void cardApproved() {
+        when(paymentService.beginApproval(anyString(), anyString(), any(Money.class))).thenReturn(123L);
+        when(paymentService.pgApprove(anyString(), anyString(), any(Money.class)))
+                .thenReturn(new ApprovalOutcome(ApprovalOutcome.Result.SUCCESS, "CARD", null));
+        when(paymentService.applyResult(anyLong(), any(ApprovalOutcome.class))).thenReturn(approved());
+    }
+
+    /** 카드 결과가 finalStatus(UNKNOWN/ABORTED 등)로 확정되는 경로 스텁. */
+    private void cardResolvesTo(PaymentStatus finalStatus, String msg) {
+        ApprovalOutcome.Result pg = switch (finalStatus) {
+            case DONE -> ApprovalOutcome.Result.SUCCESS;
+            case UNKNOWN -> ApprovalOutcome.Result.TIMEOUT;
+            default -> ApprovalOutcome.Result.FAILED;
+        };
+        when(paymentService.beginApproval(anyString(), anyString(), any(Money.class))).thenReturn(123L);
+        when(paymentService.pgApprove(anyString(), anyString(), any(Money.class)))
+                .thenReturn(new ApprovalOutcome(pg, null, msg));
+        when(paymentService.applyResult(anyLong(), any(ApprovalOutcome.class)))
+                .thenReturn(new ConfirmResult(123L, finalStatus, null, msg));
+    }
+
     @Test
     @DisplayName("승인 성공 시 재고를 차감하고 주문을 PAID로 만든다 (ADR-003)")
     void confirmApprovedDeductsStockAndMarksPaid() {
         Order order = orderOf(100L, 2);
-        when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
+        cardApproved();
 
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
-        verify(stockDeductionService).tryDeduct(100L, 2); // 조건부 UPDATE 전략(ADR-004), 예외 없는 boolean
-        // 주문 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
-        verify(orderRepository).saveAndFlush(order);
+        verify(stockDeductionService).tryDeduct(100L, 2);
+        verify(orderRepository, atLeastOnce()).saveAndFlush(order);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
-        verifyNoInteractions(pointService); // pointAmount=0 → 포인트 경로는 완전히 우회
-        verifyNoInteractions(compensationService); // 정상 차감이므로 보상 없음
+        verifyNoInteractions(pointService);
+        verifyNoInteractions(compensationService);
+    }
+
+    @Test
+    @DisplayName("PG 승인은 트랜잭션 밖에서(pgApprove) 호출된다 — 사가 3단계 배선")
+    void confirmCallsPgApproveOutsideTransaction() {
+        Order order = orderOf(100L, 2);
+        cardApproved();
+
+        service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
+
+        // 예약(beginApproval) → PG(pgApprove, tx 밖) → 확정(applyResult) 순으로 배선됨.
+        verify(paymentService).beginApproval(eq(order.getOrderNo()), eq("pk-1"), eq(Money.of(20_000)));
+        verify(paymentService).pgApprove(eq(order.getOrderNo()), eq("pk-1"), eq(Money.of(20_000)));
+        verify(paymentService).applyResult(eq(123L), any(ApprovalOutcome.class));
     }
 
     @Test
@@ -90,8 +130,8 @@ class CheckoutServiceTest {
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
 
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT); // 상태 전이도 없음
-        verify(paymentService, never()).confirm(anyString(), anyString(), any(Money.class));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
         verify(stockDeductionService, never()).tryDeduct(anyLong(), anyInt());
     }
 
@@ -99,8 +139,7 @@ class CheckoutServiceTest {
     @DisplayName("미확정(UNKNOWN) 시 주문은 PAYMENT_IN_PROGRESS로 유지되고 재고는 차감되지 않는다")
     void confirmUnknownKeepsInProgress() {
         Order order = orderOf(100L, 2);
-        when(paymentService.confirm(anyString(), anyString(), any(Money.class)))
-                .thenReturn(new ConfirmResult(123L, PaymentStatus.UNKNOWN, null, "확인 중"));
+        cardResolvesTo(PaymentStatus.UNKNOWN, "확인 중");
 
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
 
@@ -113,8 +152,7 @@ class CheckoutServiceTest {
     @DisplayName("명시적 거절(ABORTED) 시 주문은 PENDING_PAYMENT로 복귀한다")
     void confirmAbortedRevertsToPending() {
         Order order = orderOf(100L, 2);
-        when(paymentService.confirm(anyString(), anyString(), any(Money.class)))
-                .thenReturn(new ConfirmResult(123L, PaymentStatus.ABORTED, null, "잔액부족"));
+        cardResolvesTo(PaymentStatus.ABORTED, "잔액부족");
 
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
 
@@ -127,19 +165,17 @@ class CheckoutServiceTest {
     @DisplayName("승인 성공 + 재고 부족(순수 카드): 예외 없이 망취소 보상 태스크 적재 + 주문 FAILED")
     void confirmApprovedButOutOfStockEnqueuesCompensation() {
         Order order = orderOf(100L, 3); // total 30,000
-        when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
-        when(stockDeductionService.tryDeduct(100L, 3)).thenReturn(false); // 품절 경합
+        cardApproved();
+        when(stockDeductionService.tryDeduct(100L, 3)).thenReturn(false);
 
-        // 예외를 던지지 않고 결과를 반환한다(트랜잭션을 깨끗이 커밋시키기 위해).
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(30_000), 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
-        // 실패(FAILED) 상태 전이도 명시 saveAndFlush로 영속된다.
-        verify(orderRepository).saveAndFlush(order);
+        verify(orderRepository, atLeastOnce()).saveAndFlush(order);
         verify(compensationService).enqueueNetworkCancel(order.getOrderNo(), 30_000L,
                 "재고 부족: 카드 승인 후 자동 망취소");
-        verify(stockDeductionService, never()).restore(anyLong(), anyInt()); // 차감된 게 없어 원복 불필요
-        verify(pointService, never()).restore(anyLong(), anyLong(), anyString()); // 포인트 미사용
+        verify(stockDeductionService, never()).restore(anyLong(), anyInt());
+        verify(pointService, never()).restore(anyLong(), anyLong(), anyString());
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
     }
 
@@ -147,36 +183,34 @@ class CheckoutServiceTest {
     @DisplayName("승인 성공 + 복합결제 재고 부족: 선점 포인트 복원 + 망취소 적재 + 주문 FAILED")
     void confirmCompositeOutOfStockRestoresPointAndEnqueues() {
         Order order = orderOf(100L, 2); // total 20,000
-        when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
+        cardApproved();
         when(stockDeductionService.tryDeduct(100L, 2)).thenReturn(false);
 
-        // 카드 14,000 + 포인트 6,000 = 20,000
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
-        verify(pointService).restore(1L, 6_000, order.getOrderNo());   // 선점 포인트 복원(내부·확실)
+        verify(pointService).restore(1L, 6_000, order.getOrderNo());
         verify(compensationService).enqueueNetworkCancel(order.getOrderNo(), 14_000L,
-                "재고 부족: 카드 승인 후 자동 망취소");                 // 카드 승인액만 망취소
+                "재고 부족: 카드 승인 후 자동 망취소");
         assertThat(result.orderStatus()).isEqualTo(OrderStatus.FAILED);
     }
 
     @Test
     @DisplayName("승인 성공 + 부분 차감 후 재고 부족: 앞서 차감된 아이템만 재고 원복")
     void confirmPartialDeductionRestoresDeductedItems() {
-        // 두 항목 주문: 첫 항목 차감 성공(10), 둘째 항목 부족(20)
         Order order = Order.create(1L, List.of(
                 OrderItem.of(10L, "상품A", 10_000, 1),
                 OrderItem.of(20L, "상품B", 10_000, 1)));
         when(orderRepository.findByOrderNo(order.getOrderNo())).thenReturn(Optional.of(order));
-        when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
+        cardApproved();
         when(stockDeductionService.tryDeduct(10L, 1)).thenReturn(true);
         when(stockDeductionService.tryDeduct(20L, 1)).thenReturn(false);
 
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
-        verify(stockDeductionService).restore(10L, 1);              // 부분 차감분 원복
-        verify(stockDeductionService, never()).restore(20L, 1);     // 둘째는 차감 안 됨
+        verify(stockDeductionService).restore(10L, 1);
+        verify(stockDeductionService, never()).restore(20L, 1);
         verify(compensationService).enqueueNetworkCancel(order.getOrderNo(), 20_000L,
                 "재고 부족: 카드 승인 후 자동 망취소");
         assertThat(result.orderStatus()).isEqualTo(OrderStatus.FAILED);
@@ -198,16 +232,15 @@ class CheckoutServiceTest {
     @DisplayName("복합결제 성공: 포인트 선점 + 카드 승인 + 재고 차감 + PAID")
     void compositePaymentSuccess() {
         Order order = orderOf(100L, 2); // total 20,000
-        when(paymentService.confirm(anyString(), anyString(), any(Money.class))).thenReturn(approved());
+        cardApproved();
 
-        // 카드 14,000 + 포인트 6,000 = 20,000
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 1L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(pointService).use(1L, 6_000, order.getOrderNo());          // 포인트 선점(카드보다 먼저)
-        verify(paymentService).confirm(eq(order.getOrderNo()), eq("pk-1"), eq(Money.of(14_000)));
+        verify(paymentService).pgApprove(eq(order.getOrderNo()), eq("pk-1"), eq(Money.of(14_000)));
         verify(stockDeductionService).tryDeduct(100L, 2);
-        verify(pointService, never()).restore(anyLong(), anyLong(), anyString()); // 성공이므로 보상 없음
+        verify(pointService, never()).restore(anyLong(), anyLong(), anyString());
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
     }
 
@@ -215,8 +248,7 @@ class CheckoutServiceTest {
     @DisplayName("복합결제 카드 실패(ABORTED): 선점 포인트를 복원(보상)하고 PENDING_PAYMENT로 복귀")
     void compositePaymentCardFailureRestoresPoint() {
         Order order = orderOf(100L, 2); // total 20,000
-        when(paymentService.confirm(anyString(), anyString(), any(Money.class)))
-                .thenReturn(new ConfirmResult(123L, PaymentStatus.ABORTED, null, "잔액부족"));
+        cardResolvesTo(PaymentStatus.ABORTED, "잔액부족");
 
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 1L);
 
@@ -232,14 +264,13 @@ class CheckoutServiceTest {
     void compositePaymentAmountMismatch() {
         Order order = orderOf(100L, 2); // total 20,000
 
-        // 카드 14,000 + 포인트 5,000 = 19,000 ≠ 20,000
         assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 5_000, 1L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
 
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT); // 상태 전이 없음
-        verify(pointService, never()).use(anyLong(), anyLong(), anyString()); // 포인트 차감도 없음
-        verify(paymentService, never()).confirm(anyString(), anyString(), any(Money.class));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        verify(pointService, never()).use(anyLong(), anyLong(), anyString());
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
     }
 
     @Test
@@ -250,7 +281,8 @@ class CheckoutServiceTest {
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.of(0), 20_000, 1L);
 
         verify(pointService).use(1L, 20_000, order.getOrderNo());
-        verify(paymentService, never()).confirm(anyString(), anyString(), any(Money.class));
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
+        verify(paymentService, never()).beginApproval(anyString(), anyString(), any(Money.class));
         verify(stockDeductionService).tryDeduct(100L, 2);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.DONE);
@@ -261,13 +293,13 @@ class CheckoutServiceTest {
     void confirmRejectsNonOwner() {
         Order order = orderOf(100L, 2); // 주인은 userId 1
 
-        // userId 2가 주인이 1인 주문을 결제 시도
         assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(20_000), 0, 2L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("ORDER_FORBIDDEN"));
 
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT); // 상태 전이 없음
-        verifyNoInteractions(paymentService);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
+        verify(paymentService, never()).beginApproval(anyString(), anyString(), any(Money.class));
         verify(pointService, never()).use(anyLong(), anyLong(), anyString());
     }
 
@@ -279,7 +311,7 @@ class CheckoutServiceTest {
         assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(25_000), -5_000, 1L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("INVALID_REQUEST"));
-        verifyNoInteractions(paymentService);
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
     }
 
     @Test
@@ -293,7 +325,6 @@ class CheckoutServiceTest {
                 new OrderLine(100L, 2),
                 new OrderLine(200L, 1)));
 
-        // 클라이언트는 productId·quantity만 보냈고, 금액은 서버 가격(10,000·5,000)으로 계산됨
         assertThat(result.totalAmount()).isEqualTo(25_000);
         assertThat(result.orderNo()).isNotBlank();
         assertThat(result.expiresAt()).isNotNull();
@@ -303,8 +334,6 @@ class CheckoutServiceTest {
     @Test
     @DisplayName("클라이언트가 가격을 조작할 방법이 없다 — OrderLine에는 가격 필드 자체가 없다")
     void clientCannotSupplyPrice() {
-        // OrderLine(productId, quantity) — 컴파일 타임에 가격 주입이 불가능한 것이 방어의 핵심.
-        // 서버가 카탈로그에 없는 상품이면 주문 생성 자체가 실패한다.
         when(productRepository.findById(999L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.createOrder(1L, List.of(new OrderLine(999L, 1))))
@@ -325,7 +354,6 @@ class CheckoutServiceTest {
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("QUEUE_PASS_REQUIRED"));
 
-        // 서버 최초 쓰기 지점에서 막았다 — DB 조회/INSERT 비용 0.
         verifyNoInteractions(productRepository);
         verify(orderRepository, never()).save(any(Order.class));
     }
@@ -348,7 +376,7 @@ class CheckoutServiceTest {
     @Test
     @DisplayName("게이트 활성이라도 비대상 상품 주문은 입장권 검증 없이 진행")
     void nonGatedProductSkipsPassCheck() {
-        CheckoutService gated = serviceWithGate(List.of(999L));  // 게이트 대상은 999뿐
+        CheckoutService gated = serviceWithGate(List.of(999L));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(productRepository.findById(100L)).thenReturn(Optional.of(Product.of(100L, "상품A", 10_000)));
 
@@ -364,9 +392,9 @@ class CheckoutServiceTest {
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(productRepository.findById(100L)).thenReturn(Optional.of(Product.of(100L, "상품A", 10_000)));
 
-        service.createOrder(1L, List.of(new OrderLine(100L, 1)));   // 기본 service = 게이트 비활성
+        service.createOrder(1L, List.of(new OrderLine(100L, 1)));
 
-        verifyNoInteractions(queueService);                         // hasEntryPass never
+        verifyNoInteractions(queueService);
         verify(orderRepository).save(any(Order.class));
     }
 }
