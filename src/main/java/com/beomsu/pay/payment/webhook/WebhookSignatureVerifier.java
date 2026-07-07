@@ -35,16 +35,37 @@ public class WebhookSignatureVerifier {
     private final String secret;
     private final Clock clock;
 
+    /** 약한 키로 배포되는 사고를 막기 위한 최소 시크릿 길이(바이트). JWT 키 fail-fast와 같은 결. */
+    private static final int MIN_SECRET_BYTES = 16;
+
+    /**
+     * 운영 주입 생성자 — 시크릿을 fail-fast로 검증한다({@link com.beomsu.pay.JwtConfig}와 같은 방식).
+     * 기본값을 두지 않으므로 미설정이면 기동을 실패시켜 약한/빈 키로 뜨는 사고를 막는다.
+     */
     @Autowired
     public WebhookSignatureVerifier(
-            @Value("${payment.webhook.secret:test-webhook-secret}") String secret) {
-        this(secret, Clock.systemUTC());
+            @Value("${payment.webhook.secret}") String secret) {
+        this(requireStrongSecret(secret), Clock.systemUTC());
     }
 
-    /** 테스트 전용 — timestamp 허용범위를 제어하기 위해 Clock을 주입한다. */
+    /** 테스트 전용 — 임의 시크릿·Clock을 주입하기 위한 생성자(검증 없음, timestamp 허용범위 제어). */
     WebhookSignatureVerifier(String secret, Clock clock) {
         this.secret = secret;
         this.clock = clock;
+    }
+
+    /** 기동 시 시크릿을 fail-fast로 검증한다 — 미설정/약한 키면 IllegalStateException(약한 키로 배포 차단). */
+    private static String requireStrongSecret(String secret) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "payment.webhook.secret 미설정 — 웹훅 서명 시크릿을 환경변수/시크릿으로 주입해야 합니다.");
+        }
+        if (secret.getBytes(StandardCharsets.UTF_8).length < MIN_SECRET_BYTES) {
+            throw new IllegalStateException(
+                    "payment.webhook.secret 은 최소 " + MIN_SECRET_BYTES
+                            + "바이트여야 합니다(약한 키 차단).");
+        }
+        return secret;
     }
 
     /**

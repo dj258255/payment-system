@@ -28,10 +28,10 @@
 ## 기술 스택
 
 - **Java 21**, **Spring Boot 3.4**, **Spring Modulith 1.3**
-- **MySQL 8.4** + JPA(도메인 모델) + QueryDSL, **Flyway**(스키마 마이그레이션)
+- **MySQL 8.4** + JPA(도메인 모델), **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화 — 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito, H2(동시성 실측), **411 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
+- 테스트: JUnit5 + Mockito, H2(동시성 실측), **419 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
 
 ## 아키텍처 — 모듈형 모놀리스
 
@@ -43,7 +43,7 @@ com.beomsu.pay
 ├── order          주문 상태머신, 금액 위변조 검증, 체크아웃 오케스트레이션, 멱등키
 ├── payment        승인/취소/멱등/상태머신, PG 연동(3-상태), 망취소, 웹훅, 가상계좌
 ├── ledger         복식부기 원장 (차변=대변 불변식)
-├── settlement     Spring Batch 정산
+├── settlement     일 단위 배치 집계(서비스 루프; 대용량은 Spring Batch로 확장 여지)
 ├── escrow         자금 보류(에스크로) — 구매확정 전까지 HELD, 확정 시 RELEASED/취소 시 REFUNDED
 ├── reconciliation 대사 (내부 vs PG 파일 4분류)
 ├── notification   결제 이벤트 소비 (멱등 컨슈머 + DLQ)
@@ -90,3 +90,21 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
 - [docs/05 성능 전략](docs/05-성능개선-전략.md) — 동시성 제어, 부하테스트, 관측성
 - [docs/09 ERD](docs/09-ERD-설계.md), [docs/10 API 스펙](docs/10-API-스펙.md)
 - [docs/adr](docs/adr/) — 아키텍처 결정 기록
+
+## 가정과 한계
+
+결제의 실패·정합성 처리 설계에 집중한 데모다. 아래는 범위를 좁히기 위해 둔 의도적 단순화이며,
+실서비스라면 어떻게 확장할지를 함께 적는다.
+
+- **사용자**: 실 회원 도메인 대신 `InMemoryUserDetailsManager`(admin/admin2/1/2)를 쓴다.
+  username을 그대로 userId로 사용한다. 실서비스라면 JPA 회원 엔티티 + BCrypt 저장 +
+  DB 백엔드 `UserDetailsService`로 대체한다.
+- **통화**: 단일 KRW(long, 원 단위)만 다룬다. 다통화는 미지원 — 실서비스라면 통화 코드와 최소단위
+  스케일을 값 타입에 담아 확장한다.
+- **시크릿**: JWT·필드 암호화·웹훅 서명 키 등은 로컬 개발용 기본값을 제공하되, 미설정/약한 키면
+  기동을 실패시킨다(fail-fast). 운영에서는 반드시 환경변수/시크릿 매니저(KMS/Vault)로 주입한다.
+- **멀티 PG**: `RoutingPgClient`(다중 PG failover)는 구현돼 있으나 아직 배선하지 않았다 —
+  현재 경로는 Toss 단일 PG다. 실서비스라면 원 결제 PG 라우팅을 붙여 배선한다.
+- **가상계좌·구독**: 서비스 계층까지 구현한 데모로, 외부 HTTP 발급 표면(엔드포인트)은 두지 않았다.
+- **정산**: 일 단위 배치 집계를 서비스 루프로 처리한다. 대용량이면 Spring Batch(청크·재시작·병렬)로
+  확장할 여지를 남겨 뒀다.

@@ -72,4 +72,29 @@ class WebhookSignatureVerifierTest {
                 .isInstanceOf(WebhookException.class)
                 .satisfies(e -> assertThat(((WebhookException) e).code()).isEqualTo("INVALID_WEBHOOK_SIGNATURE"));
     }
+
+    @Test
+    @DisplayName("운영 생성자 fail-fast: 시크릿이 비어 있으면 기동을 실패시킨다")
+    void publicConstructorRejectsBlankSecret() {
+        assertThatThrownBy(() -> new WebhookSignatureVerifier(""))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> new WebhookSignatureVerifier((String) null))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("운영 생성자 fail-fast: 약한(16바이트 미만) 시크릿이면 기동을 실패시킨다")
+    void publicConstructorRejectsWeakSecret() {
+        assertThatThrownBy(() -> new WebhookSignatureVerifier("short-key"))  // 9바이트
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("운영 생성자: 16바이트 이상 시크릿이면 정상 생성된다")
+    void publicConstructorAcceptsStrongSecret() {
+        // 32바이트 로컬 기본값과 같은 결의 충분히 긴 키
+        WebhookSignatureVerifier verifier =
+                new WebhookSignatureVerifier("local-webhook-secret-please-override-32b");
+        assertThat(verifier).isNotNull();
+    }
 }
