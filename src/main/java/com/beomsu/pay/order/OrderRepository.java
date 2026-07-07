@@ -10,6 +10,9 @@ interface OrderRepository extends JpaRepository<Order, Long> {
 
     Optional<Order> findByOrderNo(String orderNo);
 
+    /** 내 주문 목록 — 최신순 최근 50건. Top50으로 DB에서 상한을 걸어 무한 적재를 막는다. */
+    List<Order> findTop50ByUserIdOrderByIdDesc(long userId);
+
     /** 만료 배치용: 특정 상태이면서 만료 예정 시각이 지난 주문(결제 미완료로 방치된 건). */
     List<Order> findByStatusAndExpiresAtBefore(OrderStatus status, Instant now);
 
