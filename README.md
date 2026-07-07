@@ -21,6 +21,10 @@
 
 ![maker-checker 본인 승인 차단](docs/images/demo-maker-checker.png)
 
+**정산(수수료·부가세·지급예정일)** — 구매확정(CONFIRMED)된 결제를 일 단위로 집계해 수수료(2.7%) + 수수료 VAT(10%)를 떼고 지급액(net)과 지급예정일(정산일+2영업일)을 산출한다. 집계된 정산(CREATED)을 어드민이 지급 확정(PAID_OUT)한다. 예: 총액 30,000 → 수수료 810 + VAT 81 → 지급액 29,109.
+
+![정산 데모 — 수수료·부가세·지급액·지급예정일 분해](docs/images/demo-settlement.png)
+
 **폭주 유입 제어** — 같은 사용자의 연타는 rate limiter가 `429 RATE_LIMITED`로 쳐내고(사용자별 5/s + 전역 상한), 한정판 상품은 대기열 입장권 없이 주문하면 `429 QUEUE_PASS_REQUIRED`로 막힌다(입장 후 성공). 스파이크 실측: 폭주의 97.5%를 429로 거절하면서 성공 요청 p95는 738ms→52ms([docs/performance §7](docs/performance/README.md)).
 
 ![폭주 제어 데모 — rate limit 429 + 대기열 게이트](docs/images/demo-overload.png)
@@ -39,7 +43,7 @@
 - **MySQL 8.4** + JPA(도메인 모델), **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화 — 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito, H2(동시성 실측), **426 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
+- 테스트: JUnit5 + Mockito, H2(동시성 실측), **438 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
 
 ## 아키텍처 — 모듈형 모놀리스
 
@@ -117,8 +121,10 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
 - **멀티 PG**: `RoutingPgClient`(다중 PG failover)는 구현돼 있으나 아직 배선하지 않았다 —
   현재 경로는 Toss 단일 PG다. 실서비스라면 원 결제 PG 라우팅을 붙여 배선한다.
 - **가상계좌·구독**: 서비스 계층까지 구현한 데모로, 외부 HTTP 발급 표면(엔드포인트)은 두지 않았다.
-- **정산**: 일 단위 배치 집계를 서비스 루프로 처리한다. 대용량이면 Spring Batch(청크·재시작·병렬)로
-  확장할 여지를 남겨 뒀다.
+- **정산**: 일 단위 배치 집계를 서비스 루프로 처리한다(대용량이면 Spring Batch로 확장 여지). 수수료율은
+  bps(기본 270=2.7%)로 정수 연산하고 수수료 VAT 10%를 뗀다. 지급예정일은 정산일+2영업일로 **주말만
+  skip**하며 법정공휴일은 미반영 — 실서비스라면 공휴일 캘린더를 붙인다. 수수료를 원장 비용 계정으로
+  분개하는 것은 후속 과제로 남겼다.
 - **관측성 스크레이프**: `/actuator/prometheus`는 수집기가 인증 없이 주기 GET 해야 하므로 개방한다
   (나머지 actuator는 ADMIN). 운영에서는 `management.server.port`를 내부망 전용으로 분리해
   스크레이프하는 것이 정석이다. Prometheus/Grafana는 `monitoring` compose 프로필로 분리해 기본 기동에서 뺐다.
