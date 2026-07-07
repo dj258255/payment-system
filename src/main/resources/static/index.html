@@ -171,6 +171,15 @@
           </div>
           <div class="adminlist" id="wHist"></div>
         </div>
+        <div class="card">
+          <h2>포인트 (적립 · 잔액 · 이력)</h2>
+          <div class="sub">결제 완료 시 실결제액(카드+월렛, 포인트 사용분 제외)의 1%를 적립(EARN). 적립은 orderNo 멱등이라 복구 재실행에도 이중적립 없음. 잔액·이력 조회는 본인만. 로그인 후 결제하면 자동 적립.</div>
+          <div class="row">
+            <button class="small ghost" onclick="pointView()">잔액·이력</button>
+            <span class="badge b-dim" id="pBal">잔액 —</span>
+          </div>
+          <div class="adminlist" id="pHist"></div>
+        </div>
       </div>
 
       <div>
@@ -411,6 +420,17 @@ function renderWallet(w){
 }
 async function walletCharge(){ const r=await api('POST','/api/v1/wallet/charge',{amount:+$('wCharge').value}); if(r.ok) walletView(); }
 async function walletView(){ const r=await api('GET','/api/v1/wallet'); renderWallet(r.data); }
+// 포인트
+function renderPoint(p){
+  if(!p) return;
+  $('pBal').textContent='잔액 '+fmt(p.balance)+'P';
+  const el=$('pHist'); const rows=p.history||[];
+  if(!rows.length){el.innerHTML='<div class="hint">(포인트 이력 없음 — 결제하면 적립)</div>';return}
+  const cols=['type','amount','orderNo'];
+  el.innerHTML='<table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+
+    rows.map(row=>'<tr>'+cols.map(c=>'<td>'+fmt(row[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+}
+async function pointView(){ const r=await api('GET','/api/v1/points'); renderPoint(r.data); }
 // 정산: 목록은 Page → content 배열을 정산 전용 컬럼으로 렌더(수수료·VAT·지급액·지급예정일까지 보이게)
 function renderSettle(data){
   const rows=Array.isArray(data)?data:(data?[data]:[]);
