@@ -34,7 +34,15 @@ public class SettlementItem {
     @Column(nullable = false)
     private long amount;
 
-    /** 결제 승인 시각을 UTC 기준 날짜로 스냅샷한 값 — 일 단위 집계의 기준일 */
+    /**
+     * 정산 집계 기준일. 적재({@link #of}) 시엔 승인일을 placeholder로 담지만(PENDING은 집계 대상이 아니라
+     * 이 값이 쓰이지 않는다), <b>구매확정(에스크로 릴리스) 시 {@link #confirm}이 릴리스 날짜로 재스탬프</b>한다.
+     *
+     * <p>재스탬프가 핵심이다 — 배치는 "그 날짜에 CONFIRMED된 항목"을 집계하는데, 에스크로 홀드는 며칠에
+     * 걸쳐 있어 승인일과 확정일이 다르다. 승인일로 그대로 두면 확정된 항목이 승인일 배치(이미 지나감)에도,
+     * 확정일 배치(그 날짜엔 confirmedDate가 안 맞음)에도 안 잡혀 <b>영구 미정산</b>이 된다. 확정일로
+     * 재스탬프해야 확정 다음 날 배치가 정확히 집계한다.
+     */
     @Column(nullable = false)
     private LocalDate confirmedDate;
 
@@ -56,13 +64,18 @@ public class SettlementItem {
     }
 
     /**
-     * 에스크로 릴리스(구매확정) → 정산 가능. PENDING_CONFIRMATION일 때만 CONFIRMED로 전이한다.
+     * 에스크로 릴리스(구매확정) → 정산 가능. PENDING_CONFIRMATION일 때만 CONFIRMED로 전이하고,
+     * {@code confirmedDate}를 <b>릴리스 날짜로 재스탬프</b>한다 — 이 날짜 기준으로 배치가 집계한다.
      *
-     * <p>멱등: 이미 CONFIRMED/SETTLED/CANCELED면 무시한다(이벤트 중복 전달·순서 역전 대비).
+     * <p>멱등: 이미 CONFIRMED/SETTLED/CANCELED면 상태·날짜 모두 그대로 둔다(이벤트 중복 전달·순서
+     * 역전 대비). 재스탬프도 최초 전이 시 1회만 일어나 재배달에 안전하다.
+     *
+     * @param settlementReadyDate 구매확정(릴리스)이 일어난 날짜 — 정산 집계 기준일
      */
-    public void confirm() {
+    public void confirm(LocalDate settlementReadyDate) {
         if (this.status == SettlementItemStatus.PENDING_CONFIRMATION) {
             this.status = SettlementItemStatus.CONFIRMED;
+            this.confirmedDate = settlementReadyDate;
         }
     }
 
