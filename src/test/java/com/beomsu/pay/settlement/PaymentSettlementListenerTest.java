@@ -49,7 +49,7 @@ class PaymentSettlementListenerTest {
     @Test
     @DisplayName("취소 이벤트 → reflectCancellation 위임")
     void onCanceledDelegates() {
-        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 10_000, true);
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 10_000, 0, true);
 
         listener.onCanceled(event);
 
