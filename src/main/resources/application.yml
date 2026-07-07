@@ -84,6 +84,12 @@ management:
   metrics:
     tags:
       application: pay
+    distribution:
+      # HTTP 요청 지연을 히스토그램 버킷으로 발행 → Prometheus에서 p95/p99를
+      # histogram_quantile로 서버측 집계(대시보드의 "요청 p99 레이턴시" 소스).
+      # 버킷을 안 켜면 _count/_sum/_max만 나와 분위수 산출이 불가능하다.
+      percentiles-histogram:
+        http.server.requests: true
 
 logging:
   level:

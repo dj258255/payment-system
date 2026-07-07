@@ -30,7 +30,7 @@ import org.springframework.security.web.SecurityFilterChain;
  *   <li>{@code /api/v1/orders/**}, {@code /api/v1/payments/confirm} → ROLE_USER 인증.
  *       userId는 인증된 principal에서 얻어 <b>주문 소유권을 검증</b>한다(IDOR 방지).</li>
  *   <li>{@code /api/v1/webhooks/**} → 개방(HMAC 서명으로 자체 인증)</li>
- *   <li>{@code /actuator} 메트릭 → ADMIN (health/info만 공개)</li>
+ *   <li>{@code /actuator} → ADMIN. 단 {@code health/info}와 {@code prometheus}(수집기 스크레이프)는 공개</li>
  * </ul>
  *
  * <p>인증은 <b>JWT Bearer(OAuth2 Resource Server, Nimbus HS256 대칭키)</b>로 한다. 무상태 HTTP
@@ -67,7 +67,12 @@ public class SecurityConfig {
                         // 선착순 대기열: 로그인 사용자만 줄 서기(멤버=인증 principal userId). 결제 경로와는
                         // 결합하지 않는 독립 프리미티브(입장/상태/이탈)이지만 참가자 식별을 위해 인증은 요구한다.
                         .requestMatchers("/api/v1/queue/**").hasRole("USER")
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        // health/info와 Prometheus 스크레이프 엔드포인트는 개방한다. prometheus는
+                        // 메트릭 수집기가 Bearer 없이 주기 GET 해야 하므로 인증을 걸면 스크레이프가 401로
+                        // 막힌다. 운영에선 management.server.port를 내부망 전용으로 분리해 스크레이프하는
+                        // 게 정석이나, 여기선 로컬 Prometheus를 위해 이 엔드포인트만 개방한다.
+                        // 나머지 actuator(env·heapdump·modulith 등 정찰 소지)는 계속 ADMIN으로 잠근다.
+                        .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .anyRequest().permitAll())
                 // Bearer 토큰의 HS256 서명만 검증(요청당 BCrypt 없음)
