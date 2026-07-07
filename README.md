@@ -68,7 +68,7 @@
 - **MySQL 8.4** + JPA(도메인 모델), **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화, 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito, **567 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`). 락 전략 비교는 H2와 Testcontainers 실 MySQL에서 각각 재서 순위가 뒤집히는 것을 확인했다
+- 테스트: JUnit5 + Mockito. 기본 스위트 **567개** + 실 MySQL 통합 **13개**(`integrationTest`) + Toxiproxy 네트워크 카오스 **1개**(`chaosTest`) = 총 581개. 뒤의 둘은 컨테이너가 필요해 기본 스위트에서 제외하고 별도 태스크로 돌린다. Spring Modulith 경계 검증 포함. 락 전략 비교는 H2와 Testcontainers 실 MySQL에서 각각 재서 순위가 뒤집히는 것을 확인했다
 
 ## 아키텍처: 모듈형 모놀리스
 
@@ -133,6 +133,47 @@ com.beomsu.pay
 이후는 단계가 아니라 **되돌아간 기록**이다. 확장(구독·월렛·회원·분쟁)을 붙이고, 새로 쓴 코드를
 스스로 감사해 자금 손실 버그를 찾고, 검증했다고 적어둔 실험이 틀렸다는 걸 발견해 다시 쟀다.
 그 과정은 [성능 리포트](docs/performance/README.md)와 [ADR](docs/adr)에 남아 있다.
+
+## 운영 스위치
+
+배치와 선택 기능은 **전부 기본 off**다. 테스트·로컬 부팅에 부작용을 만들지 않기 위해서고,
+운영에서는 아래를 켠다. 각 배치는 `@ConditionalOnProperty`로 빈이 등록되고 짝이 되는
+`@EnableScheduling` 설정이 **같은 프로퍼티로** 스케줄링을 켠다 — 둘 중 하나만 켜지면
+빈은 뜨고 `@Scheduled`가 영원히 안 불리는 조용한 무동작이 되므로, 그 짝을
+`SchedulerGatePairingTest`가 구조로 강제한다.
+
+| 환경변수 | 하는 일 | 주기(기본) |
+|---|---|---|
+| `APP_RECOVERY_ENABLED` | 미확정(UNKNOWN) 결제를 PG 조회로 확정 | 60s |
+| `APP_CHECKOUT_RECOVERY_ENABLED` | 멈춘 체크아웃 사가 완결/롤백 | 60s |
+| `APP_COMPENSATION_ENABLED` | 망취소 등 보상 작업 재시도 | 5s |
+| `APP_ORDER_EXPIRY_ENABLED` | 기한 지난 미결제 주문 EXPIRED 전이 | 60s |
+| `APP_VA_EXPIRY_ENABLED` | 입금 기한 지난 가상계좌 만료 | 60s |
+| `APP_ESCROW_AUTO_RELEASE_ENABLED` | 보류 기간 지난 에스크로 자동 릴리스 | 60s |
+| `APP_SETTLEMENT_ENABLED` | 일 정산 배치 | 24h |
+| `APP_DUNNING_ENABLED` | 구독 결제 실패 재청구 | 60s |
+| `APP_IDEMPOTENCY_CLEANUP_ENABLED` | 만료 멱등키 정리 | 1h |
+| `APP_OUTBOX_CLEANUP_ENABLED` | 아웃박스 아카이브 정리(보존 7일) | 1h |
+| `APP_PG_ROUTING_ENABLED` | 멀티 PG 가중치 라우팅 + failover | — |
+| `APP_RATELIMIT_ENABLED` | 유입 제어(**기본 on**) | — |
+
+**실측으로 확인한 것**: 위 배치를 실제로 켜서 각각이 일감을 처리하는 것까지 봤다.
+로그만으로는 부족하다 — 대부분 처리 건수가 0이면 로그를 남기지 않으므로, "로그가 없다"가
+"안 돌았다"를 뜻하지 않는다. 그래서 각 배치의 대상 조건에 맞는 데이터를 심고 처리 결과를
+DB에서 확인했다.
+
+| 배치 | 로그 | DB 결과 |
+|---|---|---|
+| 주문 만료 | `count=1` | 주문 `EXPIRED` |
+| 체크아웃 복구 | `recovered=1` | 주문 `PAID`로 완결 |
+| 에스크로 릴리스 | `count=1` | 홀드 `RELEASED` |
+| 가상계좌 만료 | `count=1` | 계좌 `EXPIRED` |
+| 멱등키 정리 | `deleted=1` | 0건 |
+| 아웃박스 정리 | `deleted=6` | 아카이브 비워짐 |
+
+아웃박스 정리가 **아카이브 테이블**에서 지운다는 점이 중요하다. `completion-mode: archive`가
+핫 테이블을 "아직 처리 안 된 것"만 남기고, 이 배치가 아카이브를 보존기간 뒤에 비운다 —
+둘은 대체 관계가 아니라 짝이다([성능 리포트 10절](docs/performance/README.md)).
 
 ## 실행
 
