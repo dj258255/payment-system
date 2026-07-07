@@ -149,6 +149,22 @@ class CheckoutServiceTest {
     }
 
     @Test
+    @DisplayName("복합결제 미확정(UNKNOWN): 포인트를 복원하지 않고 예약 유지한다 — 이후 복구 완결 시 자금 손실 방지")
+    void confirmCompositeUnknownKeepsPointReserved() {
+        Order order = orderOf(100L, 2); // total 20,000
+        cardResolvesTo(PaymentStatus.UNKNOWN, "확인 중");
+
+        // 카드 14,000 + 포인트 6,000
+        service.confirm(order.getOrderNo(), "pk-1", Money.of(14_000), 6_000, 1L);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_IN_PROGRESS);
+        verify(pointService).use(1L, 6_000, order.getOrderNo());              // 예약은 함
+        // 핵심: 미확정에선 포인트를 복원하지 않는다(결제가 실제 승인일 수 있어, 복구가 DONE으로 완결하면
+        // 예약 포인트가 그대로 소비돼야 가맹점이 제대로 걷는다). 여기서 복원하면 완결 시 재소비가 없어 손실.
+        verify(pointService, never()).restore(anyLong(), anyLong(), anyString());
+    }
+
+    @Test
     @DisplayName("명시적 거절(ABORTED) 시 주문은 PENDING_PAYMENT로 복귀한다")
     void confirmAbortedRevertsToPending() {
         Order order = orderOf(100L, 2);

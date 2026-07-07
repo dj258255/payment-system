@@ -2,6 +2,9 @@ package com.beomsu.pay.payment;
 
 import com.beomsu.pay.payment.pg.FakePgClient;
 import com.beomsu.pay.payment.pg.PgApproveResult;
+import com.beomsu.pay.payment.pg.PgClient;
+import com.beomsu.pay.payment.pg.PgPaymentStatus;
+import com.beomsu.pay.payment.pg.PgQueryResult;
 import com.beomsu.pay.shared.Money;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -123,6 +126,49 @@ class PaymentServiceTest {
         assertThat(result.status()).isEqualTo(PaymentStatus.DONE);
         verify(events, never()).publishEvent(any()); // 재발행 안 함
         verify(repository, never()).saveAndFlush(any()); // 재전이 없음
+    }
+
+    @Test
+    @DisplayName("resolveStuckPayment: UNKNOWN 결제도 PG 재조회 — APPROVED면 DONE 확정 + SUCCESS 매핑")
+    void resolveStuckPaymentRequeriesUnknownToSuccess() {
+        PgClient mockPg = mock(PgClient.class);
+        PaymentService svc = new PaymentService(repository, mockPg, events, meterRegistry);
+        Payment stuck = inProgress("order-r", "pk-r", 8_000, 5L);
+        stuck.markUnknown("타임아웃"); // IN_PROGRESS → UNKNOWN
+        when(repository.findFirstByOrderNoOrderByRequestedAtDesc("order-r")).thenReturn(Optional.of(stuck));
+        when(mockPg.query("pk-r")).thenReturn(new PgQueryResult(PgPaymentStatus.APPROVED, "CARD"));
+
+        Optional<StuckPaymentInfo> info = svc.resolveStuckPayment("order-r");
+
+        assertThat(info).isPresent();
+        assertThat(info.get().amount()).isEqualTo(8_000);
+        assertThat(info.get().outcome().result()).isEqualTo(ApprovalOutcome.Result.SUCCESS);
+        assertThat(stuck.getStatus()).isEqualTo(PaymentStatus.DONE);
+        verify(events).publishEvent(any(PaymentConfirmedEvent.class));
+    }
+
+    @Test
+    @DisplayName("resolveStuckPayment: PG가 CANCELED면 ABORTED로 확정 — IN_PROGRESS→CANCELED 불법 전이 회피")
+    void resolveStuckPaymentCanceledMapsToAborted() {
+        PgClient mockPg = mock(PgClient.class);
+        PaymentService svc = new PaymentService(repository, mockPg, events, meterRegistry);
+        Payment stuck = inProgress("order-c", "pk-c", 8_000, 6L); // IN_PROGRESS
+        when(repository.findFirstByOrderNoOrderByRequestedAtDesc("order-c")).thenReturn(Optional.of(stuck));
+        when(mockPg.query("pk-c")).thenReturn(new PgQueryResult(PgPaymentStatus.CANCELED, null));
+
+        Optional<StuckPaymentInfo> info = svc.resolveStuckPayment("order-c");
+
+        // IN_PROGRESS→CANCELED는 전이표상 불법 → abortByRecovery로 ABORTED 확정(예외 없이).
+        assertThat(info).isPresent();
+        assertThat(info.get().outcome().result()).isEqualTo(ApprovalOutcome.Result.FAILED);
+        assertThat(stuck.getStatus()).isEqualTo(PaymentStatus.ABORTED);
+    }
+
+    @Test
+    @DisplayName("resolveStuckPayment: 카드 결제 없으면(전액 포인트) empty")
+    void resolveStuckPaymentEmptyForFullPoint() {
+        when(repository.findFirstByOrderNoOrderByRequestedAtDesc("order-p")).thenReturn(Optional.empty());
+        assertThat(service.resolveStuckPayment("order-p")).isEmpty();
     }
 
     @Test
