@@ -275,3 +275,56 @@ sequenceDiagram
 3. **재시도 가능 여부(`retryable`)를 서버가 판단해 알려준다** — 클라이언트가 카드사 거절을 재시도하는 낭비 방지
 4. **웹훅은 저장과 응답만 동기, 해석은 비동기** — 그리고 페이로드가 아닌 조회 API를 믿는다
 5. **어드민의 모든 쓰기는 사유 + 감사 로그 + (위험 행위는) 2인 승인**
+
+---
+
+## 8. 확장 표면 — 회원·월렛·포인트·구독·분쟁
+
+### 8.1 회원 (member)
+
+| 메서드 | 경로 | 기능 |
+|---|---|---|
+| POST | `/api/v1/members/signup` | 회원 가입 — `{"email","password"}` → 201 `{id,email,role}`. 이메일 유니크(중복 409), BCrypt 저장. 로그인 전 개방(permitAll) |
+
+로그인은 기존 `POST /api/v1/auth/login`을 그대로 쓴다 — 회원은 **이메일**로 로그인하고, 복합 `UserDetailsService`가 `UserDetails.username`을 숫자 회원 id로 반환해 JWT subject가 숫자로 유지된다(소유권 계약 보존). 데모 계정(admin/1/2)은 InMemory 병행.
+
+### 8.2 선불 월렛 (wallet) · 포인트 (point)
+
+| 메서드 | 경로 | 기능 |
+|---|---|---|
+| POST | `/api/v1/wallet/charge` | 충전 — `{"amount"}` → `{balance}`. 전금법 기명 한도 초과 시 409 `LIMIT_EXCEEDED` |
+| GET | `/api/v1/wallet` | 잔액 + 최근 거래 이력 20건. 본인만 |
+| GET | `/api/v1/points` | 포인트 잔액 + 최근 이력(EARN/USE/RESTORE/REFUND/EARN_REVERSAL). 본인만 |
+
+월렛은 `POST /payments/confirm`의 `walletAmount`로 **복합결제 수단**이 된다(카드+포인트+월렛 = 주문총액). 포인트 적립(EARN)은 결제 완료 시 실결제액 기준 자동, 취소 시 EARN_REVERSAL로 회수.
+
+### 8.3 내 주문 목록 · 원장 감사
+
+| 메서드 | 경로 | 기능 |
+|---|---|---|
+| GET | `/api/v1/orders` | 내 주문 목록(최신 50건 요약). userId는 principal에서 얻어 본인 것만 조회(IDOR) |
+| GET | `/api/v1/admin/ledger` | 최근 원장 트랜잭션 50건 + 분개·차대변 균형(balanced). ADMIN |
+
+### 8.4 구독 (subscription)
+
+| 메서드 | 경로 | 기능 |
+|---|---|---|
+| POST | `/api/v1/subscriptions` | 구독 개시 — `{"billingKey","planAmount"}` |
+| GET | `/api/v1/subscriptions` | 내 구독 목록 |
+| GET | `/api/v1/subscriptions/{id}` | 상세 + 청구 이력 |
+| POST | `/api/v1/subscriptions/{id}/cancel` | 해지 |
+| POST | `/api/v1/subscriptions/{id}/bill-now` | 즉시 청구(데모/운영) |
+
+본인 구독만 접근(IDOR). 정기청구는 dunning 스케줄러가 주기 실행(soft/hard decline 재시도·유예).
+
+### 8.5 분쟁/차지백 (dispute)
+
+| 메서드 | 경로 | 기능 |
+|---|---|---|
+| POST | `/api/v1/webhooks/chargeback` | 차지백 웹훅(HMAC 서명, `X-Signature: t=<ts>,v1=<hex>`) → 분쟁 개시. chargebackId 멱등, 원 결제 실존·금액 대조, amount≤0 거부. 빠른 200 |
+| GET | `/api/v1/admin/disputes` | 분쟁 목록. ADMIN |
+| GET | `/api/v1/admin/disputes/{id}` | 분쟁 상세 |
+| POST | `/api/v1/admin/disputes/{id}/evidence` | 증빙 제출 — `{"memo"}` (OPEN→EVIDENCE_SUBMITTED) |
+| POST | `/api/v1/admin/disputes/{id}/resolve` | 승/패 확정 — `{"outcome":"WON"|"LOST"}`. WON/LOST 외 400. **LOST 시 원장 역분개** |
+
+상태머신: `OPEN → EVIDENCE_SUBMITTED → WON | LOST`(최종 상태 불가역, `@Version` 낙관적 락으로 동시 확정 레이스 차단).

@@ -358,10 +358,23 @@ CREATE TABLE stock (
 | FK 제약은 걸지 않고 인덱스만 (논리적 FK) | 대량 배치 성능·파티셔닝·이관 유연성 — 단 ADR로 트레이드오프 기록 |
 | 배치가 스캔하는 모든 상태 컬럼에 `(status, 시각)` 복합 인덱스 | 복구/만료/발행 배치의 풀스캔 방지 |
 
-## 확장 시 추가 테이블 (08 문서 연결)
+## 11. 확장 표면 — 구현된 테이블 (회원·월렛·포인트·구독·분쟁)
 
-- **월렛**: `wallet_accounts` + ledger 재사용 (USER_BALANCE 계정 타입) — 새 원장을 만들지 않는다
-- **구독**: `billing_keys`(customerKey UUID, 암호화 저장), `subscriptions`(상태머신), `dunning_attempts`
-- **포인트**: `point_ledger` (Insert 기반, FIFO 차감 — 잔액 UPDATE 금지)
+초기엔 "확장 시" 후보였으나 이후 실제 구현된 스키마다. **잔액은 계정 테이블에 스냅샷으로 두되, 모든 변경은
+append-only 이력 테이블에 남겨 감사·복구의 진실 원천으로 삼는다**(원장 발상과 동일).
+
+- **회원**: `members`(id PK — auto_increment **1000부터**, 데모 InMemory userId 1/2와 충돌 방지 / `email` 유니크 /
+  `password_hash` BCrypt / `role`). 로그인은 복합 `UserDetailsService`가 이메일→회원 조회 후 username을 숫자 id로 반환.
+- **월렛**: `wallet_accounts`(user_id PK, balance, @Version) + `wallet_transactions`(append-only:
+  `type` = CHARGE/USE/**RESTORE**/REFUND, `order_no` — 주문 단위 멱등/역산용). USE−RESTORE−REFUND = 활성 예약.
+- **포인트**: `point_accounts`(user_id PK, balance, @Version) + `point_histories`(append-only:
+  `type` = USE/RESTORE/REFUND/**EARN**/**EARN_REVERSAL**, `order_no`). 적립·회수를 이력으로 감사.
+- **구독**: `billing_keys`(암호화 저장 + 블라인드 인덱스), `subscriptions`(상태머신 + @Version), `dunning_attempts`.
+- **분쟁/차지백**: `disputes`(`chargeback_id` 유니크 — 웹훅 멱등키 / `order_no`·`payment_id` / `status` 상태머신 /
+  `respond_by_deadline`·`evidence_memo`·`resolved_at` / **@Version** 동시 확정 레이스 차단). 패소 시 원장에
+  `(txType=DISPUTE_LOST, sourceType=DISPUTE, sourceId=disputeId)` 유니크로 멱등 역분개.
+
+## 확장 여지로 남긴 것
+
 - **FDS**: `fds_rules`(무배포 룰 변경), `fds_evaluations`(판정 이력)
 - **멀티 PG**: `payments.pg_provider` 활용 + `pg_channels`(가중치·헬스 상태)

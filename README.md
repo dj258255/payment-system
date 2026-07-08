@@ -29,6 +29,22 @@
 
 ![구독 정기결제 데모 — 개시·상태·청구주기·해지](docs/images/demo-subscription.png)
 
+**회원 가입 · 이메일 로그인** — InMemory 데모 계정과 별개로 실 JPA 회원을 가입·로그인한다. 이메일로 로그인해도 발급 JWT의 subject는 숫자 회원 id라, 전 모듈의 소유권 검증(`Long.parseLong(principal)`) 계약이 그대로 유지된다.
+
+![회원 가입·이메일 로그인 데모 — userId=1000 로그인](docs/images/demo-member.png)
+
+**선불 월렛(충전·잔액·이력 · 복합결제 수단)** — 충전(전금법 한도)·잔액·이력을 조회하고, 체크아웃에서 카드·포인트와 함께 결제 수단으로 쓴다(카드+포인트+월렛 = 주문총액). 결제 차감은 예약(USE)이고, 취소·거절 시 환불(REFUND)/해제(RESTORE)로 되돌린다.
+
+![선불 월렛 데모 — 충전·잔액·이력, 복합결제 수단](docs/images/demo-wallet.png)
+
+**포인트 적립** — 결제 완료 시 실결제액(카드+월렛)의 1%를 적립(EARN)하고, 취소 시 그만큼 회수(EARN_REVERSAL)한다. 잔액·이력을 조회한다.
+
+![포인트 적립 데모 — EARN·잔액·이력](docs/images/demo-points.png)
+
+**분쟁/차지백** — 차지백 웹훅(HMAC 서명) 수신 → 분쟁 개시(chargebackId 멱등, 원 결제 실존·금액 대조) → 증빙 제출 → 승/패 확정. **패소(LOST) 시 원장 역분개**(매출 차변 ↔ PG미수금 대변)로 사후 정합을 맞춘다.
+
+![분쟁/차지백 데모 — 상태머신·패소 역분개](docs/images/demo-dispute.png)
+
 **폭주 유입 제어** — 같은 사용자의 연타는 rate limiter가 `429 RATE_LIMITED`로 쳐내고(사용자별 5/s + 전역 상한), 한정판 상품은 대기열 입장권 없이 주문하면 `429 QUEUE_PASS_REQUIRED`로 막힌다(입장 후 성공). 스파이크 실측: 폭주의 97.5%를 429로 거절하면서 성공 요청 p95는 738ms→52ms([docs/performance §7](docs/performance/README.md)).
 
 ![폭주 제어 데모 — rate limit 429 + 대기열 게이트](docs/images/demo-overload.png)
@@ -47,7 +63,7 @@
 - **MySQL 8.4** + JPA(도메인 모델), **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화 — 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito, H2(동시성 실측), **460 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
+- 테스트: JUnit5 + Mockito, H2(동시성 실측), **507 tests** + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
 
 ## 아키텍처 — 모듈형 모놀리스
 
@@ -56,17 +72,22 @@
 
 ```
 com.beomsu.pay
-├── order          주문 상태머신, 금액 위변조 검증, 체크아웃 오케스트레이션, 멱등키
+├── order          주문 상태머신, 금액 위변조 검증, 체크아웃 사가 오케스트레이션·취소, 멱등키
 ├── payment        승인/취소/멱등/상태머신, PG 연동(3-상태), 망취소, 웹훅, 가상계좌
-├── ledger         복식부기 원장 (차변=대변 불변식)
+├── ledger         복식부기 원장 (차변=대변 불변식) + 분쟁 패소 역분개
 ├── settlement     일 단위 배치 집계(서비스 루프; 대용량은 Spring Batch로 확장 여지)
 ├── escrow         자금 보류(에스크로) — 구매확정 전까지 HELD, 확정 시 RELEASED/취소 시 REFUNDED
 ├── reconciliation 대사 (내부 vs PG 파일 4분류)
 ├── notification   결제 이벤트 소비 (멱등 컨슈머 + DLQ)
-├── point          포인트 원장 (복합결제)
+├── point          포인트 원장 (복합결제 차감·보상·환불 + 실결제액 적립/회수)
 ├── subscription   빌링키 정기결제 + dunning
-├── wallet         선불 충전 월렛 (전금법 한도)
+├── wallet         선불 충전 월렛 (전금법 한도) — 카드·포인트와 함께 복합결제 수단
+├── member         JPA 회원(이메일·BCrypt) + 가입, 복합 UserDetailsService (숫자 userId 계약 보존)
+├── dispute        분쟁/차지백 상태머신 — 웹훅 수신 → 증빙 → 승/패, 패소 시 원장 역분개
 ├── fraud          이상거래탐지(FDS) 룰 엔진
+├── queue          선착순 대기열 (Redis Sorted Set 입장권)
+├── receipt        현금영수증 발급·연쇄취소
+├── audit          상태 변경 감사 로그
 └── shared         Money, ULID 등 공유 값 타입 (OPEN 모듈)
 ```
 
@@ -115,9 +136,11 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
 결제의 실패·정합성 처리 설계에 집중한 데모다. 아래는 범위를 좁히기 위해 둔 의도적 단순화이며,
 실서비스라면 어떻게 확장할지를 함께 적는다.
 
-- **사용자**: 실 회원 도메인 대신 `InMemoryUserDetailsManager`(admin/admin2/1/2)를 쓴다.
-  username을 그대로 userId로 사용한다. 실서비스라면 JPA 회원 엔티티 + BCrypt 저장 +
-  DB 백엔드 `UserDetailsService`로 대체한다.
+- **회원/인증**: JPA 회원 도메인(이메일 + BCrypt 저장 + 가입 REST `POST /api/v1/members/signup`)을 제공한다.
+  로그인 시 **복합 `UserDetailsService`**가 이메일로 회원을 조회하되 `UserDetails.username`을 회원의 **숫자 id**로
+  반환해, 전 모듈의 `Long.parseLong(principal.getName())` 소유권 계약을 그대로 유지한다(회원 id는 데모 계정과
+  충돌하지 않게 1000부터). 데모/운영 계정(admin/admin2/1/2)은 InMemory로 병행 유지한다. 이메일 인증·비밀번호
+  재설정·소셜 로그인·회원 비활성화는 범위 밖.
 - **통화**: 단일 KRW(long, 원 단위)만 다룬다. 다통화는 미지원 — 실서비스라면 통화 코드와 최소단위
   스케일을 값 타입에 담아 확장한다.
 - **시크릿**: JWT·필드 암호화·웹훅 서명 키 등은 로컬 개발용 기본값을 제공하되, 미설정/약한 키면
@@ -126,6 +149,13 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
   배선된다(가중치 순 시도, 장애 시 failover, TIMEOUT은 이중결제 방지로 failover 안 함). 기본은 단일
   PG(Toss)다. 취소·조회의 원 결제 PG 라우팅은 `PgClient`에 provider 힌트를 넣는 후속 과제로 남겼다.
 - **가상계좌**: 서비스 계층까지 구현한 데모로, 외부 HTTP 발급 표면(엔드포인트)은 두지 않았다.
+- **선불 월렛**: 충전·잔액·이력 REST(`/api/v1/wallet`)와 함께 **체크아웃 복합결제 수단**(카드+포인트+월렛)으로
+  배선했다. 예약 차감(USE)·사가 보상(RESTORE, 멱등)·취소 환불(REFUND, 비멱등)을 분리해 포인트와 같은
+  결제수단 계약을 갖는다. 실 카드 충전 연동은 PG 위임이라 데모에선 충전액을 직접 받는다.
+- **포인트 적립**: 결제 완료 시 실결제액(카드+월렛, 포인트 사용분 제외)의 1%를 적립(EARN)하고, 취소 시 그만큼
+  회수(EARN_REVERSAL)해 구매·취소 반복 파밍을 막는다. 적립률·등급 차등은 정책 상수로 두고 확장 여지를 남겼다.
+- **분쟁/차지백**: 차지백 웹훅(HMAC) 수신 → 분쟁 개시(chargebackId 멱등, 원 결제 실존·금액 대조) → 증빙 제출 →
+  승/패 확정, **패소 시 원장 역분개**까지 상태머신으로 처리한다. 대응기한 자동 패소·부분 차지백·재분쟁은 범위 밖.
 - **구독(정기결제)**: 빌링키로 구독 개시·조회·해지·즉시청구 REST + dunning(soft/hard decline 재시도·유예)
   스케줄러까지 제공한다. 빌링키는 envelope 암호화 + 블라인드 인덱스로 저장. 실 카드 등록(빌링키 발급)은
   PG 위임 표면이라 데모에선 빌링키 문자열을 직접 받는다.
