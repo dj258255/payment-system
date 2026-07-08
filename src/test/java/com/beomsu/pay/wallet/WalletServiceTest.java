@@ -97,12 +97,12 @@ class WalletServiceTest {
     }
 
     @Test
-    @DisplayName("use: 같은 주문의 USE 이력이 이미 있으면 재차감하지 않고 현재 잔액을 반환한다(멱등)")
-    void useIsIdempotentPerOrder() {
+    @DisplayName("use: 활성 예약(USE−RESTORE−REFUND>0)이 남아 있으면 재차감하지 않는다(멱등)")
+    void useSkipsWhenActiveReservationExists() {
         WalletAccount account = WalletAccount.of(1L);
         account.charge(10_000);
-        when(transactionRepository.existsByOrderNoAndType("ord-1", WalletTransactionType.USE))
-                .thenReturn(true); // 이미 차감됨
+        // 활성 예약 6,000 존재(USE 6,000, RESTORE·REFUND 0) → skip
+        when(transactionRepository.sumAmountByOrderNoAndType("ord-1", WalletTransactionType.USE)).thenReturn(6_000L);
         when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
 
         long balance = service.use(1L, 6_000, "ord-1");
@@ -113,19 +113,48 @@ class WalletServiceTest {
     }
 
     @Test
-    @DisplayName("refund: 같은 주문의 REFUND 이력이 이미 있으면 이중환불하지 않는다(멱등 — 복구 재실행 안전)")
-    void refundIsIdempotentPerOrder() {
+    @DisplayName("use: 예약이 RESTORE로 해제됐으면(순예약 0) 재시도 시 다시 차감한다(거절→재시도 이중무료 방지)")
+    void useReappliesAfterRestore() {
         WalletAccount account = WalletAccount.of(1L);
-        account.charge(6_000);
-        when(transactionRepository.existsByOrderNoAndType("ord-1", WalletTransactionType.REFUND))
-                .thenReturn(true); // 이미 환불됨
+        account.charge(10_000);
+        // USE 6,000이 있었지만 RESTORE 6,000으로 해제됨 → 순예약 0 → 재차감해야 함
+        when(transactionRepository.sumAmountByOrderNoAndType("ord-1", WalletTransactionType.USE)).thenReturn(6_000L);
+        when(transactionRepository.sumAmountByOrderNoAndType("ord-1", WalletTransactionType.RESTORE)).thenReturn(6_000L);
         when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
 
-        long balance = service.refund(1L, 4_000, "ord-1");
+        long balance = service.use(1L, 6_000, "ord-1");
 
-        assertThat(balance).isEqualTo(6_000); // 이중환불 없음
+        assertThat(balance).isEqualTo(4_000); // 다시 차감됨
+        verify(transactionRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("restore: 같은 주문의 RESTORE 이력이 이미 있으면 이중해제하지 않는다(멱등 — 복구 재실행 안전)")
+    void restoreIsIdempotentPerOrder() {
+        WalletAccount account = WalletAccount.of(1L);
+        account.charge(6_000);
+        when(transactionRepository.existsByOrderNoAndType("ord-1", WalletTransactionType.RESTORE))
+                .thenReturn(true); // 이미 해제됨
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+
+        long balance = service.restore(1L, 4_000, "ord-1");
+
+        assertThat(balance).isEqualTo(6_000); // 이중해제 없음
         verify(accountRepository, never()).saveAndFlush(any());
         verify(transactionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("refund: 취소 환불은 비멱등 — 부분취소가 여러 번 와도 매번 반영한다")
+    void refundIsNotIdempotent() {
+        WalletAccount account = WalletAccount.of(1L);
+        account.charge(6_000);
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+
+        long balance = service.refund(1L, 4_000, "ord-1"); // REFUND 이력 존재 여부와 무관하게 반영
+
+        assertThat(balance).isEqualTo(10_000);
+        verify(transactionRepository).save(any());
     }
 
     @Test

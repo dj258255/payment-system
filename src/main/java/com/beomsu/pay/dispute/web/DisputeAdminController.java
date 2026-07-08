@@ -1,5 +1,6 @@
 package com.beomsu.pay.dispute.web;
 
+import com.beomsu.pay.dispute.DisputeException;
 import com.beomsu.pay.dispute.DisputeService;
 import com.beomsu.pay.dispute.DisputeView;
 import lombok.RequiredArgsConstructor;
@@ -50,9 +51,15 @@ class DisputeAdminController {
     @PostMapping("/{id}/resolve")
     DisputeView resolve(@PathVariable Long id, @RequestBody ResolveRequest request, Principal caller) {
         String who = caller != null ? caller.getName() : "unknown";
-        boolean win = "WON".equalsIgnoreCase(request.outcome());
-        audit.info("분쟁 승패 확정 by={} disputeId={} outcome={}", who, id, request.outcome());
-        DisputeView view = disputeService.resolve(id, win);
+        // outcome을 엄격히 파싱한다 — "WON" 아니면 뭐든 LOST(비가역 역분개)로 처리하는 기본값은 위험하다.
+        // 오타·null·"WIN"이 돈 움직이는 쪽으로 흐르지 않게, WON/LOST 외에는 400으로 거부한다.
+        String outcome = request.outcome() == null ? "" : request.outcome().trim().toUpperCase();
+        if (!outcome.equals("WON") && !outcome.equals("LOST")) {
+            throw new DisputeException("INVALID_DISPUTE_OUTCOME",
+                    "outcome은 WON 또는 LOST여야 합니다: " + request.outcome());
+        }
+        audit.info("분쟁 승패 확정 by={} disputeId={} outcome={}", who, id, outcome);
+        DisputeView view = disputeService.resolve(id, outcome.equals("WON"));
         audit.info("분쟁 승패 확정 결과 by={} disputeId={} status={}", who, id, view.status());
         return view;
     }

@@ -1,5 +1,6 @@
 package com.beomsu.pay.member;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,8 +42,14 @@ public class MemberService {
             throw MemberException.emailAlreadyExists(normalizedEmail);
         }
         String passwordHash = passwordEncoder.encode(rawPassword);
-        Member saved = memberRepository.save(Member.of(normalizedEmail, passwordHash));
-        return MemberView.from(saved);
+        try {
+            Member saved = memberRepository.save(Member.of(normalizedEmail, passwordHash));
+            return MemberView.from(saved);
+        } catch (DataIntegrityViolationException e) {
+            // 동시 가입 레이스 — 두 요청이 existsByEmail을 모두 통과해도 uk_members_email 유니크가
+            // 두 번째 insert를 막는다. 500이 아니라 의미에 맞는 409(EMAIL_ALREADY_EXISTS)로 변환한다.
+            throw MemberException.emailAlreadyExists(normalizedEmail);
+        }
     }
 
     /**

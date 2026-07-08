@@ -6,6 +6,7 @@ import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -87,7 +88,13 @@ public class LedgerService {
                         LedgerEntry.debit(AccountType.SALES, amount),          // 역분개
                         LedgerEntry.credit(AccountType.PG_RECEIVABLE, amount)
                 ));
-        repository.save(tx);
+        try {
+            repository.save(tx);
+        } catch (DataIntegrityViolationException e) {
+            // 동시 이벤트 2건이 existsBy를 모두 통과한 레이스 — (txType,sourceType,sourceId) 유니크가
+            // 두 번째 insert를 막는다. 이미 역분개됐으므로 멱등 흡수한다(예외를 삼켜 리스너 실패·재시도 방지).
+            log.info("분쟁 패소 역분개 중복(멱등 흡수) disputeId={}", event.disputeId());
+        }
     }
 
     private boolean alreadyRecorded(String txType, long paymentId) {

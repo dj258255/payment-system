@@ -54,9 +54,16 @@ public class ChargebackWebhookController {
                 log.warn("차지백 웹훅 필수 필드 누락(200 반환): chargebackId/orderNo");
                 return ResponseEntity.ok(Map.of("received", true));
             }
+            // 금액 검증 — 누락/문자열은 asLong()이 0을 주고, 음수도 그대로 온다. 0/음수 분쟁을 개시하면
+            // 패소 확정 시 원장 역분개(LedgerEntry 양수 강제)가 깨져 아웃박스 이벤트가 영구 실패한다.
+            long amount = root.path("amount").asLong();
+            if (amount <= 0) {
+                log.warn("차지백 웹훅 금액 비정상(200 반환, 미개시): chargebackId={} amount={}", chargebackId, amount);
+                return ResponseEntity.ok(Map.of("received", true));
+            }
             disputeService.openFromChargeback(
                     chargebackId, orderNo, longOrNull(root, "paymentId"),
-                    root.path("amount").asLong(), text(root, "reason"));
+                    amount, text(root, "reason"));
         } catch (DomainException e) {
             // 서명 위조 시도만 401. 그 외 도메인 예외는 200으로 흡수(재전송 폭주 방지).
             if ("INVALID_WEBHOOK_SIGNATURE".equals(e.code())) {
