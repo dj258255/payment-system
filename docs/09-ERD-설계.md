@@ -5,6 +5,10 @@
 
 ## 0. 전체 ERD
 
+![pay ERD — 주문·결제·원장·정산/대사·회원/에스크로/분쟁·월렛/포인트·이벤트 인프라 그룹과 관계](images/erd.svg)
+
+핵심 그룹만 표기한 다이어그램이고, 코어 관계는 아래 mermaid와 각 절의 DDL이 기준이다.
+
 ```mermaid
 erDiagram
     orders ||--o{ order_items : contains
