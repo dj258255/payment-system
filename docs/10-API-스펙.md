@@ -1,6 +1,6 @@
-# 10. API 스펙 — 엔드포인트 설계와 에러 시맨틱
+# 10. API 스펙: 엔드포인트 설계와 에러 시맨틱
 
-> 토스페이먼츠 API 디자인(멱등키·에러 코드 체계)을 우리 서버에도 동일하게 적용한다 — "PG를 써본 사람"이 아니라 "PG를 만드는 사람"의 관점.
+> 토스페이먼츠 API 디자인(멱등키·에러 코드 체계)을 우리 서버에도 동일하게 적용한다. "PG를 써본 사람"이 아니라 "PG를 만드는 사람"의 관점이다.
 > Base URL: `/api/v1` / 인증: Spring Security(ROLE_USER), 웹훅은 HMAC 서명 / 모든 응답은 JSON
 
 ## 0. 공통 규약
@@ -40,7 +40,7 @@
 
 ## 1. 주문
 
-### `POST /api/v1/orders` — 주문 생성
+### `POST /api/v1/orders`: 주문 생성
 
 ```json
 // Request
@@ -58,10 +58,10 @@
 }
 ```
 
-- 이 시점에 **서버가 `totalAmount`를 확정 저장** — 이후 금액 위변조 검증의 기준값
-- 재고는 여기서 차감하지 않는다 (승인 시점 차감 — 선점 방식과의 트레이드오프는 ADR로)
+- 이 시점에 **서버가 `totalAmount`를 확정 저장**한다. 이후 금액 위변조 검증의 기준값이다
+- 재고는 여기서 차감하지 않는다 (승인 시점 차감, 선점 방식과의 트레이드오프는 ADR로)
 
-### `GET /api/v1/orders/{orderNo}` — 주문 조회 (결제 상태 포함)
+### `GET /api/v1/orders/{orderNo}`: 주문 조회 (결제 상태 포함)
 
 ```json
 // Response 200
@@ -78,14 +78,14 @@
 }
 ```
 
-- `paymentStatus`는 이 주문의 **최신 결제 시도** 상태를 대표로 싣는다 — 승인이 `202 UNKNOWN`이었다면 이 값이 `UNKNOWN`으로 보이고, 복구 배치가 확정하면 `DONE`으로 바뀐다. **주문 단위 폴링으로도 확정을 확인할 수 있다.**
+- `paymentStatus`는 이 주문의 **최신 결제 시도** 상태를 대표로 싣는다. 승인이 `202 UNKNOWN`이었다면 이 값이 `UNKNOWN`으로 보이고, 복구 배치가 확정하면 `DONE`으로 바뀐다. **주문 단위 폴링으로도 확정을 확인할 수 있다.**
 - 소유권 검증: principal의 userId로 주문 소유자만 조회할 수 있다(IDOR 방지). 남의 주문은 403 `ORDER_FORBIDDEN`.
 
 ---
 
-## 2. 결제 — 핵심 API
+## 2. 결제: 핵심 API
 
-### `POST /api/v1/payments/confirm` — 결제 승인 ★
+### `POST /api/v1/payments/confirm`: 결제 승인 ★
 
 프론트가 successUrl로 받은 파라미터를 그대로 전달하면, 서버가 검증 후 PG 승인을 호출한다.
 
@@ -140,10 +140,10 @@
 ```
 
 **설계 결정**
-- **타임아웃을 200/500이 아닌 202로 응답** — "성공도 실패도 아닌 상태"를 API 계약에 명시. 클라이언트는 폴링(`GET /payments/{id}`)으로 확정을 확인
+- **타임아웃을 200/500이 아닌 202로 응답**한다. "성공도 실패도 아닌 상태"를 API 계약에 명시. 클라이언트는 폴링(`GET /payments/{id}`)으로 확정을 확인
 - `retryable` 필드: 04·08 문서의 hard/soft decline 분류를 API 계약으로 노출
 
-### `GET /api/v1/payments/{paymentId}` — 결제 조회
+### `GET /api/v1/payments/{paymentId}`: 결제 조회
 
 ```json
 // Response 200
@@ -164,11 +164,11 @@
 }
 ```
 
-- **202 UNKNOWN 폴링의 확정 경로다** — 승인이 `202 UNKNOWN`(checkAfterSeconds 후 재확인 안내)으로 응답되면, 클라이언트는 응답의 `paymentId`로 이 API를 폴링해 `status`가 `DONE`/`CANCELED`/`ABORTED`로 확정됐는지 확인한다. UNKNOWN 3-상태 모델의 "나중에 확인하라"는 계약이 이 조회로 완성된다.
+- **202 UNKNOWN 폴링의 확정 경로다.** 승인이 `202 UNKNOWN`(checkAfterSeconds 후 재확인 안내)으로 응답되면, 클라이언트는 응답의 `paymentId`로 이 API를 폴링해 `status`가 `DONE`/`CANCELED`/`ABORTED`로 확정됐는지 확인한다. UNKNOWN 3-상태 모델의 "나중에 확인하라"는 계약이 이 조회로 완성된다.
 - `cancels`는 별도 취소 엔티티 없이 상태 이력에서 취소 전이(→ CANCELED/PARTIAL_CANCELED)를 투영한다.
 - 소유권 검증: 결제가 속한 주문의 소유자만 조회할 수 있다(IDOR 방지). 남의 결제는 403 `ORDER_FORBIDDEN`, 없는 결제는 404 `PAYMENT_NOT_FOUND`.
 
-### `POST /api/v1/payments/{paymentId}/cancel` — 취소 (전액/부분)
+### `POST /api/v1/payments/{paymentId}/cancel`: 취소 (전액/부분)
 
 ```json
 // Request  (Idempotency-Key 필수)
@@ -189,7 +189,7 @@
 
 ## 3. 웹훅
 
-### `POST /api/v1/webhooks/tosspayments` — PG 웹훅 수신
+### `POST /api/v1/webhooks/tosspayments`: PG 웹훅 수신
 
 **동기 구간은 3가지만** (10초 제한 대응):
 ```
@@ -199,7 +199,7 @@
 ```
 이후 비동기 워커: **조회 API로 실상태 재검증 → 상태머신 전이** (웹훅 페이로드를 신뢰하지 않음)
 
-- 응답: 항상 `200 {"received": true}` (파싱 실패해도 200 — 저장은 됐으므로. 5xx를 주면 PG가 최대 7회 재전송)
+- 응답: 항상 `200 {"received": true}` (파싱 실패해도 200, 저장은 됐으므로. 5xx를 주면 PG가 최대 7회 재전송)
 - 검증 실패만 401 (서명 위조 시도)
 
 ---
@@ -222,7 +222,7 @@
 
 ---
 
-## 5. 내부 배치 (API가 아닌 스케줄러 — 계약만 명시)
+## 5. 내부 배치 (API가 아닌 스케줄러, 계약만 명시)
 
 | 배치 | 주기 | 동작 |
 |---|---|---|
@@ -233,7 +233,7 @@
 | 정산 배치 | 일 1회 | 전일 `[00:00, 24:00)` DONE 건 집계 → settlements 생성 (재실행 멱등) |
 | 대사 배치 | 일 1회 (D+1) | PG 파일 적재 → transaction_key 매칭 → 4분류 → 예외 큐 |
 
-모든 배치는 **멱등** + 다중 인스턴스 안전(분산락 또는 조건부 UPDATE) — 배치 계약의 일부로 명시
+모든 배치는 **멱등** + 다중 인스턴스 안전(분산락 또는 조건부 UPDATE)을 배치 계약의 일부로 명시한다
 
 ---
 
@@ -270,15 +270,15 @@ sequenceDiagram
 
 ## 7. API 설계 원칙 요약
 
-1. **모든 쓰기 API는 멱등** — 멱등키 계약이 곧 재시도 안전성의 근거
-2. **미확정(UNKNOWN)을 API 계약에 노출** — 202 + 폴링 안내. 거짓 성공/거짓 실패를 응답하지 않는다
-3. **재시도 가능 여부(`retryable`)를 서버가 판단해 알려준다** — 클라이언트가 카드사 거절을 재시도하는 낭비 방지
-4. **웹훅은 저장과 응답만 동기, 해석은 비동기** — 그리고 페이로드가 아닌 조회 API를 믿는다
+1. **모든 쓰기 API는 멱등**이다. 멱등키 계약이 곧 재시도 안전성의 근거
+2. **미확정(UNKNOWN)을 API 계약에 노출**한다. 202 + 폴링 안내. 거짓 성공/거짓 실패를 응답하지 않는다
+3. **재시도 가능 여부(`retryable`)를 서버가 판단해 알려준다.** 클라이언트가 카드사 거절을 재시도하는 낭비 방지
+4. **웹훅은 저장과 응답만 동기, 해석은 비동기**. 그리고 페이로드가 아닌 조회 API를 믿는다
 5. **어드민의 모든 쓰기는 사유 + 감사 로그 + (위험 행위는) 2인 승인**
 
 ---
 
-## 8. 확장 표면 — 회원·월렛·포인트·구독·분쟁
+## 8. 확장 표면: 회원·월렛·포인트·구독·분쟁
 
 ### 8.1 회원 (member)
 
@@ -286,7 +286,7 @@ sequenceDiagram
 |---|---|---|
 | POST | `/api/v1/members/signup` | 회원 가입 — `{"email","password"}` → 201 `{id,email,role}`. 이메일 유니크(중복 409), BCrypt 저장. 로그인 전 개방(permitAll) |
 
-로그인은 기존 `POST /api/v1/auth/login`을 그대로 쓴다 — 회원은 **이메일**로 로그인하고, 복합 `UserDetailsService`가 `UserDetails.username`을 숫자 회원 id로 반환해 JWT subject가 숫자로 유지된다(소유권 계약 보존). 데모 계정(admin/1/2)은 InMemory 병행.
+로그인은 기존 `POST /api/v1/auth/login`을 그대로 쓴다. 회원은 **이메일**로 로그인하고, 복합 `UserDetailsService`가 `UserDetails.username`을 숫자 회원 id로 반환해 JWT subject가 숫자로 유지된다(소유권 계약 보존). 데모 계정(admin/1/2)은 InMemory 병행.
 
 ### 8.2 선불 월렛 (wallet) · 포인트 (point)
 

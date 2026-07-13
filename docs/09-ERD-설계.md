@@ -1,11 +1,11 @@
-# 09. ERD 설계 — 테이블 스키마와 설계 결정
+# 09. ERD 설계: 테이블 스키마와 설계 결정
 
 > 코어 스키마. 각 테이블마다 "왜 이렇게 설계했는가"를 함께 기록한다.
 > DB: MySQL 8.x / 금액: KRW는 소수점이 없으므로 `BIGINT` (통화 확장 대비 `currency` 컬럼만 예약)
 
 ## 0. 전체 ERD
 
-![pay ERD — 주문·결제·원장·정산/대사·회원/에스크로/분쟁·월렛/포인트·이벤트 인프라 그룹과 관계](images/erd.svg)
+![pay ERD: 주문·결제·원장·정산/대사·회원/에스크로/분쟁·월렛/포인트·이벤트 인프라 그룹과 관계](images/erd.svg)
 
 핵심 그룹만 표기한 다이어그램이고, 코어 관계는 아래 mermaid와 각 절의 DDL이 기준이다.
 
@@ -49,7 +49,7 @@ erDiagram
     }
 ```
 
-(멱등키·Outbox·웹훅 테이블은 특정 도메인에 종속되지 않는 인프라 테이블이라 위 다이어그램에서 생략 — 아래 개별 정의)
+(멱등키·Outbox·웹훅 테이블은 특정 도메인에 종속되지 않는 인프라 테이블이라 위 다이어그램에서 생략했고, 아래에서 개별 정의한다)
 
 ---
 
@@ -86,7 +86,7 @@ CREATE TABLE order_items (
 - **`order_no`는 ULID**: 자동증가 PK를 외부(PG·URL)에 노출하면 주문량 추정·순회 공격이 가능. 내부 조인은 BIGINT PK, 외부 식별은 ULID로 분리 (시간 정렬 가능해 UUID보다 인덱스 우호적)
 - **`total_amount`가 금액 위변조 검증의 기준값**: successUrl로 돌아온 amount와 이 값을 비교 후에만 승인 호출 (02 문서)
 - **order_items는 스냅샷**: 상품 가격이 나중에 바뀌어도 주문·정산·환불 금액은 주문 시점으로 고정 (velog @roycewon의 ProductSnapshot, 배민 정산의 Snapshot 엔티티와 동일 원리)
-- 주문 상태와 결제 상태는 **별개의 상태머신** — 주문은 비즈니스 관점(배송·확정), 결제는 자금 관점
+- 주문 상태와 결제 상태는 **별개의 상태머신**이다. 주문은 비즈니스 관점(배송·확정), 결제는 자금 관점이다
 
 ## 2. 결제 (payments / payment_history / payment_cancels)
 
@@ -134,11 +134,11 @@ CREATE TABLE payment_cancels (
 ```
 
 **설계 결정**
-- **orders : payments = 1:N** — 결제 실패 후 재시도하면 payment 레코드가 새로 생긴다. "주문당 성공한 결제는 1건"은 UNIQUE로 못 걸므로(MySQL은 partial unique index 없음) **주문 상태 조건부 UPDATE**(`WHERE status = 'PENDING_PAYMENT'`)로 이중 지불을 차단 — 이 결정 자체가 설계 판단
-- **`UNKNOWN` 상태가 스키마에 존재** — 카카오페이 3-상태 모델(04 문서)을 상태머신에 1급 시민으로 반영. `unknown_reason`으로 진입 원인 추적
+- **orders : payments = 1:N**이다. 결제 실패 후 재시도하면 payment 레코드가 새로 생긴다. "주문당 성공한 결제는 1건"은 UNIQUE로 못 걸므로(MySQL은 partial unique index 없음) **주문 상태 조건부 UPDATE**(`WHERE status = 'PENDING_PAYMENT'`)로 이중 지불을 차단한다. 이 결정 자체가 설계 판단이다
+- **`UNKNOWN` 상태가 스키마에 존재**한다. 카카오페이 3-상태 모델(04 문서)을 상태머신에 1급 시민으로 반영. `unknown_reason`으로 진입 원인 추적
 - **`balance_amount`**: 부분취소 누적 관리. `cancel_amount ≤ balance_amount` 검증 + 차감을 조건부 UPDATE로
-- **payment_history는 감사(audit)의 최소 단위**: triggered_by로 "누가 이 전이를 일으켰나"(웹훅인지 배치인지 어드민인지)를 남긴다 — 전자금융거래법 기록 보존(08 문서)의 기반
-- 상태 전이는 항상 `UPDATE payments SET status=:to, version=version+1 WHERE id=:id AND status=:from` — 영향 행 0이면 동시 전이 발생으로 판단
+- **payment_history는 감사(audit)의 최소 단위**: triggered_by로 "누가 이 전이를 일으켰나"(웹훅인지 배치인지 어드민인지)를 남긴다. 전자금융거래법 기록 보존(08 문서)의 기반이다
+- 상태 전이는 항상 `UPDATE payments SET status=:to, version=version+1 WHERE id=:id AND status=:from`이고, 영향 행 0이면 동시 전이 발생으로 판단한다
 
 ## 3. 멱등키 (idempotency_keys)
 
@@ -159,7 +159,7 @@ CREATE TABLE idempotency_keys (
 ```
 
 **설계 결정**
-- 중복 판별 조합(키+경로+메서드)은 토스페이먼츠 스펙 미러링. **INSERT 성공 = 처리권 획득**이라는 원자적 잠금 효과 — 별도 분산락 불필요
+- 중복 판별 조합(키+경로+메서드)은 토스페이먼츠 스펙 미러링. **INSERT 성공 = 처리권 획득**이라는 원자적 잠금 효과다. 별도 분산락은 불필요
 - `status = PROCESSING`인데 재요청 → 409, `request_hash` 불일치 → 422 (03 문서의 에러 시맨틱)
 - 만료 건은 배치로 삭제 (파티셔닝 또는 `expires_at` 인덱스)
 
@@ -222,7 +222,7 @@ CREATE TABLE webhook_events (                           -- 수신 웹훅 원본 
 ```
 
 **설계 결정**
-- `processed_events` PK에 `consumer_group` 포함 — 컨슈머가 여러 종류(알림·포인트·정산)일 때 각각 독립적으로 멱등
+- `processed_events` PK에 `consumer_group`을 포함한다. 컨슈머가 여러 종류(알림·포인트·정산)일 때 각각 독립적으로 멱등
 - 웹훅은 **"저장 먼저, 해석은 나중"**: raw_payload 저장 + 200 응답까지가 동기 구간, 상태 전이는 비동기 워커가 조회 API 재검증 후 수행 (03 문서 파이프라인)
 
 ## 6. 원장 (ledger_accounts / ledger_transactions / ledger_entries)
@@ -260,9 +260,9 @@ CREATE TABLE ledger_entries (                           -- ★ append-only. UPDA
 
 **설계 결정 (Stripe Ledger 원칙 → 스키마)**
 - **불변식 `sum(DEBIT) = sum(CREDIT)`** 는 분개 생성 서비스에서 강제 + **검증 배치**가 전체 재검산 (트리거는 성능·이식성 문제로 배제, ADR로 기록)
-- `uk_ledger_tx_source`: 결제 1건이 이벤트 재처리로 두 번 분개되는 것을 DB가 차단 — 원장의 멱등성
+- `uk_ledger_tx_source`: 결제 1건이 이벤트 재처리로 두 번 분개되는 것을 DB가 차단한다. 원장의 멱등성이다
 - **amount는 항상 양수**: 음수 허용 시 direction과 이중 표현이 되어 버그 온상
-- 잔액은 파생값. 조회 성능이 필요해지면 `ledger_balances` 스냅샷 테이블 추가 (원천은 항상 entries — 스냅샷 불일치 시 entries가 이긴다)
+- 잔액은 파생값. 조회 성능이 필요해지면 `ledger_balances` 스냅샷 테이블 추가 (원천은 항상 entries이며, 스냅샷 불일치 시 entries가 이긴다)
 - 취소는 원거래 삭제가 아니라 **역분개(reversal) 추가**
 
 **결제 승인 시 분개 예시** (금액 10,000 / 수수료 300):
@@ -299,8 +299,8 @@ CREATE TABLE settlement_details (
 ```
 
 **설계 결정**
-- `uk_settlement`: 정산 배치가 같은 날짜로 재실행되면 UPSERT 또는 삭제-재생성 — **배치 멱등성**을 스키마가 보장
-- 집계 기간은 `start ≤ approved_at < end` 반개구간 (배민 정산 방식 — 경계 중복/누락 방지)
+- `uk_settlement`: 정산 배치가 같은 날짜로 재실행되면 UPSERT 또는 삭제-재생성한다. **배치 멱등성**을 스키마가 보장
+- 집계 기간은 `start ≤ approved_at < end` 반개구간 (배민 정산 방식으로 경계 중복/누락 방지)
 - `fee_rate` 스냅샷: 수수료율 변경 이력과 무관하게 "그 거래에 적용된 요율"을 고정
 
 ## 8. 대사 (pg_transactions / reconciliation_results)
@@ -338,7 +338,7 @@ CREATE TABLE reconciliation_results (
 - 불일치 4분류(03 문서)가 `result` 컬럼의 enum으로 그대로 반영
 - `MANUALLY_RESOLVED` + `resolved_by`: 수기 대사(어드민)의 감사 추적
 
-## 9. 재고 — 동시성 실험용 (products / stock)
+## 9. 재고: 동시성 실험용 (products / stock)
 
 ```sql
 CREATE TABLE stock (
@@ -348,7 +348,7 @@ CREATE TABLE stock (
     CHECK (quantity >= 0)                              -- 음수 재고의 최후 방어선
 );
 ```
-- Phase 5의 락 3종 비교 실험 대상: ① `@Version` 낙관적 ② `SELECT ... FOR UPDATE` 비관적 ③ Redisson — 같은 테이블로 구현체만 바꿔 부하테스트
+- Phase 5의 락 3종 비교 실험 대상: ① `@Version` 낙관적 ② `SELECT ... FOR UPDATE` 비관적 ③ Redisson. 같은 테이블로 구현체만 바꿔 부하테스트
 - 조건부 차감: `UPDATE stock SET quantity = quantity - :n WHERE product_id = :id AND quantity >= :n`
 
 ## 10. 공통 규칙
@@ -362,7 +362,7 @@ CREATE TABLE stock (
 | FK 제약은 걸지 않고 인덱스만 (논리적 FK) | 대량 배치 성능·파티셔닝·이관 유연성 — 단 ADR로 트레이드오프 기록 |
 | 배치가 스캔하는 모든 상태 컬럼에 `(status, 시각)` 복합 인덱스 | 복구/만료/발행 배치의 풀스캔 방지 |
 
-## 11. 확장 표면 — 구현된 테이블 (회원·월렛·포인트·구독·분쟁)
+## 11. 확장 표면: 구현된 테이블 (회원·월렛·포인트·구독·분쟁)
 
 초기엔 "확장 시" 후보였으나 이후 실제 구현된 스키마다. **잔액은 계정 테이블에 스냅샷으로 두되, 모든 변경은
 append-only 이력 테이블에 남겨 감사·복구의 진실 원천으로 삼는다**(원장 발상과 동일).
