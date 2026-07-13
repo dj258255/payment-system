@@ -22,6 +22,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.security.web.SecurityFilterChain;
 
 import java.util.Map;
@@ -52,7 +53,8 @@ import java.util.Map;
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter,
+    SecurityFilterChain filterChain(HttpSecurity http, MeterRegistry meterRegistry,
+                                    JwtAuthenticationConverter jwtAuthenticationConverter,
                                     RateLimiter rateLimiter,
                                     @Value("${app.ratelimit.enabled:true}") boolean rateLimitEnabled,
                                     @Value("${app.ratelimit.per-user-per-sec:5}") int perUserPerSec,
@@ -93,7 +95,8 @@ public class SecurityConfig {
                 // 유입 제어(rate limit): Bearer 인증 "뒤"에 끼워 principal(userId)로 per-user 키를
                 // 만든다. 필터를 빈으로 등록하지 않고 여기서 직접 생성한다 — 빈이면 서블릿 컨테이너가
                 // 자동으로 한 번 더 등록해 같은 요청에 이중 적용되기 때문(RateLimitFilter 주석 참고).
-                .addFilterAfter(new RateLimitFilter(rateLimiter, rateLimitEnabled, perUserPerSec, globalPerSec),
+                .addFilterAfter(new RateLimitFilter(rateLimiter, rateLimitEnabled, perUserPerSec, globalPerSec,
+                                meterRegistry),
                         BearerTokenAuthenticationFilter.class);
         return http.build();
     }

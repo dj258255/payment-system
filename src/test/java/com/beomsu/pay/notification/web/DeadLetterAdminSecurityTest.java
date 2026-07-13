@@ -7,6 +7,7 @@ import com.beomsu.pay.notification.NotificationAdminService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.beomsu.pay.MetricsTestConfig;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -29,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 리소스 서버 필터체인 구성에 필요하므로 목으로 제공한다(실제 디코딩은 post-processor가 우회).
  */
 @WebMvcTest(DeadLetterAdminController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, MetricsTestConfig.class})
 class DeadLetterAdminSecurityTest {
 
     @Autowired

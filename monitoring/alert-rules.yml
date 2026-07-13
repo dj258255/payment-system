@@ -82,3 +82,18 @@ groups:
         annotations:
           summary: "아웃박스 소비 정체 (최고령 {{ $value }}초)"
           description: "5분 넘게 소비되지 않은 이벤트가 있습니다. 비동기 실행기 스레드 고갈, 리스너 예외 반복, DB 잠금을 확인하세요. 재기동 시에는 republish-outstanding-events-on-restart로 재발행됩니다."
+
+      # 8) 전역 유입 제한이 지속적으로 걸림 — 상한이 실제 처리 능력보다 낮거나, 정말로 포화다.
+      #    scope로 갈린다: global이 오르면 시스템 차원 문제이고, user/ip만 오르면 특정 클라이언트
+      #    남용이라 상한을 올릴 일이 아니다. 그래서 이 규칙은 global만 본다.
+      #    판별법: 처리량(http_server_requests)이 ratelimit_limit_global 근처에서 평평하면 진짜 포화,
+      #    한도보다 한참 낮은데도 거절이 나면 상한이 낮게 잡힌 것이다(k6/capacity-knee.js로 재측정).
+      #    경보가 아니라 "튜닝할 때가 됐다"는 신호라 warning이다.
+      - alert: GlobalRateLimitBinding
+        expr: sum(rate(ratelimit_rejected_total{scope="global"}[5m])) > 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "전역 유입 상한이 지속적으로 걸리는 중 (초당 {{ $value | printf \"%.1f\" }}건 거절)"
+          description: "15분 넘게 전역 층에서 거절이 이어집니다. 처리량이 상한 근처에서 평평한지 확인하세요. 평평하면 증설, 한참 낮은데도 거절되면 app.ratelimit.global-per-sec가 낮게 잡힌 것입니다(k6/capacity-knee.js로 재측정)."

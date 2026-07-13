@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -56,8 +57,18 @@ class RateLimitFilterTest {
         SecurityContextHolder.clearContext();
     }
 
+    /** 계측은 실제 레지스트리로 받는다 — 목이면 카운터 태그가 맞는지 검증할 수 없다. */
+    final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
     private RateLimitFilter filter(boolean enabled) {
-        return new RateLimitFilter(rateLimiter, enabled, PER_USER, GLOBAL);
+        return new RateLimitFilter(rateLimiter, enabled, PER_USER, GLOBAL, meterRegistry);
+    }
+
+    /** 특정 층·경로의 거절 카운터 값. 없으면 0. */
+    private double rejectedCount(String scope, String path) {
+        var counter = meterRegistry.find("ratelimit.rejected")
+                .tag("scope", scope).tag("path", path).counter();
+        return counter == null ? 0 : counter.count();
     }
 
     private static MockHttpServletRequest post(String uri) {
@@ -79,6 +90,9 @@ class RateLimitFilterTest {
         assertThat(response.getContentType()).contains("application/json");
         assertThat(response.getContentAsString()).contains("RATE_LIMITED");
         assertThat(response.getHeader("X-RateLimit-Scope")).isEqualTo("user");  // 이 사용자만 물러나면 됨
+        // 지표가 없으면 운영에서 한도를 조정할 근거가 안 생긴다 — 층·경로별로 세는지 확인한다.
+        assertThat(rejectedCount("user", "/api/v1/orders")).isEqualTo(1);
+        assertThat(rejectedCount("global", "/api/v1/orders")).isZero();
         assertThat(chain.getRequest()).isNull();                    // 컨트롤러까지 안 감(싸게 거절)
         // per-user에서 이미 초과 → global 카운터는 소비하지 않는다.
         verify(rateLimiter, never()).tryAcquire(eq("global:/api/v1/orders"), anyInt(), any(Duration.class));
@@ -97,6 +111,7 @@ class RateLimitFilterTest {
         assertThat(response.getStatus()).isEqualTo(429);
         // 시스템 전체 포화 — 이 클라이언트가 얌전해져도 안 풀린다. user와 대응이 정반대라 구분이 필요하다.
         assertThat(response.getHeader("X-RateLimit-Scope")).isEqualTo("global");
+        assertThat(rejectedCount("global", "/api/v1/payments/confirm")).isEqualTo(1);
         assertThat(chain.getRequest()).isNull();
     }
 
