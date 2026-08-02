@@ -18,6 +18,9 @@ interface WalletTransactionRepository extends JpaRepository<WalletTransaction, L
     /** 주문에 대한 특정 종류 거래 1건(유니크 인덱스로 주문당 최대 1건) — 복구가 예약 차감액을 역산할 때 쓴다. */
     Optional<WalletTransaction> findByOrderNoAndType(String orderNo, WalletTransactionType type);
 
+    /** 타임라인 조립용(ADR-011). 한 주문이 만든 월렛 사건 전부 — 차감·복원·환불. */
+    List<WalletTransaction> findByOrderNoOrderByIdAsc(String orderNo);
+
     /** 같은 주문·유형의 금액 합계. 이력이 없으면 0. 환불 가능 월렛분(USE−REFUND) 계산에 쓴다. */
     @Query("select coalesce(sum(t.amount),0) from WalletTransaction t where t.orderNo = :orderNo and t.type = :type")
     long sumAmountByOrderNoAndType(@Param("orderNo") String orderNo, @Param("type") WalletTransactionType type);
