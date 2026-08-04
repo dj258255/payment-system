@@ -7,7 +7,12 @@
 
 ## 데모 콘솔
 
-`docker compose up -d && ./gradlew bootRun` 후 `http://localhost:8080/` 에서 전 흐름을 눌러볼 수 있는 데모 콘솔을 함께 제공한다(Spring이 정적 서빙, same-origin이라 별도 프론트 서버·CORS 불필요).
+`docker compose up -d && ./gradlew bootRun` 후 두 화면을 제공한다(Spring이 정적 서빙, same-origin이라 별도 프론트 서버·CORS 불필요).
+
+- **스토어** `http://localhost:8080/` — 로그인 → 상품 → 결제 → 취소/구매확정의 사용자 흐름과 주문 전표·상태. 대기열·월렛·포인트·구독 포함
+- **운영 백오피스** `http://localhost:8080/admin.html` — 사이드바로 업무별 분리: 미확정 복구 / 보상 태스크 / 대사 / 정산·지급 / 분쟁 / 강제취소(2인 승인) / FDS / DLQ
+
+두 화면 모두 하단 개발자 로그 드로어에서 실제 요청·응답을 그대로 보여준다.
 
 **결제 플로우**: 로그인(JWT) → 주문 생성 → 결제 승인 → 취소/구매확정. 미리 준비한 응답이 아니라 실제 API 호출·상태를 그대로 보여준다.
 
