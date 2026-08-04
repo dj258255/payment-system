@@ -49,8 +49,12 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
           resources:
-            requests: { cpu: 250m, memory: 512Mi }
-            limits: { memory: 1Gi }
+            # cpu request는 노드 포화 시 CFS 가중치다 — 250m이던 시절, 롤링+부하로 노드가
+            # 포화되자 MySQL이 밀려 신규 커넥션(TCP)조차 못 받았고 부팅 파드가 Flyway에서
+            # 죽었다(실측). DB는 전체의 공유 병목이므로 앱보다 높은 가중치를 준다.
+            requests: { cpu: "1", memory: 768Mi }
+            # 1Gi limit에서 부하 중 OOMKill 3회 실측 — MySQL 8 버퍼풀+커넥션이 1Gi를 넘는다.
+            limits: { memory: 1536Mi }
       volumes:
         - { name: init, configMap: { name: mysql-init } }
         - { name: data, emptyDir: {} }
