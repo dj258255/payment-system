@@ -63,7 +63,7 @@
 - **MySQL 8.4** + JPA(도메인 모델), **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화, 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito, H2(동시성 실측), **469 tests**(코어) + 40(정산 서비스) + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
+- 테스트: JUnit5 + Mockito, H2(동시성 실측), **460 tests**(코어) + 40(정산) + 7(알림) + Spring Modulith 경계 검증 + Toxiproxy 카오스(`chaosTest`)
 
 ## 아키텍처: 모듈형 모놀리스
 
@@ -79,7 +79,6 @@ com.beomsu.pay
 ├── ledger         복식부기 원장 (차변=대변 불변식) + 분쟁 패소 역분개
 ├── escrow         자금 보류(에스크로) — 구매확정 전까지 HELD, 확정 시 RELEASED/취소 시 REFUNDED
 ├── reconciliation 대사 (내부 vs PG 파일 4분류)
-├── notification   결제 이벤트 소비 (멱등 컨슈머 + DLQ)
 ├── point          포인트 원장 (복합결제 차감·보상·환불 + 실결제액 적립/회수)
 ├── subscription   빌링키 정기결제 + dunning
 ├── wallet         선불 충전 월렛 (전금법 한도) — 카드·포인트와 함께 복합결제 수단
@@ -94,8 +93,10 @@ com.beomsu.pay
 
 이벤트 발행은 Spring Modulith의 Event Publication Registry(= Transactional Outbox)로 신뢰성을 보장한다
 ([ADR-002](docs/adr/ADR-002-outbox-event-publication-registry.md)).
-결제 이벤트는 Kafka로도 외부화되며, 별도 프로세스 소비자 데모는 [`consumer-app/`](consumer-app/README.md) 참고
-([ADR-005](docs/adr/ADR-005-event-externalization-kafka.md)).
+결제 이벤트는 Kafka로 외부화되어([ADR-005](docs/adr/ADR-005-event-externalization-kafka.md))
+분리된 두 서비스가 소비한다: [`settlement-service/`](settlement-service/)(정산 배치·집계,
+[ADR-009](docs/adr/ADR-009-settlement-service-extraction.md))와
+[`notification-service/`](notification-service/)(알림 발송, 멱등 컨슈머 + DLQ 어드민).
 프로세스 밖 소비자와 공유하는 이벤트 계약(record 3종·토픽 상수)은 독립 아티팩트
 [`contracts/`](contracts/)(pay-contracts)로 분리해 composite build로 조합한다
 ([ADR-008](docs/adr/ADR-008-event-contracts-artifact.md)).
@@ -123,6 +124,7 @@ docker compose up -d              # MySQL 8.4 + Redis 7.4 + Kafka
 ```bash
 SPRING_PROFILES_ACTIVE=kafka ./gradlew bootRun    # 코어 — 이벤트 Kafka 외부화 on
 ./gradlew -p settlement-service bootRun           # 정산 서비스 (localhost:8090)
+./gradlew -p notification-service bootRun         # 알림 서비스 (localhost:8091)
 ```
 
 부하테스트:
