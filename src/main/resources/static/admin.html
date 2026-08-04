@@ -178,6 +178,15 @@
       <div class="list" id="recon"></div>
     </div>
     <div class="panel">
+      <div class="sub">주문 전 과정 — 원인을 고르기 <b>전에</b> 근거를 봅니다. 주문·결제·원장·에스크로·정산·포인트·월렛·분쟁·대사를 한 번에 모읍니다(ADR-011).</div>
+      <div class="row">
+        <input id="tlOrderNo" placeholder="주문번호 (불일치 목록의 orderNo)" style="flex:1">
+        <button onclick="loadTimeline()">타임라인 조회</button>
+      </div>
+      <div id="tlWarn" class="sub" style="display:none;color:#B45309"></div>
+      <div class="list" id="tl"></div>
+    </div>
+    <div class="panel">
       <div class="sub">수기 확정 — <b>사유가 필수</b>입니다. 조사 결과를 남겨야 같은 패턴이 다시 왔을 때 처음부터 조사하지 않습니다.</div>
       <div class="row">
         <input id="rcId" placeholder="대사 결과 ID" style="width:140px">
@@ -352,6 +361,43 @@ function renderList(target,data){
 async function adm(method,path,target){
   const r=await api(method,path);
   renderList(target,r.data);
+}
+// ── 주문 타임라인 (ADR-011) ──
+// 서버가 조립한 사실을 그대로 그린다. 화면에서 금액을 계산하거나 순서를 다시 정하지 않는다 —
+// 두 곳에서 같은 계산을 하면 언젠가 갈라진다.
+async function loadTimeline(){
+  const orderNo=$('tlOrderNo').value.trim();
+  if(!orderNo){logLine('err','✗ 주문번호를 입력하세요');return}
+  const r=await api('GET','/api/v1/admin/orders/'+encodeURIComponent(orderNo)+'/timeline');
+  if(!r.ok){$('tl').innerHTML='';$('tlWarn').style.display='none';return}
+  const t=r.data;
+
+  // 조회에 실패한 출처가 있으면 반드시 눈에 띄게 알린다. 조용히 빠지면 "그 기록이 없다"로
+  // 잘못 읽고, 그 상태로 원인을 확정하면 틀린 판단이 장부에 남는다.
+  const w=$('tlWarn');
+  if(t.unavailable && t.unavailable.length){
+    w.style.display='block';
+    w.innerHTML='⚠ <b>불완전한 타임라인</b> — '+t.unavailable.join(', ')+' 조회 실패. '
+      +'이 화면만 보고 원인을 확정하지 마세요.';
+  } else { w.style.display='none'; }
+
+  if(!t.entries || !t.entries.length){
+    $('tl').innerHTML='<div class="sub" style="padding:10px">기록 없음 — 내부에 이 주문의 흔적이 없습니다(대사의 EXTERNAL_ONLY일 수 있음).</div>';
+    return;
+  }
+  const rows=t.entries.map(e=>'<tr>'
+    +'<td style="white-space:nowrap;color:var(--sub)">'+e.at.replace('T',' ').replace('Z','')+'</td>'
+    +'<td><span class="badge '+srcBadge(e.source)+'">'+e.source+'</span></td>'
+    +'<td>'+e.summary+'</td>'
+    +'<td style="text-align:right">'+(e.amount==null?'':Number(e.amount).toLocaleString()+'원')+'</td>'
+    +'</tr>').join('');
+  $('tl').innerHTML='<table><thead><tr><th>시각</th><th>출처</th><th>내용</th><th style="text-align:right">금액</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+// 출처별 색. 자금이 실제로 움직인 곳(결제·원장·월렛·포인트)을 초록으로, 예외 신호를 빨강으로.
+function srcBadge(src){
+  if(src==='RECONCILIATION'||src==='DISPUTE')return 'b-red';
+  if(src==='PAYMENT'||src==='LEDGER'||src==='WALLET'||src==='POINT')return 'b-green';
+  return '';
 }
 // ── 대사 수기 확정 ──
 // 사유를 필수로 보낸다(ADR-008). 서버 도메인도 같은 규칙을 강제하지만, 화면에서 먼저 막아
