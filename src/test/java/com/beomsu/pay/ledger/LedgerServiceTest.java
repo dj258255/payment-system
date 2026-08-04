@@ -1,7 +1,7 @@
 package com.beomsu.pay.ledger;
 
 import com.beomsu.pay.dispute.DisputeLostEvent;
-import com.beomsu.paycontracts.PaymentConfirmedEvent;
+import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -1,7 +1,7 @@
 package com.beomsu.pay.ledger;
 
-import com.beomsu.paycontracts.PaymentCanceledEvent;
-import com.beomsu.paycontracts.PaymentConfirmedEvent;
+import com.beomsu.pay.payment.PaymentCanceledEvent;
+import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.modulith.ApplicationModuleListener;
 import org.springframework.stereotype.Component;

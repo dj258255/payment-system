@@ -8,10 +8,6 @@ services:
       MYSQL_ROOT_PASSWORD: root
     ports:
       - "3306:3306"
-    volumes:
-      # 정산 서비스 전용 database(pay_settlement) 생성 — 컨테이너 최초 초기화 시 1회 실행.
-      # 기존 컨테이너에는 소급 적용되지 않으므로 down 후 up으로 재생성한다.
-      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
       interval: 5s

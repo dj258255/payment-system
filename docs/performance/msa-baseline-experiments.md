@@ -132,51 +132,6 @@ VU별 독립 회원(가입 API로 30명 생성)으로 교정해 해결했다. �
    풀려는 순간 근거 1이 터진다. 두 실측이 맞물려 분리 외의 출구가 없음을 보인다.
 3. **리소스 경합** (실험 1, 미재현): 이 규모에서는 근거가 아니다. 근거로 쓰지 않는다.
 
-## 분리 후 재실측 (after)
-
-정산을 [`settlement-service/`](../../settlement-service/)로 추출한 뒤
-([ADR-009](../adr/ADR-009-settlement-service-extraction.md)) 실험 3을 같은 조건으로 재실행했다.
-결제 부하(30VU) 중 이번에는 정산 서비스를 재시작했다.
-
-| | 모놀리스(before) | 분리 후(after) |
-|---|---|---|
-| 결제 실패 | 270건, 9초 전면 중단 | **0건 / 10,200 요청** |
-| 이벤트 유실 | 해당 없음 | **0건** — 결제 5,072건 = 정산 적재 5,072건 |
-
-정산이 내려가 있는 동안 이벤트는 Kafka에 쌓였고, 재기동한 컨슈머가 커밋된 오프셋부터 이어서
-전부 처리했다. 실험 2의 중복 실행도 해소된다 — 코어에는 이제 정산 스케줄러가 없어, 결제
-스케일아웃이 배치를 복제하지 않는다(정산 서비스 자체의 다중화 한계는 ADR-009의 정직한 한계 참고).
-poison message 실측(재시도 → DLT → 파티션 비정지)도 ADR-009에 기록했다.
-
-## K8s 무중단 롤링 실측 — 4회에 걸친 수렴 과정
-
-kind 클러스터(단일 노드, Docker VM 8GB)에서 Ingress 경유 결제 부하 중
-`kubectl rollout restart deployment pay-core`를 수행했다. 한 번에 성공하지 못했고,
-회차마다 원인을 진단·수정한 과정 자체를 기록한다.
-
-| 회차 | 조건 | 결제 실패율 | 진단 |
-|---|---|---|---|
-| 1 | 30VU, 기본 probe | 20.1% | probe timeout 기본 1s가 CPU 경합에서 오탐 → liveness가 부팅 중 JVM을 kill → 연쇄 재시작. HPA가 이미 3레플리카로 늘린 상태에서 전 레플리카가 거의 동시에 교체 |
-| 2 | 30VU, probe 하드닝¹ | 6.2% | 401은 소멸. 남은 500의 뿌리는 MySQL CPU 기아 — cpu request 250m이 CFS 가중치 경쟁에서 밀려 부팅 파드가 Flyway 연결조차 실패(`Communications link failure` 실측) |
-| 3 | 30VU, MySQL cpu 가중치 1로 | 측정 무효 | MySQL이 1Gi 메모리 limit에서 부하 중 OOMKill 3회 → 환경 붕괴. 노드(8GB VM) 용량 밖의 부하로 판정 |
-| 4 | **10VU(노드 용량 내), 전체 하드닝** | **0.30% — 5xx·연결거부 0건** | 잔여 10건은 전부 409 충돌 응답으로, 첫 파드 교체 시점의 DB 데드락(SQL 1213) 재시도 창과 겹친다. 이중 결제를 막는 멱등 계약의 정상 응답이며 클라이언트 재시도로 회복되는 부류다 |
-
-¹ 하드닝 내역: startupProbe 신설(부팅 전담, 5s×24회 — liveness는 기동 후에만 개입),
-probe `timeoutSeconds` 1→3, 롤링 전략 `maxUnavailable: 0, maxSurge: 1`(용량 유지 교체).
-
-**판정**: 무중단 롤링의 기준을 "5xx·connection refused 0"으로 두면 4회차에서 성립한다.
-graceful shutdown(20s 드레이닝) + preStop(5s) + `terminationGracePeriodSeconds`(30s)의
-부등식과 startupProbe가 핵심이었다.
-
-**용량 발견(정직한 기록)**: 단일 노드 랩톱 클러스터에서 30VU + HPA 스케일업 + 롤링 서지가
-겹치면 노드 자원이 고갈된다. 이는 배포 전략이 아니라 용량의 문제다 — 운영이라면 노드 헤드룸,
-PodDisruptionBudget, 멀티 노드로 해소한다. HPA는 부하 구간에서 pay-core만 1→3으로
-스케일아웃하는 것이 관측됐다(분리의 결실 — 정산·알림 레플리카는 불변).
-
-**미해결(후속 진단)**: 노드 포화 상태(1·3회차)에서 관측된 대량 401의 정확한 경로.
-토큰 폐기 검증(RevocationValidator)은 Redis 장애 시 fail-open으로 확인되어 용의선상에서
-제외했다. 포화 환경에서만 재현되므로 별도 실험으로 분리한다.
-
 ## 재현 방법
 
 ```bash
@@ -202,3 +157,10 @@ DELETE FROM settlement_items WHERE payment_id >= 900000000;
 DELETE FROM settlements WHERE settlement_date BETWEEN '2001-01-01' AND '2001-01-10';
 DELETE FROM settlements WHERE settlement_date = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY);
 ```
+
+---
+
+> **후속 작업의 위치**: 이 실측이 가리킨 분리(정산·알림 추출, Kafka 컨슈머, K8s 배포와
+> 무중단 롤링 수렴)는 [`msa-extraction` 브랜치](../../../../tree/msa-extraction)에서 구현·검증했다.
+> main은 모듈러 모놀리스를 유지한다 — 실측된 한계는 기록하되, 본 프로젝트의 초점은
+> 결제 도메인의 실패·정합성 처리에 있기 때문이다.

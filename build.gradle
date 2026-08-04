@@ -41,11 +41,6 @@ dependencies {
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-mysql'
 
-    // --- 이벤트 계약 (published language) ---
-    // 프로세스 밖 소비자와 공유하는 이벤트 record + 토픽 상수. settings.gradle의
-    // includeBuild('contracts')가 이 선언을 로컬 contracts/ 빌드로 치환한다.
-    implementation 'com.beomsu.pay:pay-contracts:0.1.0'
-
     // --- Spring Modulith ---
     // 모듈 경계 검증 + 이벤트 발행 레지스트리(= Transactional Outbox)
     implementation 'org.springframework.modulith:spring-modulith-starter-core'
