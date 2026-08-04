@@ -1,0 +1,53 @@
+# settlement-service — 정산 배치·집계·지급 (스케줄러 단일 소유자).
+# replicas는 1로 고정한다 — @Scheduled는 컨슈머 그룹처럼 나눠지지 않아 다중화 시
+# 중복 실행이 재발한다(ADR-009 정직한 한계). 다중화가 필요해지면 ShedLock/리더 선출.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: settlement-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: settlement-service }
+  template:
+    metadata:
+      labels: { app: settlement-service }
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: settlement-service
+          image: settlement-service:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8090
+          env:
+            - { name: KAFKA_BOOTSTRAP, value: "kafka:9092" }
+            - { name: SPRING_DATASOURCE_URL, value: "jdbc:mysql://mysql:3306/pay_settlement" }
+            - { name: SPRING_DATASOURCE_USERNAME, value: pay }
+            - { name: SPRING_DATASOURCE_PASSWORD, value: pay }
+            - name: APP_JWT_SECRET
+              valueFrom: { secretKeyRef: { name: pay-jwt, key: APP_JWT_SECRET } }
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8090 }
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8090 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { memory: 768Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: settlement-service
+spec:
+  selector: { app: settlement-service }
+  ports:
+    - port: 8090

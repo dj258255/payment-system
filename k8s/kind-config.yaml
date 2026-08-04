@@ -1,0 +1,17 @@
+# 로컬 kind 클러스터 — Ingress를 호스트로 노출한다.
+# 호스트 8081 → Ingress(80). 8080은 로컬 bootRun과의 충돌을 피해 비워둔다.
+#   kind create cluster --name pay --config k8s/kind-config.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 8081
+        protocol: TCP
