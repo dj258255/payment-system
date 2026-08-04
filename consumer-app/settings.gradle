@@ -1,1 +1,5 @@
 rootProject.name = 'pay-consumer'
+
+// 이벤트 계약(pay-contracts)을 메인 앱과 동일한 composite build 방식으로 조합한다.
+// 토픽명을 발행자와 같은 상수(PayTopics)로 참조하기 위함이다.
+includeBuild '../contracts'

@@ -1,8 +1,8 @@
 package com.beomsu.pay.ledger;
 
 import com.beomsu.pay.dispute.DisputeLostEvent;
-import com.beomsu.pay.payment.PaymentCanceledEvent;
-import com.beomsu.pay.payment.PaymentConfirmedEvent;
+import com.beomsu.paycontracts.PaymentCanceledEvent;
+import com.beomsu.paycontracts.PaymentConfirmedEvent;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -1,6 +1,6 @@
 package com.beomsu.pay.reconciliation;
 
-import com.beomsu.pay.payment.PaymentConfirmedEvent;
+import com.beomsu.paycontracts.PaymentConfirmedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.modulith.ApplicationModuleListener;
 import org.springframework.stereotype.Component;

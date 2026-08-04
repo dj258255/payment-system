@@ -1,7 +1,7 @@
 package com.beomsu.pay.settlement;
 
-import com.beomsu.pay.payment.PaymentCanceledEvent;
-import com.beomsu.pay.payment.PaymentConfirmedEvent;
+import com.beomsu.paycontracts.PaymentCanceledEvent;
+import com.beomsu.paycontracts.PaymentConfirmedEvent;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;

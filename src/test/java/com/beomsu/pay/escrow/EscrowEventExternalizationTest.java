@@ -1,5 +1,7 @@
 package com.beomsu.pay.escrow;
 
+import com.beomsu.paycontracts.EscrowReleasedEvent;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.modulith.events.Externalized;

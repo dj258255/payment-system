@@ -97,6 +97,9 @@ com.beomsu.pay
 ([ADR-002](docs/adr/ADR-002-outbox-event-publication-registry.md)).
 결제 이벤트는 Kafka로도 외부화되며, 별도 프로세스 소비자 데모는 [`consumer-app/`](consumer-app/README.md) 참고
 ([ADR-005](docs/adr/ADR-005-event-externalization-kafka.md)).
+프로세스 밖 소비자와 공유하는 이벤트 계약(record 3종·토픽 상수)은 독립 아티팩트
+[`contracts/`](contracts/)(pay-contracts)로 분리해 composite build로 조합한다
+([ADR-008](docs/adr/ADR-008-event-contracts-artifact.md)).
 
 ## 핵심 설계
 

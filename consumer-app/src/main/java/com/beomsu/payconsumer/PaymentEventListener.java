@@ -1,5 +1,6 @@
 package com.beomsu.payconsumer;
 
+import com.beomsu.paycontracts.PayTopics;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -32,7 +33,7 @@ public class PaymentEventListener {
     private final AtomicLong confirmedCount = new AtomicLong();
     private final AtomicLong canceledCount = new AtomicLong();
 
-    @KafkaListener(topics = "payment.confirmed")
+    @KafkaListener(topics = PayTopics.PAYMENT_CONFIRMED)
     public void onConfirmed(ConsumerRecord<String, String> rec) {
         JsonNode json = parse(rec);
         if (json == null) {
@@ -44,7 +45,7 @@ public class PaymentEventListener {
                 rec.partition(), rec.offset(), total);
     }
 
-    @KafkaListener(topics = "payment.canceled")
+    @KafkaListener(topics = PayTopics.PAYMENT_CANCELED)
     public void onCanceled(ConsumerRecord<String, String> rec) {
         JsonNode json = parse(rec);
         if (json == null) {
