@@ -344,18 +344,32 @@ async function health(){
     $('stHealth').textContent=d.status;}catch{$('health').textContent='health DOWN';$('stHealth').textContent='DOWN'}
 }
 // ── 목록 렌더 ──
+// ── HTML 이스케이프 ──
+// 이 콘솔은 서버 데이터를 innerHTML로 그린다. 그 데이터에 <b>외부 입력이 섞여 있다</b> —
+// 분쟁 사유는 차지백 웹훅에서 오고, 강제취소 사유는 사람이 타이핑한다. 이스케이프 없이
+// 그리면 저장형 XSS가 된다(공격자가 웹훅에 스크립트를 심고, 관리자가 화면을 열면 실행).
+// 관리자 화면이라 더 위험하다 — 그 세션이 가장 강한 권한을 갖는다.
+function esc(v){
+  if(v==null)return '';
+  return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 function fmt(v){if(v==null)return '<span style="color:var(--sub)">null</span>';const s=String(v);
+  const safe=esc(s);
   const map={PAID:'green',DONE:'green',EXECUTED:'green',PAID_OUT:'green',SETTLED:'green',CONFIRMED:'green',ACTIVE:'green',SUCCESS:'green',WON:'green',
     REQUESTED:'amber',PENDING:'amber',CREATED:'amber',OPEN:'amber',IN_GRACE_PERIOD:'amber',ON_HOLD:'amber',SOFT_DECLINE:'amber',UNKNOWN:'amber',
     FAILED:'red',REJECTED:'red',CANCELED:'red',HARD_DECLINE:'red',LOST:'red',BLOCK:'red'};
-  return map[s]?'<span class="badge b-'+map[s]+'">'+s+'</span>':s.length>26?s.slice(0,26)+'…':s}
+  // 상태 배지는 map에 있는 <b>알려진 값</b>일 때만 붙는다(그 값들은 코드가 정한 enum이라 안전).
+  // 그 외 임의 문자열은 반드시 이스케이프한 것을 낸다 — 자르기도 원본에서 하고 그 결과를 이스케이프한다.
+  return map[s] ? '<span class="badge b-'+map[s]+'">'+safe+'</span>'
+                : (s.length>26 ? esc(s.slice(0,26))+'…' : safe);
+}
 function renderList(target,data){
   const el=$(target);if(!el)return;
   if(data==null){el.innerHTML='<div class="hint">(응답 없음)</div>';return}
-  if(!Array.isArray(data)){el.innerHTML='<pre style="white-space:pre-wrap;color:var(--sub);font-size:11.5px">'+JSON.stringify(data,null,1)+'</pre>';return}
+  if(!Array.isArray(data)){el.innerHTML='<pre style="white-space:pre-wrap;color:var(--sub);font-size:11.5px">'+esc(JSON.stringify(data,null,1))+'</pre>';return}
   if(data.length===0){el.innerHTML='<div class="hint">(비어 있음)</div>';return}
   const cols=Object.keys(data[0]).slice(0,6);
-  el.innerHTML='<table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+
+  el.innerHTML='<table><thead><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
     data.map(row=>'<tr>'+cols.map(c=>'<td>'+fmt(row[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
 }
 async function adm(method,path,target){
@@ -377,7 +391,7 @@ async function loadTimeline(){
   const w=$('tlWarn');
   if(t.unavailable && t.unavailable.length){
     w.style.display='block';
-    w.innerHTML='⚠ <b>불완전한 타임라인</b> — '+t.unavailable.join(', ')+' 조회 실패. '
+    w.innerHTML='⚠ <b>불완전한 타임라인</b> — '+esc(t.unavailable.join(', '))+' 조회 실패. '
       +'이 화면만 보고 원인을 확정하지 마세요.';
   } else { w.style.display='none'; }
 
@@ -386,9 +400,9 @@ async function loadTimeline(){
     return;
   }
   const rows=t.entries.map(e=>'<tr>'
-    +'<td style="white-space:nowrap;color:var(--sub)">'+e.at.replace('T',' ').replace('Z','')+'</td>'
-    +'<td><span class="badge '+srcBadge(e.source)+'">'+e.source+'</span></td>'
-    +'<td>'+e.summary+'</td>'
+    +'<td style="white-space:nowrap;color:var(--sub)">'+esc(String(e.at).replace('T',' ').replace('Z',''))+'</td>'
+    +'<td><span class="badge '+srcBadge(e.source)+'">'+esc(e.source)+'</span></td>'
+    +'<td>'+esc(e.summary)+'</td>'
     +'<td style="text-align:right">'+(e.amount==null?'':Number(e.amount).toLocaleString()+'원')+'</td>'
     +'</tr>').join('');
   $('tl').innerHTML='<table><thead><tr><th>시각</th><th>출처</th><th>내용</th><th style="text-align:right">금액</th></tr></thead><tbody>'+rows+'</tbody></table>';
@@ -431,7 +445,7 @@ function renderSettle(data){
   const el=$('settle');if(!el)return;
   if(!rows.length){el.innerHTML='<div class="hint">(정산 없음 — 오늘 정산 실행)</div>';return}
   const cols=['id','settlementDate','grossAmount','feeAmount','feeVatAmount','netAmount','status','payoutDate'];
-  el.innerHTML='<table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+
+  el.innerHTML='<table><thead><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
     rows.map(row=>'<tr>'+cols.map(c=>'<td>'+fmt(row[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
 }
 async function settleList(){
