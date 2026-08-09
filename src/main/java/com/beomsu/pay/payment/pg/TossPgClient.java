@@ -1,5 +1,9 @@
 package com.beomsu.pay.payment.pg;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
@@ -10,33 +14,42 @@ import org.springframework.web.client.RestClient;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 
 /**
  * 실 토스페이먼츠 어댑터.
  *
  * <p>{@link PgClient} 인터페이스만 구현하면 되므로, 기존 시스템에 <b>구현 하나만 추가</b>해 실 PG로
- * 갈아끼운다({@code @Qualifier("pgDelegate")} + {@code @Profile("prod")}). 승인/취소/조회를 토스 API로
- * 호출하고, 응답을 우리 도메인 타입으로 매핑한다. 5xx·네트워크 예외는 던져서 {@link ResilientPgClient}가
- * UNKNOWN(TIMEOUT)으로 변환하게 하고(실패로 단정하지 않음), 4xx 카드 거절만 명시적 FAILED로 매핑한다.
+ * 갈아끼운다({@code @Qualifier("pgDelegate")} + {@code @Profile("prod")}).
+ *
+ * <p><b>핵심 원칙</b>: 응답을 못 받았거나 못 알아들었으면 실패로 단정하지 않는다. HTTP 상태 코드가
+ * 아니라 <b>토스 에러 코드</b>로 판정한다({@link TossErrorCodes}). 400 {@code PROVIDER_ERROR}는
+ * 재시도 대상이고, 400 {@code ALREADY_PROCESSED_PAYMENT}는 이미 승인된 건이라 조회로 확정한다.
+ * 둘 다 실패로 처리하면 고객 돈만 나가는 사고가 된다.
  */
 @Component
 @Qualifier("pgDelegate")
 @Profile("prod")
 public class TossPgClient implements PgClient {
 
+    private static final Logger log = LoggerFactory.getLogger(TossPgClient.class);
+
     private final RestClient restClient;
+    private final ObjectMapper objectMapper;
 
     public TossPgClient(
             @Value("${payment.toss.base-url:https://api.tosspayments.com}") String baseUrl,
-            @Value("${payment.toss.secret-key:}") String secretKey) {
-        // 토스 인증: Basic base64(secretKey + ":")
+            @Value("${payment.toss.secret-key:}") String secretKey,
+            ObjectMapper objectMapper) {
+        // 토스 인증: 시크릿 키를 아이디로 쓰고 비밀번호는 비운다 — Basic base64(secretKey + ":")
         String basic = Base64.getEncoder()
                 .encodeToString((secretKey + ":").getBytes(StandardCharsets.UTF_8));
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
                 .defaultHeader("Authorization", "Basic " + basic)
                 .build();
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -52,23 +65,62 @@ public class TossPgClient implements PgClient {
                             "amount", command.amount()))
                     .retrieve()
                     .body(TossPayment.class);
-            return mapConfirm(resp);
+            return mapConfirm(resp, command.amount());
         } catch (HttpClientErrorException e) {
-            // 4xx — 카드 거절·한도 초과 등 명시적 실패(재시도 무의미)
-            return PgApproveResult.failed("PG 거절: " + e.getStatusCode());
+            TossError err = parseError(e);
+            TossErrorCodes.Kind kind = TossErrorCodes.classify(err.code());
+            log.info("토스 승인 실패 응답 order={} status={} code={} kind={}",
+                    command.orderNo(), e.getStatusCode(), err.code(), kind);
+            return switch (kind) {
+                // 확정 실패 — 카드사가 거절했거나 요청이 틀렸다. 승인이 나가지 않았음이 분명하다
+                case DECLINED, REQUEST_ERROR, NOT_CANCELABLE -> PgApproveResult.failed(err.describe());
+                // 이미 승인된 건 — 실패가 아니다. 추측하지 않고 조회로 확정한다
+                case ALREADY_APPROVED, ALREADY_CANCELED -> confirmByQuery(command, err);
+                // 일시 오류·미등록 코드 — 승인 여부를 모른다. 던져서 UNKNOWN으로 보존한다
+                case RETRYABLE -> throw e;
+            };
         }
         // 5xx·네트워크 예외는 여기서 잡지 않는다 → ResilientPgClient가 UNKNOWN으로 변환
     }
 
+    /**
+     * "이미 처리된 결제" 응답을 받았을 때 실제 상태를 조회로 확정한다.
+     * 조회로도 승인이 확인되지 않으면 원래 예외를 던져 미확정으로 남긴다.
+     */
+    private PgApproveResult confirmByQuery(PgApproveCommand command, TossError err) {
+        PgQueryResult q = query(command.paymentKey());
+        if (q.isApproved()) {
+            return PgApproveResult.success(q.method());
+        }
+        if (q.status() == PgPaymentStatus.CANCELED) {
+            return PgApproveResult.failed("이미 취소된 결제: " + err.describe());
+        }
+        return PgApproveResult.timeout("이미 처리됐다고 하나 조회로 확정되지 않음: " + err.describe());
+    }
+
     @Override
     public PgCancelResult cancel(String paymentKey, long cancelAmount, String reason) {
-        restClient.post()
-                .uri("/v1/payments/{key}/cancel", paymentKey)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("cancelReason", reason, "cancelAmount", cancelAmount))
-                .retrieve()
-                .body(TossPayment.class);
-        return new PgCancelResult("toss-" + paymentKey);
+        try {
+            TossPayment resp = restClient.post()
+                    .uri("/v1/payments/{key}/cancel", paymentKey)
+                    // 같은 결제·같은 금액의 취소는 같은 키를 쓴다 → 재시도해도 두 번 취소되지 않는다
+                    .header("Idempotency-Key", paymentKey + ":" + cancelAmount)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("cancelReason", reason, "cancelAmount", cancelAmount))
+                    .retrieve()
+                    .body(TossPayment.class);
+            return new PgCancelResult(transactionKeyOf(resp, paymentKey));
+        } catch (HttpClientErrorException e) {
+            TossError err = parseError(e);
+            TossErrorCodes.Kind kind = TossErrorCodes.classify(err.code());
+            log.info("토스 취소 실패 응답 paymentKey={} status={} code={} kind={}",
+                    paymentKey, e.getStatusCode(), err.code(), kind);
+            // 이미 취소돼 있으면 우리가 원하던 상태다 — 보상 재시도가 멱등하게 끝난다
+            if (kind == TossErrorCodes.Kind.ALREADY_CANCELED) {
+                return new PgCancelResult("toss-already-canceled-" + paymentKey);
+            }
+            throw e;   // 취소 불가·일시 오류는 위로 던져 보상 재시도·수기 처리로 넘긴다
+        }
     }
 
     @Override
@@ -78,7 +130,8 @@ public class TossPgClient implements PgClient {
                     .uri("/v1/payments/{key}", paymentKey)
                     .retrieve()
                     .body(TossPayment.class);
-            return new PgQueryResult(mapStatus(resp.status()), resp.method());
+            return new PgQueryResult(mapStatus(resp == null ? null : resp.status()),
+                    resp == null ? null : resp.method());
         } catch (HttpClientErrorException.NotFound e) {
             return new PgQueryResult(PgPaymentStatus.NOT_FOUND, null);   // PG에 결제 없음
         }
@@ -86,13 +139,30 @@ public class TossPgClient implements PgClient {
 
     // --- 응답 매핑 (HTTP 없이 단위 테스트 가능하도록 static) ---
 
-    static PgApproveResult mapConfirm(TossPayment resp) {
-        if (resp != null && "DONE".equals(resp.status())) {
-            return PgApproveResult.success(resp.method());
+    /**
+     * 승인 응답을 우리 결과로 옮긴다. <b>금액을 반드시 대조한다</b> — 요청 금액과 승인 금액이 다르면
+     * 성공으로 처리하지 않고 예외를 던져 미확정으로 남긴다(위변조·연동 오류 방어).
+     */
+    static PgApproveResult mapConfirm(TossPayment resp, long expectedAmount) {
+        if (resp == null) {
+            return PgApproveResult.timeout("승인 응답이 비어 있음");
         }
-        return PgApproveResult.failed("승인되지 않음: " + (resp == null ? "null" : resp.status()));
+        if (!"DONE".equals(resp.status())) {
+            return PgApproveResult.failed("승인되지 않음: " + resp.status());
+        }
+        if (resp.totalAmount() != null && resp.totalAmount() != expectedAmount) {
+            throw new IllegalStateException(
+                    "승인 금액 불일치: 요청 " + expectedAmount + ", 응답 " + resp.totalAmount());
+        }
+        return PgApproveResult.success(resp.method());
     }
 
+    /**
+     * 토스 결제 상태를 우리 상태로 옮긴다.
+     *
+     * <p>{@code READY}·{@code IN_PROGRESS}를 "결제 없음"으로 뭉개면 복구 배치가 진행 중인 결제를
+     * 실패로 확정해 버린다. 진행 중은 진행 중으로 남겨 다음 주기에 다시 묻는다.
+     */
     static PgPaymentStatus mapStatus(String tossStatus) {
         if (tossStatus == null) {
             return PgPaymentStatus.NOT_FOUND;
@@ -100,11 +170,44 @@ public class TossPgClient implements PgClient {
         return switch (tossStatus) {
             case "DONE" -> PgPaymentStatus.APPROVED;
             case "CANCELED", "PARTIAL_CANCELED" -> PgPaymentStatus.CANCELED;
-            default -> PgPaymentStatus.NOT_FOUND;   // READY/IN_PROGRESS/ABORTED/EXPIRED 등
+            case "READY", "IN_PROGRESS", "WAITING_FOR_DEPOSIT" -> PgPaymentStatus.IN_PROGRESS;
+            case "ABORTED", "EXPIRED" -> PgPaymentStatus.NOT_FOUND;   // 승인 실패가 확정된 상태
+            default -> PgPaymentStatus.IN_PROGRESS;                   // 모르는 상태는 확정하지 않는다
         };
     }
 
-    /** 토스 Payment 응답의 최소 형태. */
-    record TossPayment(String status, String method) {
+    static String transactionKeyOf(TossPayment resp, String paymentKey) {
+        if (resp != null && resp.cancels() != null && !resp.cancels().isEmpty()) {
+            String key = resp.cancels().get(resp.cancels().size() - 1).transactionKey();
+            if (key != null) {
+                return key;
+            }
+        }
+        return "toss-" + paymentKey;
+    }
+
+    TossError parseError(HttpClientErrorException e) {
+        try {
+            return objectMapper.readValue(e.getResponseBodyAsString(), TossError.class);
+        } catch (Exception ignore) {
+            return new TossError(null, e.getStatusText());   // 본문을 못 읽으면 코드 없음 = 미확정
+        }
+    }
+
+    /** 토스 에러 응답 {@code {"code": "...", "message": "..."}}. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record TossError(String code, String message) {
+        String describe() {
+            return (code == null ? "UNKNOWN" : code) + ": " + (message == null ? "" : message);
+        }
+    }
+
+    /** 토스 Payment 응답 중 우리가 쓰는 필드. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record TossPayment(String status, String method, Long totalAmount, Long balanceAmount,
+                       List<Cancel> cancels) {
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        record Cancel(String transactionKey, Long cancelAmount) {
+        }
     }
 }
