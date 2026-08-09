@@ -27,6 +27,7 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final PgClient pgClient;
+    private final PaymentCancelTx cancelTx;
     private final ApplicationEventPublisher events;
     private final MeterRegistry meterRegistry;
 
@@ -147,36 +148,32 @@ public class PaymentService {
         return Optional.of(new StuckPaymentInfo(payment.getId(), payment.getAmount(), outcome));
     }
 
-    private static final List<PaymentStatus> CANCELABLE =
-            List.of(PaymentStatus.DONE, PaymentStatus.PARTIAL_CANCELED);
-
     /**
-     * 결제 취소(전액/부분). PG 취소 호출이 실패하면 트랜잭션이 롤백된다(Phase 2에서 보상으로 강화).
+     * 결제 취소(전액/부분) — 취소 사가의 오케스트레이터.
+     *
+     * <p>이 메서드에는 {@code @Transactional}이 없다. 대상 확정(tx) → <b>PG 취소(tx 밖)</b> →
+     * 결과 반영(tx) 3단계로 나눠, 느린 PG가 DB 커넥션을 붙잡지 않게 한다({@link PaymentCancelTx}).
      */
-    @Transactional
     public void cancel(Long paymentId, Money cancelAmount, String reason) {
-        Payment payment = paymentRepository.findById(paymentId)
-                .orElseThrow(() -> new PaymentException("PAYMENT_NOT_FOUND",
-                        "결제를 찾을 수 없습니다: " + paymentId));
-        cancelPayment(payment, cancelAmount, reason);
+        PaymentCancelTx.CancelTarget target = cancelTx.resolveById(paymentId, cancelAmount);
+        pgClient.cancel(target.paymentKey(), cancelAmount.amount(), reason);
+        cancelTx.apply(target.paymentKey(), cancelAmount, reason);
     }
 
     /**
      * 주문번호로 성공한 결제를 찾아 취소한다. order 모듈의 취소 오케스트레이션이 호출한다.
      * 전액 포인트 결제(카드 결제 없음)면 취소할 결제가 없으므로 호출되지 않는다.
      */
-    @Transactional
     public void cancelByOrderNo(String orderNo, Money cancelAmount, String reason) {
-        Payment payment = paymentRepository.findFirstByOrderNoAndStatusIn(orderNo, CANCELABLE)
-                .orElseThrow(() -> new PaymentException("PAYMENT_NOT_FOUND",
-                        "취소할 결제를 찾을 수 없습니다: " + orderNo));
-        cancelPayment(payment, cancelAmount, reason);
+        PaymentCancelTx.CancelTarget target = cancelTx.resolveByOrderNo(orderNo, cancelAmount);
+        pgClient.cancel(target.paymentKey(), cancelAmount.amount(), reason);
+        cancelTx.apply(target.paymentKey(), cancelAmount, reason);
     }
 
     /** 주문의 카드 취소 가능 잔액. 성공한 결제가 없으면(전액 포인트 등) 0. */
     @Transactional(readOnly = true)
     public long cardBalance(String orderNo) {
-        return paymentRepository.findFirstByOrderNoAndStatusIn(orderNo, CANCELABLE)
+        return paymentRepository.findFirstByOrderNoAndStatusIn(orderNo, PaymentCancelTx.CANCELABLE)
                 .map(Payment::getBalanceAmount)
                 .orElse(0L);
     }
@@ -245,18 +242,4 @@ public class PaymentService {
                 .map(p -> p.getStatus().name());
     }
 
-    private void cancelPayment(Payment payment, Money cancelAmount, String reason) {
-        payment.cancel(cancelAmount, TriggeredBy.USER, reason);
-        pgClient.cancel(payment.getPaymentKey(), cancelAmount.amount(), reason);
-
-        // 취소 전이를 이벤트 발행 전에 flush로 확정한다. (이 엔티티는 트랜잭션 안에서 로드돼 managed
-        // 상태라 커밋 시 dirty-check로도 flush되지만, 발행 순서상 상태를 먼저 못박아 두려 saveAndFlush 한다.)
-        paymentRepository.saveAndFlush(payment);
-
-        boolean fullyCanceled = payment.getStatus() == PaymentStatus.CANCELED;
-        // 취소 후 잔액(절대값)을 실어 정산이 멱등하게 반영하게 한다(델타 차감이 아니라 절대 잔액 세팅).
-        events.publishEvent(new PaymentCanceledEvent(
-                payment.getOrderNo(), payment.getId(), cancelAmount.amount(),
-                payment.getBalanceAmount(), fullyCanceled));
-    }
 }

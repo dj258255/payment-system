@@ -32,8 +32,10 @@ class CancelServiceTest {
         pointService = mock(PointService.class);
         walletService = mock(WalletService.class);
         stockDeductionService = mock(StockDeductionService.class);
-        service = new CancelService(orderRepository, paymentService, pointService,
+        // 취소 사가의 트랜잭션 경계 빈을 실제로 조립해 넣는다 — 오케스트레이터와 각 단계를 함께 검증한다.
+        CancelTx cancelTx = new CancelTx(orderRepository, paymentService, pointService,
                 walletService, stockDeductionService);
+        service = new CancelService(cancelTx, paymentService);
     }
 
     /** userId 1 소유의 10,000 x 2 = 20,000 짜리 PAID 주문. */
