@@ -119,7 +119,13 @@ public class TossPgClient implements PgClient {
             if (kind == TossErrorCodes.Kind.ALREADY_CANCELED) {
                 return new PgCancelResult("toss-already-canceled-" + paymentKey);
             }
-            throw e;   // 취소 불가·일시 오류는 위로 던져 보상 재시도·수기 처리로 넘긴다
+            // 다시 보내도 답이 같은 실패는 재시도와 구분한다. 결제가 없거나(NOT_FOUND_PAYMENT)
+            // 환불 기간이 지난 건(EXCEED_MAX_REFUND_DUE) 몇 번을 시도해도 결과가 같아서,
+            // 재시도 예산을 태우는 대신 곧바로 운영자에게 넘긴다.
+            if (kind == TossErrorCodes.Kind.NOT_CANCELABLE || kind == TossErrorCodes.Kind.REQUEST_ERROR) {
+                throw new PgCancelNotRetryableException(err.code(), err.message());
+            }
+            throw e;   // 일시 오류는 위로 던져 보상 재시도로 넘긴다
         }
     }
 

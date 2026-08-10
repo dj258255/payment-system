@@ -46,7 +46,13 @@ public class CompensationExecutor {
             task.markDone();
             meterRegistry.counter("compensation.processed", "outcome", "success").increment();
         } catch (PaymentException e) {
-            if ("PAYMENT_NOT_FOUND".equals(e.code())) {
+            if ("CANCEL_NOT_RETRYABLE".equals(e.code())) {
+                // PG가 "다시 보내도 같다"고 확정한 경우 — 재시도 예산을 태우지 않고 즉시 운영자에게
+                // 넘긴다. 이길 수 없는 요청이 재시도를 다 쓰는 동안 진짜 봐야 할 건이 알림에 묻힌다.
+                task.markNotRetryable(e.getMessage());
+                meterRegistry.counter("compensation.processed", "outcome", "not_retryable").increment();
+                meterRegistry.counter("compensation.exhausted").increment();
+            } else if ("PAYMENT_NOT_FOUND".equals(e.code())) {
                 // 취소할 결제가 없다 = 이미 취소됐거나 애초에 없다 → 보상 완료로 간주(무한 재시도 방지).
                 task.markDone();
                 meterRegistry.counter("compensation.processed", "outcome", "already").increment();
