@@ -3,6 +3,7 @@ package com.beomsu.pay.payment;
 import com.beomsu.pay.payment.pg.PgApproveCommand;
 import com.beomsu.pay.payment.pg.PgApproveResult;
 import com.beomsu.pay.payment.pg.PgCancelCommand;
+import com.beomsu.pay.payment.pg.PgCancelResult;
 import com.beomsu.pay.payment.pg.PgCancelNotRetryableException;
 import com.beomsu.pay.payment.pg.PgClient;
 import com.beomsu.pay.payment.pg.PgQueryResult;
@@ -158,9 +159,10 @@ public class PaymentService {
      */
     public void cancel(Long paymentId, Money cancelAmount, String reason) {
         PaymentCancelTx.CancelTarget target = cancelTx.resolveById(paymentId, cancelAmount);
-        pgClient.cancel(new PgCancelCommand(
+        PgCancelResult result = pgClient.cancel(new PgCancelCommand(
                 target.paymentKey(), cancelAmount.amount(), reason, target.cancelSeq()));
-        cancelTx.apply(target.paymentKey(), target.cancelSeq(), cancelAmount, reason);
+        cancelTx.apply(target.paymentKey(), target.cancelSeq(), cancelAmount, reason,
+                result.transactionKey());
     }
 
     /**
@@ -169,15 +171,17 @@ public class PaymentService {
      */
     public void cancelByOrderNo(String orderNo, Money cancelAmount, String reason) {
         PaymentCancelTx.CancelTarget target = cancelTx.resolveByOrderNo(orderNo, cancelAmount);
+        PgCancelResult result;
         try {
-            pgClient.cancel(new PgCancelCommand(
+            result = pgClient.cancel(new PgCancelCommand(
                     target.paymentKey(), cancelAmount.amount(), reason, target.cancelSeq()));
         } catch (PgCancelNotRetryableException e) {
             // PG 내부 예외를 모듈 밖으로 새게 두지 않는다. 호출자(보상 실행기)는 "재시도해도 같다"는
             // 사실만 알면 되므로 payment 모듈의 코드로 번역해 넘긴다.
             throw new PaymentException("CANCEL_NOT_RETRYABLE", e.getMessage());
         }
-        cancelTx.apply(target.paymentKey(), target.cancelSeq(), cancelAmount, reason);
+        cancelTx.apply(target.paymentKey(), target.cancelSeq(), cancelAmount, reason,
+                result.transactionKey());
     }
 
     /** 주문의 카드 취소 가능 잔액. 성공한 결제가 없으면(전액 포인트 등) 0. */

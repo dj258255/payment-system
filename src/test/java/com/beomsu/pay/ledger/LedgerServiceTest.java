@@ -2,6 +2,7 @@ package com.beomsu.pay.ledger;
 
 import com.beomsu.pay.dispute.DisputeLostEvent;
 import com.beomsu.pay.payment.PaymentCanceledEvent;
+import com.beomsu.pay.settlement.SettlementPaidOutEvent;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -93,6 +94,28 @@ class LedgerServiceTest {
         LedgerEntry sales = tx.getEntries().stream()
                 .filter(e -> e.getAccount() == AccountType.SALES).findFirst().orElseThrow();
         assertThat(sales.getDirection()).isEqualTo(EntryDirection.DEBIT);
+    }
+
+    @Test
+    @DisplayName("정산 지급 확정: 보통예금+수수료(차변) ↔ PG미수금(대변) — 미수금이 이때 회수된다")
+    void recordsReceivableCollectionOnPayout() {
+        // 이 분개가 없으면 PG 미수금은 승인으로 늘기만 하고 줄지 않아, 계정 잔액이 실제 채권과
+        // 영원히 어긋난다. gross 100,000 = net 97,030 + 수수료·부가세 2,970.
+        when(repository.existsByTxTypeAndSourceTypeAndSourceIdAndSourceSeq(
+                "SETTLEMENT_PAID_OUT", "SETTLEMENT", 7L, 0)).thenReturn(false);
+
+        service.recordSettlementPaidOut(new SettlementPaidOutEvent(7L, 100_000, 2_970, 97_030));
+
+        ArgumentCaptor<LedgerTransaction> captor = ArgumentCaptor.forClass(LedgerTransaction.class);
+        verify(repository).save(captor.capture());
+        LedgerTransaction tx = captor.getValue();
+        // 차대가 맞는다는 것은 LedgerTransaction.of가 이미 강제한다(불균형이면 생성 자체가 실패).
+        // 여기서 확인할 것은 회수 금액이 총액이라는 점이다 — 실입금액만 대변에 적으면 수수료만큼
+        // 미수금이 영영 남는다.
+        assertThat(tx.getEntries())
+                .filteredOn(e -> e.getAccount() == AccountType.PG_RECEIVABLE)
+                .singleElement()
+                .satisfies(e -> assertThat(e.getAmount()).isEqualTo(100_000));
     }
 
     @Test

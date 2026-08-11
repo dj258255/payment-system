@@ -6,6 +6,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 
 /**
  * 내부 기록 — 대사에서 "이만큼 들어왔어야 한다"는 결제 기대치.
@@ -31,18 +33,31 @@ public class InternalRecord {
     @Column(nullable = false)
     private long amount;
 
+    /**
+     * 거래일(KST). <b>대사를 이 날짜 단위로 자른다.</b>
+     *
+     * <p>없으면 대사가 내부 기록 전체를 매번 비교하게 되고, 어제치 정산 파일 하나를 올릴 때마다
+     * 그제 이전 전건이 "PG에 없음"으로 예외 큐에 쏟아진다. 큐가 무의미해지면 대사 자체가 무의미해진다.
+     */
+    @Column(nullable = false)
+    private LocalDate tradeDate;
+
     @Column(nullable = false)
     private Instant recordedAt;
 
-    private InternalRecord(String orderNo, long amount) {
+    /** 대사 기준 타임존. 국내 PG 정산 파일은 KST 영업일로 끊긴다. */
+    static final ZoneId TRADE_ZONE = ZoneId.of("Asia/Seoul");
+
+    private InternalRecord(String orderNo, long amount, LocalDate tradeDate) {
         this.orderNo = orderNo;
         this.amount = amount;
+        this.tradeDate = tradeDate;
         this.recordedAt = Instant.now();
     }
 
-    /** 결제 승인 기대치를 내부 기록으로 만든다. */
-    public static InternalRecord of(String orderNo, long amount) {
-        return new InternalRecord(orderNo, amount);
+    /** 결제 승인 기대치를 내부 기록으로 만든다. 거래일은 승인 시각의 KST 날짜다. */
+    public static InternalRecord of(String orderNo, long amount, Instant approvedAt) {
+        return new InternalRecord(orderNo, amount, LocalDate.ofInstant(approvedAt, TRADE_ZONE));
     }
 
     /**

@@ -91,10 +91,17 @@ class TossPgClientMappingTest {
     void providerErrorIsRetryable() {
         assertThat(TossErrorCodes.classify("PROVIDER_ERROR"))
                 .isEqualTo(TossErrorCodes.Kind.RETRYABLE);
-        assertThat(TossErrorCodes.classify("NOT_AVAILABLE_BANK"))
-                .isEqualTo(TossErrorCodes.Kind.RETRYABLE);
         assertThat(TossErrorCodes.classify("FAILED_PAYMENT_INTERNAL_SYSTEM_PROCESSING"))
                 .isEqualTo(TossErrorCodes.Kind.RETRYABLE);
+    }
+
+    @Test
+    @DisplayName("은행 점검 시간은 확정 실패다 — 미확정으로 두면 사용자가 기다린 뒤 실패를 통보받는다")
+    void bankNotAvailableIsDeclinedNotUnknown() {
+        // 은행이 서비스 시간이 아니면 승인이 나가지 않았음이 확실하다. 미확정 큐에 넣을 이유가 없고,
+        // 넣으면 202를 받은 사용자가 복구 주기만큼 기다린 뒤에야 실패를 안다.
+        assertThat(TossErrorCodes.classify("NOT_AVAILABLE_BANK"))
+                .isEqualTo(TossErrorCodes.Kind.DECLINED);
     }
 
     @Test

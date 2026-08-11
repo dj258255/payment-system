@@ -77,7 +77,8 @@ class PaymentCancelTx {
      * 깎인다. 이 결제에 N번째 취소가 이미 반영됐는지를 직접 물으면 전액·부분이 같은 규칙으로 닫힌다.
      */
     @Transactional
-    public void apply(String paymentKey, int cancelSeq, Money cancelAmount, String reason) {
+    public void apply(String paymentKey, int cancelSeq, Money cancelAmount, String reason,
+                      String pgTransactionKey) {
         Payment payment = paymentRepository.findByPaymentKey(paymentKey)
                 .orElseThrow(() -> new PaymentException("PAYMENT_NOT_FOUND",
                         "결제를 찾을 수 없습니다: " + paymentKey));
@@ -87,7 +88,12 @@ class PaymentCancelTx {
         if (!CANCELABLE.contains(payment.getStatus())) {
             return; // 이미 전액 취소 등으로 확정됨
         }
-        payment.cancel(cancelAmount, TriggeredBy.USER, reason);
+        // PG 취소 거래키를 이력에 남긴다. 취소 대사는 이 키로만 PG 기록과 조인할 수 있는데,
+        // 여기서 버리면 나중에 "이 취소가 PG의 어느 거래였나"를 되짚을 방법이 사라진다.
+        String auditReason = pgTransactionKey == null || pgTransactionKey.isBlank()
+                ? reason
+                : reason + " · PG거래키=" + pgTransactionKey;
+        payment.cancel(cancelAmount, TriggeredBy.USER, auditReason);
 
         // 취소 전이를 이벤트 발행 전에 flush로 확정한다. (managed 엔티티라 커밋 시 dirty-check로도
         // flush되지만, 발행 순서상 상태를 먼저 못박아 둔다.)

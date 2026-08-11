@@ -26,12 +26,14 @@ final class TossErrorCodes {
             "REJECT_ACCOUNT_PAYMENT",           // 계좌 잔액 부족
             "INVALID_CARD_EXPIRATION",
             "INVALID_CARD_NUMBER",
-            "EXCEED_MAX_CARD_INSTALLMENT_PLAN");
+            "EXCEED_MAX_CARD_INSTALLMENT_PLAN",
+            // 은행 점검 시간이면 승인이 나가지 않았음이 확실하다. 미확정 큐에 넣으면 사용자는
+            // 202를 받고 기다린 뒤 실패를 통보받는다. 즉시 실패로 알리고 다른 수단을 권하는 게 맞다.
+            "NOT_AVAILABLE_BANK");
 
     /** 일시적 오류. 승인이 됐는지 안 됐는지 모른다 → 실패로 단정하지 않고 미확정으로 남긴다. */
     private static final Set<String> RETRYABLE = Set.of(
             "PROVIDER_ERROR",                              // 400인데 "잠시 후 다시 시도"
-            "NOT_AVAILABLE_BANK",                          // 은행 서비스 시간 아님
             "FAILED_PAYMENT_INTERNAL_SYSTEM_PROCESSING",   // 500
             "UNKNOWN_PAYMENT_ERROR",                       // 500
             "FAILED_INTERNAL_SYSTEM_PROCESSING",

@@ -30,7 +30,7 @@ class SettlementAdminServiceTest {
     void setUp() {
         repository = mock(SettlementRepository.class);
         settlementService = mock(SettlementService.class);
-        service = new SettlementAdminService(repository, settlementService);
+        service = new SettlementAdminService(repository, settlementService, mock(org.springframework.context.ApplicationEventPublisher.class));
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.beomsu.pay.ledger;
 import com.beomsu.pay.dispute.DisputeLostEvent;
 import com.beomsu.pay.payment.PaymentCanceledEvent;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
+import com.beomsu.pay.settlement.SettlementPaidOutEvent;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +26,7 @@ public class LedgerService {
     private static final Logger log = LoggerFactory.getLogger(LedgerService.class);
     private static final String SOURCE_PAYMENT = "PAYMENT";
     private static final String SOURCE_DISPUTE = "DISPUTE";
+    private static final String SOURCE_SETTLEMENT = "SETTLEMENT";
 
     private final LedgerTransactionRepository repository;
 
@@ -95,6 +97,36 @@ public class LedgerService {
             // 동시 이벤트 2건이 existsBy를 모두 통과한 레이스 — (txType,sourceType,sourceId) 유니크가
             // 두 번째 insert를 막는다. 이미 역분개됐으므로 멱등 흡수한다(예외를 삼켜 리스너 실패·재시도 방지).
             log.info("분쟁 패소 역분개 중복(멱등 흡수) disputeId={}", event.disputeId());
+        }
+    }
+
+    /**
+     * PG 지급 확정 → <b>미수금 회수</b> 분개. (차)보통예금 + 지급수수료 / (대)PG미수금.
+     *
+     * <p>PG는 총액에서 수수료와 그 부가세를 뗀 금액을 보낸다. 그래서 회수되는 미수금(gross)은
+     * 실제 입금액(net)과 우리가 부담한 수수료(feeTotal)의 합으로 갈라 적는다. 이 셋이 맞아야
+     * 차대가 균형을 이루고, <b>미수금 = 승인합 − 취소합 − 입금합</b>이라는 검증식이 선다.
+     *
+     * <p>멱등: (SETTLEMENT_PAID_OUT, SETTLEMENT, settlementId) 유니크.
+     */
+    @Transactional
+    public void recordSettlementPaidOut(SettlementPaidOutEvent event) {
+        if (repository.existsByTxTypeAndSourceTypeAndSourceIdAndSourceSeq(
+                "SETTLEMENT_PAID_OUT", SOURCE_SETTLEMENT, event.settlementId(), 0)) {
+            return; // 멱등: 이미 회수 분개함
+        }
+        LedgerTransaction tx = LedgerTransaction.of(
+                "SETTLEMENT_PAID_OUT", SOURCE_SETTLEMENT, event.settlementId(),
+                "정산 지급 확정 · PG 미수금 회수",
+                List.of(
+                        LedgerEntry.debit(AccountType.CASH, event.netAmount()),
+                        LedgerEntry.debit(AccountType.PG_FEE, event.feeTotal()),
+                        LedgerEntry.credit(AccountType.PG_RECEIVABLE, event.grossAmount())
+                ));
+        try {
+            repository.save(tx);
+        } catch (DataIntegrityViolationException e) {
+            log.info("정산 지급 분개 중복(멱등 흡수) settlementId={}", event.settlementId());
         }
     }
 

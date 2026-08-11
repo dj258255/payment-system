@@ -107,11 +107,17 @@ public class Settlement {
      *
      * <p>멱등: 이미 PAID_OUT이면 무시한다(중복 확정 방어). createdAt과 동일하게 {@code Instant.now()}로
      * 시각을 스냅샷한다.
+     *
+     * @return 이번 호출에서 실제로 전이했으면 true. 호출자가 이 값으로 지급 이벤트 발행 여부를
+     *         정한다 — 이미 지급된 건에 이벤트를 다시 쏘면 원장이 같은 회수를 두 번 볼 뻔한다
+     *         (원장도 멱등하지만, 일어나지 않은 사건을 알리지 않는 것이 맞다).
      */
-    public void markPaidOut() {
+    public boolean markPaidOut() {
         if (this.status == SettlementStatus.CREATED) {
             this.status = SettlementStatus.PAID_OUT;
             this.paidOutAt = Instant.now();
+            return true;
         }
+        return false;
     }
 }

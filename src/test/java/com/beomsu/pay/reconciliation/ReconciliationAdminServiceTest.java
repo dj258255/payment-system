@@ -3,6 +3,7 @@ package com.beomsu.pay.reconciliation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import java.time.LocalDate;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -45,13 +46,13 @@ class ReconciliationAdminServiceTest {
         when(parser.parse(any())).thenReturn(new PgSettlementCsvParser.ParseResult(
                 List.of(new ExternalRecord("ord-1", 10_000), new ExternalRecord("ord-2", 20_000)), 1));
         // 대사 엔진은 임의의 4분류 결과 목록을 돌려준다(엔진 로직은 여기서 검증 대상 아님).
-        when(reconciliationService.reconcile(anyList())).thenReturn(List.of(
-                ReconciliationResult.matched("ord-1", 10_000),
-                ReconciliationResult.amountMismatch("ord-2", 20_000, 19_000),
-                ReconciliationResult.internalOnly("ord-3", 5_000),
-                ReconciliationResult.externalOnly("ord-4", 7_000)));
+        when(reconciliationService.reconcile(any(LocalDate.class), anyList())).thenReturn(List.of(
+                ReconciliationResult.matched(LocalDate.of(2026, 7, 5), "ord-1", 10_000),
+                ReconciliationResult.amountMismatch(LocalDate.of(2026, 7, 5), "ord-2", 20_000, 19_000),
+                ReconciliationResult.internalOnly(LocalDate.of(2026, 7, 5), "ord-3", 5_000),
+                ReconciliationResult.externalOnly(LocalDate.of(2026, 7, 5), "ord-4", 7_000)));
 
-        ReconRunSummary summary = service.run(in);
+        ReconRunSummary summary = service.run(LocalDate.of(2026, 7, 5), in);
 
         assertThat(summary.external()).isEqualTo(2);   // 파싱된 외부 기록 수
         assertThat(summary.skipped()).isEqualTo(1);
@@ -63,13 +64,13 @@ class ReconciliationAdminServiceTest {
         assertThat(summary.pending()).isEqualTo(3);
 
         verify(parser).parse(in);
-        verify(reconciliationService).reconcile(anyList());
+        verify(reconciliationService).reconcile(any(LocalDate.class), anyList());
     }
 
     @Test
     @DisplayName("listMismatches: PENDING 예외 큐만 조회해 페이지 뷰로 매핑한다")
     void listMismatchesMapsPendingToView() {
-        ReconciliationResult mismatch = ReconciliationResult.amountMismatch("ord-1", 10_000, 9_000);
+        ReconciliationResult mismatch = ReconciliationResult.amountMismatch(LocalDate.of(2026, 7, 5), "ord-1", 10_000, 9_000);
         Pageable pageable = PageRequest.of(0, 20);
         when(repository.findByStatus(eq(ReconStatus.PENDING), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(mismatch), pageable, 1));
@@ -90,7 +91,7 @@ class ReconciliationAdminServiceTest {
     @Test
     @DisplayName("resolve: PENDING을 MANUALLY_RESOLVED로 전이하고 saveAndFlush로 명시 영속한다")
     void resolveTransitionsAndPersists() {
-        ReconciliationResult mismatch = ReconciliationResult.amountMismatch("ord-1", 10_000, 9_000);
+        ReconciliationResult mismatch = ReconciliationResult.amountMismatch(LocalDate.of(2026, 7, 5), "ord-1", 10_000, 9_000);
         when(repository.findById(7L)).thenReturn(Optional.of(mismatch));
         when(repository.saveAndFlush(mismatch)).thenReturn(mismatch);
 
@@ -105,7 +106,7 @@ class ReconciliationAdminServiceTest {
     @Test
     @DisplayName("resolve: 이미 확정된(PENDING 아님) 건은 예외 — saveAndFlush도 하지 않는다")
     void resolveRejectsNonPending() {
-        ReconciliationResult matched = ReconciliationResult.matched("ord-2", 10_000); // AUTO_RESOLVED
+        ReconciliationResult matched = ReconciliationResult.matched(LocalDate.of(2026, 7, 5), "ord-2", 10_000); // AUTO_RESOLVED
         when(repository.findById(8L)).thenReturn(Optional.of(matched));
 
         assertThatThrownBy(() -> service.resolve(8L))
