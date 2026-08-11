@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,6 +35,15 @@ import java.util.Optional;
  */
 @Service
 public class SettlementService {
+
+    /**
+     * 정산 기준 타임존. 국내 가맹점 정산은 예외 없이 <b>KST 영업일</b> 기준이다.
+     *
+     * <p>UTC로 잡으면 KST 00:00~09:00에 구매확정된 건이 <b>전날</b>로 스탬프된다. 그 날짜의 배치가
+     * 이미 지나갔다면 그 건은 어느 배치에도 다시 잡히지 않아 영구 미정산이 된다 — 집계 기준일을
+     * 릴리스일로 재스탬프해 막았던 것과 정확히 같은 실패 모드라, 타임존도 도메인 상수로 못 박는다.
+     */
+    public static final ZoneId SETTLEMENT_ZONE = ZoneId.of("Asia/Seoul");
 
     private static final Logger log = LoggerFactory.getLogger(SettlementService.class);
 
@@ -63,7 +72,7 @@ public class SettlementService {
     /**
      * 결제 승인 이벤트를 정산 항목으로 적재한다 — 상태는 PENDING_CONFIRMATION(구매확정 대기).
      *
-     * <p>멱등: 같은 paymentId가 이미 적재됐으면 아무 것도 하지 않는다. 승인 시각은 UTC 기준
+     * <p>멱등: 같은 paymentId가 이미 적재됐으면 아무 것도 하지 않는다. 승인 시각은 KST 기준
      * 날짜({@code confirmedDate})로 스냅샷해, 일 단위 배치가 이 날짜로 집계한다.
      */
     @Transactional
@@ -73,7 +82,7 @@ public class SettlementService {
         }
         // 적재 시점의 confirmedDate는 승인일 placeholder다(PENDING은 집계 대상이 아님). 실제 집계
         // 기준일은 구매확정(릴리스) 시 confirmSettlement가 릴리스일로 재스탬프한다.
-        LocalDate approvalDate = LocalDate.ofInstant(event.approvedAt(), ZoneOffset.UTC);
+        LocalDate approvalDate = LocalDate.ofInstant(event.approvedAt(), SETTLEMENT_ZONE);
         // 최초 INSERT는 save로 충분(신규 영속 → flush는 트랜잭션 커밋이 처리).
         itemRepository.save(SettlementItem.of(
                 event.paymentId(), event.orderNo(), event.amount(), approvalDate));

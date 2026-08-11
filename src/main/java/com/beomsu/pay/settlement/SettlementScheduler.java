@@ -8,7 +8,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+
 
 /**
  * 일 단위 정산 배치 스케줄러.
@@ -33,7 +33,7 @@ class SettlementScheduler {
 
     @Scheduled(fixedDelayString = "${app.settlement.interval-ms:86400000}")
     public void run() {
-        LocalDate date = LocalDate.now(ZoneOffset.UTC).minusDays(1);
+        LocalDate date = LocalDate.now(SettlementService.SETTLEMENT_ZONE).minusDays(1);
         try {
             Settlement settlement = settlementService.settle(date);
             if (settlement != null) {
