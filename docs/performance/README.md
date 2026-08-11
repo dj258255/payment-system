@@ -23,7 +23,7 @@ MySQL 8.4·InnoDB)가 낸다. 인메모리는 왕복이 사실상 공짜라 재�
 
 재현:
 ```bash
-JAVA_HOME=<jdk21> ./gradlew test --tests "com.beomsu.pay.order.StockLockComparisonTest"
+JAVA_HOME=<jdk21> ./gradlew test --tests "com.beomsu.pay.order.StockLockComparisonMySqlTest"
 ```
 
 ## 2. 엔드투엔드 부하테스트 (k6)
@@ -62,8 +62,9 @@ Actuator + Micrometer → Prometheus → Grafana. (Phase 6 참조)
 
 ## 메모
 
-- 락 비교는 H2 인메모리로 결정적으로 실측했다. 실 DB(MySQL)에서의 절대 수치는 다르지만, **전략 간 상대 우열**(조건부 < 낙관적 < 비관적)은 동일하게 재현된다.
-- 전체 앱 컨텍스트 + Testcontainers 기반 동시성 테스트도 시도했으나, 부팅 비용이 커 CI 기본 스위트에서는 제외하고 H2 경량 비교로 대체했다.
+- 락 비교는 처음 H2 인메모리로 쟀다가 실 MySQL 8.4(Testcontainers)로 다시 쟀고, **전략 간 상대 우열이 뒤집혔다**. 인메모리에서는 낙관적(17ms)이 비관적(32ms)보다 빨랐지만 실 InnoDB에서는 비관적 75ms < 낙관적 151ms다. 낙관적 락이 충돌마다 하는 조회·갱신 왕복이 인메모리에서는 거의 공짜였기 때문이다. 위 표는 실 MySQL 수치다.
+- H2 비교(`StockLockComparisonTest`)는 CI에서 결정적으로 도는 경량 스위트로 남겨 뒀다. 실 MySQL 비교(`StockLockComparisonMySqlTest`)는 Docker가 필요해 CI 기본 스위트에서는 제외한다.
+- 락 비교는 raw JDBC로 SQL 패턴만 격리해 잰다. 서비스 계층(JPA·트랜잭션) 포함 수치가 아니라 **전략 간 상대 비교**다.
 
 ## 4. 확장 후 엔드투엔드 재측정 (인증 포함)
 

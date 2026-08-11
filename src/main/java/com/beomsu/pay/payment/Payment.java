@@ -54,6 +54,16 @@ public class Payment {
     @Column(length = 200)
     private String unknownReason;
 
+    /**
+     * 지금까지 <b>반영된</b> 취소 건수. 다음 취소의 순번은 이 값 + 1이다.
+     *
+     * <p>취소는 한 결제에 여러 번 일어나므로 "결제 + 금액"으로는 취소 건을 식별할 수 없다. 이 순번이
+     * PG 멱등키·취소 반영 가드·원장 중복 판정의 공통 키가 된다. 실패한 취소는 올리지 않으므로
+     * 재시도가 같은 순번을 다시 계산한다(재시도는 멱등, 서로 다른 취소는 분리).
+     */
+    @Column(nullable = false)
+    private int cancelCount;
+
     @Version
     private long version;
 
@@ -117,10 +127,13 @@ public class Payment {
     }
 
     /**
-     * UNKNOWN → CANCELED. 망취소(network cancel).
-     * 타임아웃 뒤 이 결제를 진행하지 않기로 했을 때, PG에 남은 "유령 승인"을 정리한다.
+     * UNKNOWN → CANCELED. <b>PG가 이미 취소한 사실을 우리 쪽에 반영한다.</b>
+     *
+     * <p>복구 배치가 미확정 결제를 조회했더니 PG 상태가 CANCELED인 경우에만 호출된다.
+     * 취소 요청을 보내는 메서드가 아니다 — 실제 취소 전송은 {@code PaymentService.cancelByOrderNo}와
+     * 보상 태스크가 한다.
      */
-    public void networkCancel(String reason) {
+    public void markCanceledByPg(String reason) {
         transitionTo(PaymentStatus.CANCELED, TriggeredBy.RECOVERY_BATCH, reason);
         this.balanceAmount = 0;
     }
@@ -133,6 +146,7 @@ public class Payment {
         long newBalance = balanceAmount - cancelAmount.amount();
         transitionTo(cancelTargetOf(newBalance), by, reason);
         this.balanceAmount = newBalance;
+        this.cancelCount++;
     }
 
     /**
