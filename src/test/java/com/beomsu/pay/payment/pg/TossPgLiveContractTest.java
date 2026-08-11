@@ -76,7 +76,7 @@ class TossPgLiveContractTest {
     void cancelOnAbsentPaymentIsNotRetryable() {
         // 토스는 없는 결제 취소에 404 NOT_FOUND_PAYMENT를 준다. 몇 번을 보내도 같은 답이라
         // 일시 오류와 섞으면 보상 재시도가 이길 수 없는 요청에 예산을 다 쓴다.
-        assertThatThrownBy(() -> client.cancel(ABSENT_PAYMENT_KEY, 1_000, "실 계약 검증"))
+        assertThatThrownBy(() -> client.cancel(new PgCancelCommand(ABSENT_PAYMENT_KEY, 1_000, "실 계약 검증", 1)))
                 .isInstanceOf(PgCancelNotRetryableException.class)
                 .satisfies(e -> System.out.printf("[취소] 없는 결제 키 → %s%n", e.getMessage()));
     }

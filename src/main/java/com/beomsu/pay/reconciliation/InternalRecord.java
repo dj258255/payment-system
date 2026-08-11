@@ -44,4 +44,18 @@ public class InternalRecord {
     public static InternalRecord of(String orderNo, long amount) {
         return new InternalRecord(orderNo, amount);
     }
+
+    /**
+     * 취소를 반영해 기대치를 낮춘다.
+     *
+     * <p>취소 후 잔액(절대값)으로 세팅한다. 델타를 빼면 같은 취소가 두 번 배달될 때 두 번 깎이지만,
+     * 절대값이면 몇 번을 받아도 결과가 같다(멱등). 정산이 쓰는 방식과 같은 규칙이다.
+     *
+     * <p>이게 없으면 <b>취소된 모든 건이 영구 불일치로 남는다.</b> 부분취소는 매번 금액 불일치로,
+     * 전액취소는 PG 정산 파일에서 빠지므로 "내부에만 있음"으로 잡힌다. 대사가 매일 같은 건을 다시
+     * 올리면 예외 큐가 무의미해진다.
+     */
+    void applySettleableBalance(long settleableBalance) {
+        this.amount = settleableBalance;
+    }
 }

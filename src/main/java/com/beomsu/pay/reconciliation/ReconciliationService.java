@@ -1,5 +1,6 @@
 package com.beomsu.pay.reconciliation;
 
+import com.beomsu.pay.payment.PaymentCanceledEvent;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -36,6 +37,17 @@ public class ReconciliationService {
             return; // 멱등: 이미 적재함
         }
         internalRecords.save(InternalRecord.of(event.orderNo(), event.amount()));
+    }
+
+    /**
+     * 결제 취소를 내부 기록에 반영한다 — 대사 기대치를 취소 후 잔액으로 낮춘다.
+     *
+     * <p>기록이 없으면(대사 대상이 아닌 결제 등) 조용히 넘어간다.
+     */
+    @Transactional
+    public void reflectCancellation(PaymentCanceledEvent event) {
+        internalRecords.findByOrderNo(event.orderNo())
+                .ifPresent(record -> record.applySettleableBalance(event.settleableBalance()));
     }
 
     /**

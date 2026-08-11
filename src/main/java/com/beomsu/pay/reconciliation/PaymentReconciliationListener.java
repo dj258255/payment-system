@@ -1,5 +1,6 @@
 package com.beomsu.pay.reconciliation;
 
+import com.beomsu.pay.payment.PaymentCanceledEvent;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.modulith.ApplicationModuleListener;
@@ -20,5 +21,14 @@ class PaymentReconciliationListener {
     @ApplicationModuleListener
     void onConfirmed(PaymentConfirmedEvent event) {
         reconciliationService.recordInternal(event);
+    }
+
+    /**
+     * 취소도 구독해야 대사가 성립한다. 승인만 쌓으면 취소된 건은 PG 파일과 영영 안 맞는다 —
+     * 부분취소는 금액 불일치로, 전액취소는 "내부에만 있음"으로 매일 다시 올라온다.
+     */
+    @ApplicationModuleListener
+    void onCanceled(PaymentCanceledEvent event) {
+        reconciliationService.reflectCancellation(event);
     }
 }

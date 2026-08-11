@@ -1,5 +1,6 @@
 package com.beomsu.pay.payment;
 
+import com.beomsu.pay.payment.pg.PgCancelCommand;
 import com.beomsu.pay.payment.pg.PgClient;
 import com.beomsu.pay.shared.Money;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -44,28 +45,28 @@ class PaymentCancelSagaTest {
     @DisplayName("주문번호 취소: 대상 확정(tx) → PG 취소(tx 밖) → 결과 반영(tx) 순서로 실행된다")
     void cancelByOrderNoRunsThreePhasesInOrder() {
         when(cancelTx.resolveByOrderNo("order-9", Money.of(5_000)))
-                .thenReturn(new PaymentCancelTx.CancelTarget("pk-9"));
+                .thenReturn(new PaymentCancelTx.CancelTarget("pk-9", 1));
 
         service.cancelByOrderNo("order-9", Money.of(5_000), "고객변심");
 
         InOrder ordered = inOrder(cancelTx, pg);
         ordered.verify(cancelTx).resolveByOrderNo("order-9", Money.of(5_000));
-        ordered.verify(pg).cancel("pk-9", 5_000, "고객변심");
-        ordered.verify(cancelTx).apply("pk-9", Money.of(5_000), "고객변심");
+        ordered.verify(pg).cancel(new PgCancelCommand("pk-9", 5_000, "고객변심", 1));
+        ordered.verify(cancelTx).apply("pk-9", 1, Money.of(5_000), "고객변심");
     }
 
     @Test
     @DisplayName("결제 식별자 취소도 같은 3단계를 지킨다")
     void cancelByIdRunsThreePhasesInOrder() {
         when(cancelTx.resolveById(7L, Money.of(3_000)))
-                .thenReturn(new PaymentCancelTx.CancelTarget("pk-7"));
+                .thenReturn(new PaymentCancelTx.CancelTarget("pk-7", 1));
 
         service.cancel(7L, Money.of(3_000), "부분 변심");
 
         InOrder ordered = inOrder(cancelTx, pg);
         ordered.verify(cancelTx).resolveById(7L, Money.of(3_000));
-        ordered.verify(pg).cancel("pk-7", 3_000, "부분 변심");
-        ordered.verify(cancelTx).apply("pk-7", Money.of(3_000), "부분 변심");
+        ordered.verify(pg).cancel(new PgCancelCommand("pk-7", 3_000, "부분 변심", 1));
+        ordered.verify(cancelTx).apply("pk-7", 1, Money.of(3_000), "부분 변심");
     }
 
     @Test
@@ -77,21 +78,21 @@ class PaymentCancelSagaTest {
         assertThatThrownBy(() -> service.cancelByOrderNo("order-9", Money.of(99_000), "과다취소"))
                 .isInstanceOf(PaymentException.class);
 
-        verify(pg, never()).cancel(anyString(), anyLong(), anyString());
-        verify(cancelTx, never()).apply(anyString(), any(Money.class), anyString());
+        verify(pg, never()).cancel(any(PgCancelCommand.class));
+        verify(cancelTx, never()).apply(anyString(), anyInt(), any(Money.class), anyString());
     }
 
     @Test
     @DisplayName("PG 취소가 실패하면 결과 반영을 하지 않는다 — 우리만 취소로 남지 않게")
     void doesNotApplyWhenPgCancelFails() {
         when(cancelTx.resolveByOrderNo("order-9", Money.of(5_000)))
-                .thenReturn(new PaymentCancelTx.CancelTarget("pk-9"));
-        when(pg.cancel("pk-9", 5_000, "고객변심"))
+                .thenReturn(new PaymentCancelTx.CancelTarget("pk-9", 1));
+        when(pg.cancel(new PgCancelCommand("pk-9", 5_000, "고객변심", 1)))
                 .thenThrow(new IllegalStateException("PG 취소 실패"));
 
         assertThatThrownBy(() -> service.cancelByOrderNo("order-9", Money.of(5_000), "고객변심"))
                 .isInstanceOf(IllegalStateException.class);
 
-        verify(cancelTx, never()).apply(anyString(), any(Money.class), anyString());
+        verify(cancelTx, never()).apply(anyString(), anyInt(), any(Money.class), anyString());
     }
 }

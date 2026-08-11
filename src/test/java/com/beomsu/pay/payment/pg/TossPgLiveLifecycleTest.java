@@ -122,7 +122,7 @@ class TossPgLiveLifecycleTest {
         assertThat(queried.status()).isEqualTo(PgPaymentStatus.APPROVED);
 
         // --- 검증 2. 실제 취소가 되는가 ---
-        PgCancelResult canceled = client.cancel(paymentKey, AMOUNT, "실 계약 검증 취소");
+        PgCancelResult canceled = client.cancel(new PgCancelCommand(paymentKey, AMOUNT, "실 계약 검증 취소", 1));
         System.out.printf("[취소] transactionKey=%s%n", canceled.transactionKey());
         assertThat(canceled.transactionKey()).isNotBlank();
 
@@ -133,7 +133,7 @@ class TossPgLiveLifecycleTest {
 
         // --- 검증 4. 같은 취소를 다시 보내도 멱등하게 끝나는가 ---
         // 보상 재시도가 같은 요청을 다시 보내는 상황이다. 예외로 끊기면 재시도가 영영 안 끝난다.
-        PgCancelResult again = client.cancel(paymentKey, AMOUNT, "실 계약 검증 취소");
+        PgCancelResult again = client.cancel(new PgCancelCommand(paymentKey, AMOUNT, "실 계약 검증 취소", 1));
         System.out.printf("[재취소] 멱등 처리 → %s%n", again.transactionKey());
         assertThat(again.transactionKey()).isNotBlank();
     }
