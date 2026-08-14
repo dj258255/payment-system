@@ -67,6 +67,18 @@ class ReconciliationAdminController {
         return summary;
     }
 
+    /**
+     * 불일치 하나의 <b>원인 후보</b>를 제안한다 (ADR-012).
+     *
+     * <p>규칙으로 계산한 제안이지 확정이 아니다. {@code resolve}는 여전히 사람이 호출한다.
+     * 각 후보에는 근거가 붙어 있어 사람이 검증할 수 있다 — 근거 없는 제안은
+     * 확인 비용만 늘린다.
+     */
+    @GetMapping("/{id}/suggestions")
+    java.util.List<com.beomsu.pay.reconciliation.CauseSuggestion> suggestions(@PathVariable Long id) {
+        return adminService.suggestCauses(id);
+    }
+
     @GetMapping("/mismatches")
     Page<ReconMismatchView> mismatches(@PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
         return adminService.listMismatches(pageable);
