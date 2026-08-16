@@ -190,6 +190,7 @@
       <div class="sub">수기 확정 — <b>사유가 필수</b>입니다. 조사 결과를 남겨야 같은 패턴이 다시 왔을 때 처음부터 조사하지 않습니다.</div>
       <div class="row">
         <input id="rcId" placeholder="대사 결과 ID" style="width:140px">
+        <button onclick="loadSuggestions()" style="background:#6B7280">원인 후보</button>
         <select id="rcCause">
           <option value="PARTIAL_CANCEL_NOT_REFLECTED">부분취소 미반영</option>
           <option value="FEE_CALCULATION_DIFF">수수료 계산 차이</option>
@@ -201,6 +202,7 @@
           <option value="OTHER">기타(서술 필수)</option>
         </select>
       </div>
+      <div id="rcSug" class="sub" style="display:none;margin:6px 0 2px"></div>
       <div class="row"><input id="rcNote" placeholder="조사 내용 — 기타면 필수" style="flex:1"></div>
       <div class="row"><button onclick="rcResolve()">수기 확정</button></div>
     </div>
@@ -412,6 +414,36 @@ function srcBadge(src){
   if(src==='RECONCILIATION'||src==='DISPUTE')return 'b-red';
   if(src==='PAYMENT'||src==='LEDGER'||src==='WALLET'||src==='POINT')return 'b-green';
   return '';
+}
+// ── 원인 후보 제안 (ADR-012) ──
+// 규칙이 계산한 후보를 근거와 함께 보여준다. 확정은 여전히 사람이 한다 —
+// 후보를 누르면 드롭다운만 채워지고, 수기 확정 버튼은 따로 눌러야 한다.
+async function loadSuggestions(){
+  const id=$('rcId').value.trim();
+  if(!id){logLine('err','✗ 대사 결과 ID를 입력하세요');return}
+  const r=await api('GET','/api/v1/admin/reconciliations/'+encodeURIComponent(id)+'/suggestions');
+  const box=$('rcSug');
+  if(!r.ok){box.style.display='none';return}
+  const list=r.data||[];
+  box.style.display='block';
+  if(!list.length){
+    // 억지로 하나 고르지 않는다. 못 가른다는 것도 정보다.
+    box.innerHTML='<span style="color:var(--sub)">규칙이 가르지 못했습니다 — 직접 조사해 사유를 남기세요.</span>';
+    return;
+  }
+  box.innerHTML=list.map(sug=>{
+    const color = sug.confidence==='DECISIVE' ? '#15803D' : sug.confidence==='LIKELY' ? '#B45309' : '#6B7280';
+    return '<div style="margin:4px 0;padding:6px 9px;border-left:3px solid '+color+';background:#FAF8F3">'
+      +'<b style="color:'+color+'">'+esc(sug.confidence)+'</b> '
+      +'<a href="#" onclick="pickCause(\''+esc(sug.cause)+'\');return false" '
+      +'style="font-weight:600">'+esc(sug.cause)+'</a><br>'
+      +'<span style="color:var(--sub)">'+esc(sug.evidence)+'</span></div>';
+  }).join('');
+}
+// 후보를 고르면 드롭다운만 채운다. 확정은 사람이 버튼을 눌러야 일어난다.
+function pickCause(cause){
+  $('rcCause').value=cause;
+  logLine('ok','원인 후보 선택: '+cause+' — 확정하려면 수기 확정을 누르세요');
 }
 // ── 대사 수기 확정 ──
 // 사유를 필수로 보낸다(ADR-008). 서버 도메인도 같은 규칙을 강제하지만, 화면에서 먼저 막아
