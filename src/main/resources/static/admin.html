@@ -428,17 +428,28 @@ async function loadSuggestions(){
   box.style.display='block';
   if(!list.length){
     // 억지로 하나 고르지 않는다. 못 가른다는 것도 정보다.
-    box.innerHTML='<span style="color:var(--sub)">규칙이 가르지 못했습니다 — 직접 조사해 사유를 남기세요.</span>';
+    box.textContent='규칙이 가르지 못했습니다 — 직접 조사해 사유를 남기세요.';
+    box.style.color='var(--sub)';
     return;
   }
-  box.innerHTML=list.map(sug=>{
+  // DOM API로 만든다. 문자열로 onclick을 조립하면 안 된다 —
+  // esc()는 HTML 컨텍스트용이라 <속성 안의 JS>에는 통하지 않는다.
+  // HTML 파서가 JS 파싱보다 먼저 &#39;를 '로 되돌리므로 따옴표 탈출이 가능해진다.
+  // 값을 문자열이 아니라 <변수>로 넘기면 그 층 자체가 없어진다.
+  box.textContent='';
+  list.forEach(sug=>{
     const color = sug.confidence==='DECISIVE' ? '#15803D' : sug.confidence==='LIKELY' ? '#B45309' : '#6B7280';
-    return '<div style="margin:4px 0;padding:6px 9px;border-left:3px solid '+color+';background:#FAF8F3">'
-      +'<b style="color:'+color+'">'+esc(sug.confidence)+'</b> '
-      +'<a href="#" onclick="pickCause(\''+esc(sug.cause)+'\');return false" '
-      +'style="font-weight:600">'+esc(sug.cause)+'</a><br>'
-      +'<span style="color:var(--sub)">'+esc(sug.evidence)+'</span></div>';
-  }).join('');
+    const row=document.createElement('div');
+    row.style.cssText='margin:4px 0;padding:6px 9px;border-left:3px solid '+color+';background:#FAF8F3';
+    const lvl=document.createElement('b'); lvl.style.color=color; lvl.textContent=sug.confidence;
+    const link=document.createElement('a');
+    link.href='#'; link.style.fontWeight='600'; link.textContent=sug.cause;
+    link.addEventListener('click',e=>{e.preventDefault();pickCause(sug.cause);});
+    const why=document.createElement('span');
+    why.style.color='var(--sub)'; why.textContent=sug.evidence;
+    row.append(lvl,document.createTextNode(' '),link,document.createElement('br'),why);
+    box.appendChild(row);
+  });
 }
 // 후보를 고르면 드롭다운만 채운다. 확정은 사람이 버튼을 눌러야 일어난다.
 function pickCause(cause){
