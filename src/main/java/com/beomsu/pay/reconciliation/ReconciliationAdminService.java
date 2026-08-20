@@ -19,6 +19,7 @@ import java.util.List;
  * (1) 외부 기록을 실제로 넣을 경로가 없었고 (2) 남은 예외 큐를 조회할 방법도 없었다. 이 어드민이
  * <b>업로드 → 대사 → 예외 큐 → 수기 확정</b> 루프를 닫는다.
  */
+@lombok.extern.slf4j.Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReconciliationAdminService {
@@ -28,6 +29,7 @@ public class ReconciliationAdminService {
     private final PgSettlementCsvParser parser;
     private final ReconciliationService reconciliationService;
     private final CauseClassifier classifier;
+    private final ClassifierAccuracyMetrics accuracyMetrics;
 
     /**
      * PG 정산 파일(CSV)을 파싱해 대사 매칭 엔진을 돌리고 결과를 분류별로 집계한다.
@@ -81,6 +83,16 @@ public class ReconciliationAdminService {
         ReconciliationResult result = repository.findById(id)
                 .orElseThrow(() -> new ReconciliationException("RECON_RESULT_NOT_FOUND",
                         "대사 결과를 찾을 수 없습니다: " + id));
+
+        // 확정 <직전>에 분류기를 돌려 제안과 사람의 선택을 대조한다(ADR-012).
+        // 사람의 확정이 곧 정답 라벨이므로, 이 시점이 유일하게 둘을 함께 아는 순간이다.
+        // 실패해도 확정은 진행한다 — 지표 때문에 업무가 막히면 안 된다.
+        try {
+            accuracyMetrics.record(classifier.suggest(result), cause);
+        } catch (RuntimeException e) {
+            log.warn("분류기 일치율 집계 실패 id={}", id, e);
+        }
+
         result.resolveManually(actor, cause, note);
         repository.saveAndFlush(result);
 
