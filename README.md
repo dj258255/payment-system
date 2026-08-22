@@ -12,6 +12,12 @@
 - **스토어** `http://localhost:8080/`: 로그인 → 상품 → 결제 → 취소/구매확정의 사용자 흐름과 주문 전표·상태. 대기열·월렛·포인트·구독 포함
 - **운영 백오피스** `http://localhost:8080/admin.html`: 사이드바로 업무별 분리. 미확정 복구 / 보상 태스크 / 대사 / 정산·지급 / 분쟁 / 강제취소(2인 승인) / FDS / DLQ
 
+  대사 화면에서는 **주문 한 건의 전 과정**(주문·결제·원장·에스크로·정산·포인트·월렛·분쟁·대사·감사)을
+  한 번에 펼쳐 보고, 그 아래에서 **규칙이 계산한 원인 후보**를 근거와 함께 받는다.
+  후보를 눌러도 확정되지 않는다 — 드롭다운만 채워지고 확정은 사람이 버튼을 눌러야 한다.
+
+  ![대사 원인 제안](docs/images/recon-suggestions.jpg)
+
 두 화면 모두 하단 개발자 로그 드로어에서 실제 요청·응답을 그대로 보여준다.
 
 **결제 플로우**: 로그인(JWT) → 주문 생성 → 결제 승인 → 취소/구매확정. 미리 준비한 응답이 아니라 실제 API 호출·상태를 그대로 보여준다.
@@ -68,7 +74,7 @@
 - **MySQL 8.4** + JPA(도메인 모델), **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화, 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito. 기본 스위트 **572개** + 실 MySQL 통합 **13개**(`integrationTest`) + Toxiproxy 네트워크 카오스 **1개**(`chaosTest`) = 총 586개. 뒤의 둘은 컨테이너가 필요해 기본 스위트에서 제외하고 별도 태스크로 돌린다. Spring Modulith 경계 검증 포함. 락 전략 비교는 H2와 Testcontainers 실 MySQL에서 각각 재서 순위가 뒤집히는 것을 확인했다
+- 테스트: JUnit5 + Mockito. 기본 스위트 **583개** + 실 MySQL 통합 **13개**(`integrationTest`) + Toxiproxy 네트워크 카오스 **1개**(`chaosTest`) = 총 597개. 뒤의 둘은 컨테이너가 필요해 기본 스위트에서 제외하고 별도 태스크로 돌린다. Spring Modulith 경계 검증 포함. 락 전략 비교는 H2와 Testcontainers 실 MySQL에서 각각 재서 순위가 뒤집히는 것을 확인했다
 
 ## 아키텍처: 모듈형 모놀리스
 
@@ -114,6 +120,8 @@ com.beomsu.pay
 | 이벤트 | Outbox → 멱등 컨슈머 → DLQ (유실·중복·순서역전 대응) |
 | 정합성 | 복식부기 원장(차변=대변)으로 자금 이동을 수학적으로 검증, 대사가 최종 방어선 |
 | 동시성 | 재고·잔액 차감 락 3종 비교 실측 후 조건부 UPDATE 채택 ([ADR-004](docs/adr/ADR-004-stock-deduction-locking.md)) |
+| 운영 조사 | 주문 한 건의 전 과정을 10개 도메인에서 시간순으로 조립 ([ADR-011](docs/adr/ADR-011-order-timeline-assembly.md)) — 조회 7회·목록 뒤지기 6회가 **1회**로 |
+| 원인 분류 | 대사 불일치 원인을 **규칙으로** 제안하고 근거를 함께 낸다 ([ADR-012](docs/adr/ADR-012-rule-based-cause-classifier.md)). AI를 쓰지 않는 이유는 8종 중 6종이 산수로 결정되기 때문 |
 
 ## 쌓아 올린 순서
 
@@ -198,7 +206,10 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
 - [docs/09 ERD](docs/09-ERD-설계.md) ([다이어그램](docs/images/erd.svg)), [docs/10 API 스펙](docs/10-API-스펙.md)
 - [docs/11 AI 운영 자동화 검토](docs/11-AI-운영자동화-검토.md): **결정** — 대사 원인 8개 중 6개는 산수, 설계 원칙 4가지, 자동 확정 등급, 만들기 전에 정할 것(홀드아웃·인젝션 전제)
 - [docs/12 AI 운영 자동화 사례 연구](docs/12-AI-운영자동화-사례연구.md): **근거** — Klarna·Amex·DoorDash·eBay·Zalando·Meta·Uber·Stripe·PayPal·Nubank·Monzo·카카오뱅크·토스. 출처 신뢰도와 미공개 항목까지 표시
-- [docs/adr](docs/adr/): 아키텍처 결정 기록
+- [docs/adr](docs/adr/): 아키텍처 결정 기록 — 최근 것들:
+  [ADR-010 무엇을 만들지 않을지](docs/adr/ADR-010-what-not-to-build.md) ·
+  [ADR-011 주문 타임라인](docs/adr/ADR-011-order-timeline-assembly.md) ·
+  [ADR-012 규칙 기반 원인 분류](docs/adr/ADR-012-rule-based-cause-classifier.md)
 
 ## 가정과 한계
 
