@@ -8,11 +8,20 @@ package com.beomsu.pay.payment;
  * 모듈 경계를 위반한다. 그래서 payment 루트에 이 노출용 DTO를 두고, {@link PaymentService#pgApprove}가
  * 매핑해 돌려준다 — order는 이 값을 <b>불투명하게</b> 들고 있다가 {@link PaymentService#applyResult}에 넘긴다.
  *
+ * <p>{@code provider}는 실제로 승인을 처리한 PG다. 이중화를 켜면 승인이 다른 PG로 넘어갈 수
+ * 있는데, 나중에 취소를 아무 PG에나 보내면 "그런 거래 없음"이 돌아오고 그것이 취소 결과가 된다.
+ * 고객 돈은 원 PG에 잡혀 있는데 우리 장부에는 취소로 남는다. 그래서 승인 시점에 적어 둔다.
+ *
  * @param result     승인 결과 3-상태(SUCCESS/FAILED/TIMEOUT)
  * @param method     승인 수단(성공 시), 그 외 null
  * @param failReason 실패/미확정 사유, 성공 시 null
+ * @param provider   승인을 처리한 PG 이름. 단일 PG면 null
  */
-public record ApprovalOutcome(Result result, String method, String failReason) {
+public record ApprovalOutcome(Result result, String method, String failReason, String provider) {
+
+    public ApprovalOutcome(Result result, String method, String failReason) {
+        this(result, method, failReason, null);
+    }
 
     public enum Result { SUCCESS, FAILED, TIMEOUT }
 }
