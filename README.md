@@ -154,7 +154,10 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
   기동을 실패시킨다(fail-fast). 운영에서는 반드시 환경변수/시크릿 매니저(KMS/Vault)로 주입한다.
 - **멀티 PG**: `RoutingPgClient`(다중 PG failover)를 `app.pg.routing.enabled=true`로 켜면 opt-in
   배선된다(가중치 순 시도, 장애 시 failover, TIMEOUT은 이중결제 방지로 failover 안 함). 기본은 단일
-  PG(Toss)다. 취소·조회의 원 결제 PG 라우팅은 `PgClient`에 provider 힌트를 넣는 후속 과제로 남겼다.
+  PG(Toss)다. **취소·조회는 원 결제를 승인한 PG로만 간다** — 승인 결과에 PG 이름을 실어
+  `Payment.pgProvider`에 적고, 취소·조회가 그 값을 목적지로 쓴다. 다른 PG에 보내면 "그런 거래 없음"이
+  정상 응답으로 돌아오고 그것이 취소 결과가 되어, 고객 돈은 원 PG에 잡힌 채 장부만 취소로 남는다.
+  승인 PG가 경로에 없으면 아무 데도 보내지 않는다(조회는 확정하지 않고 다음 주기로 넘긴다).
 - **가상계좌**: 서비스 계층까지 구현한 데모로, 외부 HTTP 발급 표면(엔드포인트)은 두지 않았다.
 - **선불 월렛**: 충전·잔액·이력 REST(`/api/v1/wallet`)와 함께 **체크아웃 복합결제 수단**(카드+포인트+월렛)으로
   배선했다. 예약 차감(USE)·사가 보상(RESTORE, 멱등)·취소 환불(REFUND, 비멱등)을 분리해 포인트와 같은
