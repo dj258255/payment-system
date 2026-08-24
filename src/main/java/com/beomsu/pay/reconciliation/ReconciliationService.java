@@ -71,13 +71,25 @@ public class ReconciliationService {
      */
     @Transactional
     public List<ReconciliationResult> reconcile(LocalDate tradeDate, List<ExternalRecord> external) {
+        // 내부는 (trade_date, order_no) 유니크라 주문당 한 행이 보장된다 — 덮어쓸 일이 없다.
+        // 외부(정산 파일)에는 그 보장이 없어서 아래는 합산으로 다룬다.
         Map<String, Long> internalMap = new LinkedHashMap<>();
         for (InternalRecord record : internalRecords.findByTradeDate(tradeDate)) {
             internalMap.put(record.getOrderNo(), record.getAmount());
         }
+        // 같은 orderNo가 여러 행으로 올 수 있다 — <b>합산</b>한다. 덮어쓰면 안 된다.
+        //
+        // 왜 여러 행이 오나: 주요 PG는 승인·환불·챠지백을 <b>각각 별도 행</b>으로 내면서
+        // 원거래와 같은 가맹점 참조번호를 공유한다(Adyen은 Refunded/Chargeback을 별도
+        // journal type으로, PayPal은 수수료를 여러 거래에 안분하지 않고 개별 행으로).
+        // 즉 한 주문이 "승인 10,000 / 환불 -3,000" 두 행으로 오는 것이 <b>정상</b>이다.
+        //
+        // 이전 구현은 put으로 덮어써서 마지막 행만 남았다. 그러면 위 예에서
+        // "내부 10,000 vs 외부 -3,000"이라는 <b>없는 불일치</b>를 만들어낸다.
+        // 합산하면 7,000이 되어 내부의 잔여와 맞는다.
         Map<String, Long> externalMap = new LinkedHashMap<>();
         for (ExternalRecord record : external) {
-            externalMap.put(record.orderNo(), record.amount());
+            externalMap.merge(record.orderNo(), record.amount(), Math::addExact);
         }
 
         // 양쪽 키의 합집합을 정렬 → 결정적 순서
