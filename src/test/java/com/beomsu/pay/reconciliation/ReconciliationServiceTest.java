@@ -38,7 +38,7 @@ class ReconciliationServiceTest {
                 InternalRecord.of("today-1", 1000, Instant.parse("2026-07-05T05:00:00Z"))));
 
         List<ReconciliationResult> reconciled =
-                service.reconcile(target, List.of(new ExternalRecord("today-1", 1000)));
+                service.reconcile(target, List.of(ExternalRecord.of("today-1", 1000)));
 
         assertThat(reconciled).hasSize(1);
         assertThat(reconciled.get(0).getResult()).isEqualTo(ReconResultType.MATCHED);
@@ -53,7 +53,7 @@ class ReconciliationServiceTest {
         when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
                 InternalRecord.of("A", 1000, Instant.parse("2026-07-05T05:00:00Z"))));
 
-        service.reconcile(target, List.of(new ExternalRecord("A", 1000)));
+        service.reconcile(target, List.of(ExternalRecord.of("A", 1000)));
 
         verify(results).deleteByTradeDate(target);
     }
@@ -68,9 +68,9 @@ class ReconciliationServiceTest {
                 InternalRecord.of("C", 3000, Instant.parse("2026-07-05T05:00:00Z"))));
         // 외부 {A:1000, B:2500, D:4000}
         List<ExternalRecord> external = List.of(
-                new ExternalRecord("A", 1000),
-                new ExternalRecord("B", 2500),
-                new ExternalRecord("D", 4000));
+                ExternalRecord.of("A", 1000),
+                ExternalRecord.of("B", 2500),
+                ExternalRecord.of("D", 4000));
 
         List<ReconciliationResult> reconciled = service.reconcile(LocalDate.of(2026, 7, 5), external);
 
@@ -116,8 +116,8 @@ class ReconciliationServiceTest {
                 InternalRecord.of("B", 2000, Instant.parse("2026-07-05T05:00:00Z")),
                 InternalRecord.of("A", 1000, Instant.parse("2026-07-05T05:00:00Z"))));
         List<ExternalRecord> external = List.of(
-                new ExternalRecord("A", 1000),
-                new ExternalRecord("B", 2000));
+                ExternalRecord.of("A", 1000),
+                ExternalRecord.of("B", 2000));
 
         List<String> first = service.reconcile(LocalDate.of(2026, 7, 5), external).stream()
                 .map(ReconciliationResult::getOrderNo).toList();
@@ -161,8 +161,8 @@ class ReconciliationServiceTest {
         // PG 파일은 승인 10,000과 환불 -3,000을 <별도 행>으로 준다.
         // 주요 PG가 환불·챠지백을 별도 journal type으로 내면서 같은 참조번호를 공유하기 때문이다.
         List<ReconciliationResult> reconciled = service.reconcile(target, List.of(
-                new ExternalRecord("ord-1", 10_000),
-                new ExternalRecord("ord-1", -3_000)));
+                new ExternalRecord("ord-1", 10_000, "psp-1"),
+                new ExternalRecord("ord-1", -3_000, "psp-2")));   // 다른 거래 = 정상 다중행
 
         assertThat(reconciled).hasSize(1);
         assertThat(reconciled.get(0).getResult())
@@ -179,10 +179,49 @@ class ReconciliationServiceTest {
                 InternalRecord.of("ord-1", 10_000, Instant.parse("2026-08-30T05:00:00Z"))));
 
         List<ReconciliationResult> reconciled = service.reconcile(target, List.of(
-                new ExternalRecord("ord-1", 9_000),
-                new ExternalRecord("ord-1", -270)));   // 합계 8,730
+                new ExternalRecord("ord-1", 9_000, "psp-1"),
+                new ExternalRecord("ord-1", -270, "psp-2")));   // 합계 8,730
 
         assertThat(reconciled.get(0).getResult()).isEqualTo(ReconResultType.AMOUNT_MISMATCH);
         assertThat(reconciled.get(0).getExternalAmount()).isEqualTo(8_730);
+    }
+
+    @Test
+    @DisplayName("같은 거래 식별자가 두 번 오면 중복이다 — 합산하면 금액이 부풀어 불일치를 감춘다")
+    void duplicateTransactionIdIsDropped() {
+        LocalDate target = LocalDate.of(2026, 8, 30);
+        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+                InternalRecord.of("ord-1", 10_000, Instant.parse("2026-08-30T05:00:00Z"))));
+
+        // 같은 psp-1이 두 번 실렸다. Uber가 실제로 겪은 형태 — 합산하면 20,000이 되어
+        // "외부가 10,000 더 많다"는 가짜 불일치가 생기거나, 반대로 진짜 문제가 가려진다.
+        List<ReconciliationResult> reconciled = service.reconcile(target, List.of(
+                new ExternalRecord("ord-1", 10_000, "psp-1"),
+                new ExternalRecord("ord-1", 10_000, "psp-1")));
+
+        assertThat(reconciled).hasSize(1);
+        assertThat(reconciled.get(0).getExternalAmount())
+                .as("중복 행을 버리므로 10,000이어야 한다. 합산했다면 20,000이 된다")
+                .isEqualTo(10_000);
+        assertThat(reconciled.get(0).getResult()).isEqualTo(ReconResultType.MATCHED);
+    }
+
+    @Test
+    @DisplayName("거래 식별자가 없는 파일은 중복을 가려낼 수 없다 — 합산만 한다")
+    void withoutTransactionIdCannotDetectDuplicates() {
+        LocalDate target = LocalDate.of(2026, 8, 30);
+        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+                InternalRecord.of("ord-1", 10_000, Instant.parse("2026-08-30T05:00:00Z"))));
+
+        // 식별자가 없으면 이 둘이 "환불 별도 행"인지 "중복"인지 구분할 방법이 없다.
+        // 합산하는 쪽을 택했고, 그 한계를 여기 고정해둔다.
+        List<ReconciliationResult> reconciled = service.reconcile(target, List.of(
+                ExternalRecord.of("ord-1", 10_000),
+                ExternalRecord.of("ord-1", 10_000)));
+
+        assertThat(reconciled.get(0).getExternalAmount()).isEqualTo(20_000);
+        assertThat(reconciled.get(0).getResult())
+                .as("식별자가 없으면 중복을 못 잡아 불일치로 드러난다 — 감추는 것보다는 낫다")
+                .isEqualTo(ReconResultType.AMOUNT_MISMATCH);
     }
 }

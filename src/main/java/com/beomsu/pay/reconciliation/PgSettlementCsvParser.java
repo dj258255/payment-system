@@ -33,6 +33,18 @@ public class PgSettlementCsvParser {
     private static final Set<String> ORDER_NO_ALIASES = Set.of("orderno", "order_no", "주문번호");
     /** amount 컬럼 별칭 — 정규화 후 비교. */
     private static final Set<String> AMOUNT_ALIASES = Set.of("amount", "settle_amount", "settleamount", "결제금액");
+    /**
+     * PG의 행 단위 거래 식별자 별칭. <b>선택 컬럼</b>이다 — 없어도 파싱은 되지만,
+     * 없으면 같은 거래가 중복 기록된 것을 가려낼 수 없다(ExternalRecord 참고).
+     *
+     * <p><b>별칭을 좁게 잡았다.</b> 여기 넣은 것은 주요 PG가 <b>행 단위 고유</b>라고 문서에서
+     * 밝힌 것들뿐이다. {@code 승인번호} 같은 컬럼은 넣지 않았다 — 승인번호는 <b>원거래와 환불이
+     * 공유할 수 있어</b> 행 단위 고유가 아니다. 그걸 식별자로 쓰면 정상적인 환불 행을
+     * 중복으로 오판해 <b>버린다</b>. 잘못 버리는 것이 못 잡는 것보다 나쁘다.
+     */
+    private static final Set<String> TRANSACTION_ID_ALIASES = Set.of(
+            "transactionid", "transaction_id", "pspreference", "psp_reference",
+            "balancetransactionid", "balance_transaction_id");
 
     /**
      * 파싱 결과 — 유효한 외부 기록 목록과 건너뛴(불량) 행 수.
@@ -57,6 +69,8 @@ public class PgSettlementCsvParser {
             String[] header = stripBom(headerLine).split(",", -1);
             int orderNoIdx = findColumn(header, ORDER_NO_ALIASES);
             int amountIdx = findColumn(header, AMOUNT_ALIASES);
+            // 선택 컬럼 — 없으면 -1이고, 그 경우 중복 감지를 포기한다(파싱은 계속한다).
+            int txIdIdx = findColumn(header, TRANSACTION_ID_ALIASES);
             if (orderNoIdx < 0 || amountIdx < 0) {
                 throw new ReconciliationException("INVALID_SETTLEMENT_FILE",
                         "정산 파일에 필수 컬럼(orderNo, amount)이 없습니다. 헤더: " + headerLine);
@@ -85,7 +99,9 @@ public class PgSettlementCsvParser {
                     skipped++; // amount 파싱 실패
                     continue;
                 }
-                records.add(new ExternalRecord(orderNo, amount));
+                String transactionId = (txIdIdx >= 0 && txIdIdx < cols.length)
+                        ? blankToNull(cols[txIdIdx].trim()) : null;
+                records.add(new ExternalRecord(orderNo, amount, transactionId));
             }
             return new ParseResult(records, skipped);
         } catch (IOException e) {
@@ -136,5 +152,10 @@ public class PgSettlementCsvParser {
     /** UTF-8 BOM이 앞에 붙은 파일(엑셀 저장물)의 헤더 첫 컬럼명이 깨지지 않게 제거. */
     private static String stripBom(String s) {
         return (!s.isEmpty() && s.charAt(0) == '﻿') ? s.substring(1) : s;
+    }
+
+    /** 빈 문자열은 "식별자 없음"과 같다 — 빈 값끼리 중복으로 오판하지 않게 null로 만든다. */
+    private static String blankToNull(String v) {
+        return (v == null || v.isEmpty()) ? null : v;
     }
 }

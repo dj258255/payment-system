@@ -28,8 +28,8 @@ class PgSettlementCsvParserTest {
                 """));
 
         assertThat(result.records()).containsExactly(
-                new ExternalRecord("ord-1", 10_000),
-                new ExternalRecord("ord-2", 20_000));
+                ExternalRecord.of("ord-1", 10_000),
+                ExternalRecord.of("ord-2", 20_000));
         assertThat(result.skipped()).isZero();
     }
 
@@ -41,7 +41,7 @@ class PgSettlementCsvParserTest {
                 2026-07-01,ord-9,APPROVAL-1,15000
                 """));
 
-        assertThat(result.records()).containsExactly(new ExternalRecord("ord-9", 15_000));
+        assertThat(result.records()).containsExactly(ExternalRecord.of("ord-9", 15_000));
         assertThat(result.skipped()).isZero();
     }
 
@@ -53,7 +53,7 @@ class PgSettlementCsvParserTest {
                 ord-k,30000
                 """));
 
-        assertThat(result.records()).containsExactly(new ExternalRecord("ord-k", 30_000));
+        assertThat(result.records()).containsExactly(ExternalRecord.of("ord-k", 30_000));
     }
 
     @Test
@@ -64,7 +64,7 @@ class PgSettlementCsvParserTest {
                 ord-1, 1234567
                 """));
 
-        assertThat(result.records()).containsExactly(new ExternalRecord("ord-1", 1_234_567));
+        assertThat(result.records()).containsExactly(ExternalRecord.of("ord-1", 1_234_567));
     }
 
     @Test
@@ -83,8 +83,8 @@ class PgSettlementCsvParserTest {
 
         // 유효: ord-1, ord-2 (공백행은 카운트하지 않음)
         assertThat(result.records()).containsExactly(
-                new ExternalRecord("ord-1", 10_000),
-                new ExternalRecord("ord-2", 20_000));
+                ExternalRecord.of("ord-1", 10_000),
+                ExternalRecord.of("ord-2", 20_000));
         // 스킵: not-a-number, 빈 orderNo, ord-short(컬럼 부족), 합계행(amount 빈 값) = 4
         assertThat(result.skipped()).isEqualTo(4);
     }
@@ -98,7 +98,7 @@ class PgSettlementCsvParserTest {
                 ord-ok,100
                 """));
 
-        assertThat(result.records()).containsExactly(new ExternalRecord("ord-ok", 100));
+        assertThat(result.records()).containsExactly(ExternalRecord.of("ord-ok", 100));
         assertThat(result.skipped()).isEqualTo(1);
     }
 
@@ -128,6 +128,6 @@ class PgSettlementCsvParserTest {
     void handlesUtf8Bom() {
         var result = parser.parse(csv("﻿orderNo,amount\nord-1,100\n"));
 
-        assertThat(result.records()).containsExactly(new ExternalRecord("ord-1", 100));
+        assertThat(result.records()).containsExactly(ExternalRecord.of("ord-1", 100));
     }
 }
