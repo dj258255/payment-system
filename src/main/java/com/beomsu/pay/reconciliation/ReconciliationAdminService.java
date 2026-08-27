@@ -4,6 +4,7 @@ import com.beomsu.pay.reconciliation.PgSettlementCsvParser.ParseResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import com.beomsu.pay.audit.AuditService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,7 @@ import java.util.List;
 public class ReconciliationAdminService {
 
     private final ReconciliationResultRepository repository;
+    private final AuditService auditService;
     private final PgSettlementCsvParser parser;
     private final ReconciliationService reconciliationService;
 
@@ -64,24 +66,32 @@ public class ReconciliationAdminService {
     }
 
     /**
-     * PENDING 대사 불일치 1건을 수기 확정한다(사람 확인 후).
+     * PENDING 대사 불일치 1건을 <b>사유와 함께</b> 수기 확정한다(사람 확인 후, ADR-008).
+     *
+     * <p>확정과 감사 기록을 <b>같은 트랜잭션</b>에 둔다. 나누면 확정은 됐는데 기록만 빠지는
+     * 상태가 생기고, 그건 "누가 왜 확정했는지 모르는 종결"이라 감사 관점에서 최악이다.
      *
      * <p>상태 전이는 {@link ReconciliationResultRepository#saveAndFlush(Object)}로 <b>명시 영속</b>한다.
      * dirty-check 자동 flush는 readOnly 조회로 세션 FlushMode가 MANUAL이 되거나 엔티티가 detached인
      * 경우 신뢰할 수 없어(pay-26 사건 교훈), 상태 확정을 명시적으로 강제한다.
      */
     @Transactional
-    public ReconMismatchView resolve(long id) {
+    public ReconMismatchView resolve(long id, String actor, ResolveCause cause, String note) {
         ReconciliationResult result = repository.findById(id)
                 .orElseThrow(() -> new ReconciliationException("RECON_RESULT_NOT_FOUND",
                         "대사 결과를 찾을 수 없습니다: " + id));
-        result.resolveManually();
+        result.resolveManually(actor, cause, note);
         repository.saveAndFlush(result);
+
+        // 감사 기록 — 같은 트랜잭션에 남긴다. 확정은 됐는데 기록만 빠지는 상태를 만들지 않는다.
+        auditService.record(actor, "RECON_RESOLVE", "RECONCILIATION_RESULT", String.valueOf(id),
+                "cause=" + cause + (note == null || note.isBlank() ? "" : " note=" + note));
         return toView(result);
     }
 
     private static ReconMismatchView toView(ReconciliationResult r) {
         return new ReconMismatchView(r.getId(), r.getOrderNo(), r.getResult(),
-                r.getInternalAmount(), r.getExternalAmount(), r.getReconciledAt());
+                r.getInternalAmount(), r.getExternalAmount(), r.getReconciledAt(),
+                r.getResolvedBy(), r.getResolveCause(), r.getResolveNote(), r.getResolvedAt());
     }
 }

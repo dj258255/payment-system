@@ -3,6 +3,14 @@ package com.beomsu.pay.reconciliation.web;
 import com.beomsu.pay.reconciliation.ReconMismatchView;
 import com.beomsu.pay.reconciliation.ReconRunSummary;
 import com.beomsu.pay.reconciliation.ReconciliationAdminService;
+import com.beomsu.pay.reconciliation.ResolveCause;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.security.Principal;
+import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,20 +18,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
-
-import org.springframework.format.annotation.DateTimeFormat;
-
-import java.io.IOException;
-import java.time.LocalDate;
-import java.io.UncheckedIOException;
-import java.security.Principal;
 
 /**
  * 정산 대사 운영 어드민 REST 컨트롤러(정산 파일 업로드 대사 + PENDING 조회 + 수기 확정).
@@ -69,12 +72,23 @@ class ReconciliationAdminController {
         return adminService.listMismatches(pageable);
     }
 
+    /**
+     * 대사 불일치 수기 확정 — <b>사유가 필수</b>다(ADR-008).
+     *
+     * <p>사유를 안 받으면 조사 결과가 어디에도 안 남아, 같은 패턴이 와도 매번 처음부터 조사하게 된다.
+     * 코드({@link ResolveCause})는 집계를 위해, 서술은 목록에 없는 새 원인을 담기 위해 함께 받는다.
+     */
     @PostMapping("/{id}/resolve")
-    ReconMismatchView resolve(@PathVariable Long id, Principal caller) {
+    ReconMismatchView resolve(@PathVariable Long id,
+                              @Valid @RequestBody ResolveRequest request,
+                              Principal caller) {
         String who = caller != null ? caller.getName() : "unknown";
-        audit.info("대사 불일치 수기 확정 요청 by={} reconResultId={}", who, id);
-        ReconMismatchView view = adminService.resolve(id);
-        audit.info("대사 불일치 수기 확정 결과 by={} reconResultId={}", who, id);
+        audit.info("대사 불일치 수기 확정 요청 by={} reconResultId={} cause={}", who, id, request.cause());
+        ReconMismatchView view = adminService.resolve(id, who, request.cause(), request.note());
+        audit.info("대사 불일치 수기 확정 결과 by={} reconResultId={} cause={}", who, id, request.cause());
         return view;
     }
+
+    /** 수기 확정 요청 본문. {@code cause}는 필수, {@code note}는 OTHER일 때 도메인이 필수로 강제한다. */
+    record ResolveRequest(@NotNull ResolveCause cause, @Size(max = 500) String note) {}
 }

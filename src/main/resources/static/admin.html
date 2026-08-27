@@ -177,6 +177,24 @@
       <div class="row"><button onclick="adm('GET','/api/v1/admin/reconciliations/mismatches','recon')">불일치 목록</button></div>
       <div class="list" id="recon"></div>
     </div>
+    <div class="panel">
+      <div class="sub">수기 확정 — <b>사유가 필수</b>입니다. 조사 결과를 남겨야 같은 패턴이 다시 왔을 때 처음부터 조사하지 않습니다.</div>
+      <div class="row">
+        <input id="rcId" placeholder="대사 결과 ID" style="width:140px">
+        <select id="rcCause">
+          <option value="PARTIAL_CANCEL_NOT_REFLECTED">부분취소 미반영</option>
+          <option value="FEE_CALCULATION_DIFF">수수료 계산 차이</option>
+          <option value="TIMEZONE_BOUNDARY">거래일 경계(타임존)</option>
+          <option value="PG_FILE_DELAY">PG 파일 지연</option>
+          <option value="NET_CANCEL_TIMING">망취소 반영 시점</option>
+          <option value="INTERNAL_RECORD_LOST">내부 기록 유실</option>
+          <option value="SUSPECTED_TAMPERING">위변조 의심</option>
+          <option value="OTHER">기타(서술 필수)</option>
+        </select>
+      </div>
+      <div class="row"><input id="rcNote" placeholder="조사 내용 — 기타면 필수" style="flex:1"></div>
+      <div class="row"><button onclick="rcResolve()">수기 확정</button></div>
+    </div>
   </section>
 
   <!-- ══ 정산 ══ -->
@@ -334,6 +352,16 @@ function renderList(target,data){
 async function adm(method,path,target){
   const r=await api(method,path);
   renderList(target,r.data);
+}
+// ── 대사 수기 확정 ──
+// 사유를 필수로 보낸다(ADR-008). 서버 도메인도 같은 규칙을 강제하지만, 화면에서 먼저 막아
+// 왕복 한 번을 아낀다. 최종 검증은 서버가 한다 — 화면 검증만 믿지 않는다.
+async function rcResolve(){
+  const id=$('rcId').value.trim(), cause=$('rcCause').value, note=$('rcNote').value.trim();
+  if(!id){logLine('err','✗ 대사 결과 ID를 입력하세요');return}
+  if(cause==='OTHER'&&!note){logLine('err','✗ 사유가 기타면 조사 내용이 필수입니다');return}
+  await api('POST','/api/v1/admin/reconciliations/'+id+'/resolve',{cause,note:note||null});
+  adm('GET','/api/v1/admin/reconciliations/mismatches','recon');
 }
 // ── 강제취소 ──
 async function fcRequest(){
