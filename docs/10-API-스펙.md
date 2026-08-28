@@ -284,7 +284,7 @@ sequenceDiagram
 
 | 메서드 | 경로 | 기능 |
 |---|---|---|
-| POST | `/api/v1/members/signup` | 회원 가입 — `{"email","password"}` → 201 `{id,email,role}`. 이메일 유니크(중복 409), BCrypt 저장. 로그인 전 개방(permitAll) |
+| POST | `/api/v1/members/signup` | 회원 가입 — `{"email","password"}` → 201 `{id,email,role}`. 이메일 유니크(중복 409), **Argon2id** 저장(ADR-009). 로그인 전 개방(permitAll)이라 **IP 기준 유입 제한** 대상 |
 
 로그인은 기존 `POST /api/v1/auth/login`을 그대로 쓴다. 회원은 **이메일**로 로그인하고, 복합 `UserDetailsService`가 `UserDetails.username`을 숫자 회원 id로 반환해 JWT subject가 숫자로 유지된다(소유권 계약 보존). 데모 계정(admin/1/2)은 InMemory 병행.
 
