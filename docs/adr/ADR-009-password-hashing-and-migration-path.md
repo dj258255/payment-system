@@ -1,4 +1,4 @@
-# ADR-009. 비밀번호 해시는 BCrypt로 두되, 알고리즘 이관 경로를 연다
+# ADR-009. 비밀번호 해시를 Argon2id로 옮기고, 기존 해시는 그대로 검증한다
 
 - 상태: 채택 (Accepted)
 - 날짜: 2026-08-28
@@ -19,39 +19,76 @@ BCrypt의 한계는 둘이다.
 
 ## 결정
 
-**지금은 BCrypt를 유지한다. 대신 `DelegatingPasswordEncoder`로 감싸 알고리즘 접두사를 붙인다.**
+**Argon2id로 인코딩하고, 이미 저장된 BCrypt 해시는 계속 검증한다.**
 
 ```java
-String encodingId = "bcrypt";
-Map<String, PasswordEncoder> encoders = Map.of(encodingId, new BCryptPasswordEncoder());
+String encodingId = "argon2";
+PasswordEncoder argon2 = new Argon2PasswordEncoder(16, 32, 1, 19456, 2);  // 19MiB, t=2, p=1
+PasswordEncoder bcrypt = new BCryptPasswordEncoder();
 
-DelegatingPasswordEncoder delegating = new DelegatingPasswordEncoder(encodingId, encoders);
-delegating.setDefaultPasswordEncoderForMatches(new BCryptPasswordEncoder());
+DelegatingPasswordEncoder delegating = new DelegatingPasswordEncoder(
+        encodingId, Map.of(encodingId, argon2, "bcrypt", bcrypt));
+delegating.setDefaultPasswordEncoderForMatches(bcrypt);
 ```
 
-- 새로 만드는 해시: `{bcrypt}$2a$10$...`
-- 이미 저장된 접두사 없는 해시: `setDefaultPasswordEncoderForMatches`가 계속 검증한다
+**세 세대의 해시를 모두 받는다.**
+
+| 저장된 형태 | 누가 검증하나 |
+|---|---|
+| `{argon2}$argon2id$...` | 맵의 argon2 (신규 가입) |
+| `{bcrypt}$2a$...` | 맵의 bcrypt (이관 중간 세대) |
+| `$2a$...` (접두사 없음) | `setDefaultPasswordEncoderForMatches` (가장 오래된 것) |
+
+**기존 회원이 비밀번호를 재설정하지 않아도 된다.** 이 조건을 테스트 5개로 고정했다(`PasswordEncoderMigrationTest`).
+
+### 파라미터
+
+OWASP 최소 권고인 **메모리 19MiB · iterations 2 · parallelism 1**을 쓴다. Spring이 제공하는 `defaultsForSpringSecurity_v5_8()`은 메모리가 **16MiB라 권고에 못 미쳐** 직접 구성했다.
 
 ## 근거
 
-**1. 지금 Argon2로 바꿀 수 없다.** Spring Security의 `Argon2PasswordEncoder`·`SCryptPasswordEncoder`는 **BouncyCastle을 요구**하는데 이 프로젝트에 그 의존이 없다. `PasswordEncoderFactories.createDelegatingPasswordEncoder()`는 이 둘을 즉시 생성하므로 BouncyCastle 없이는 빈 생성 자체가 실패한다. 그래서 맵을 직접 구성했다.
+**1. BCrypt는 1순위가 아니다.** OWASP Password Storage Cheat Sheet는 Argon2id를 먼저 두고, scrypt, 그 다음 bcrypt 순이다. bcrypt는 "레거시 시스템에서 work factor 10 이상"으로 표현된다.
 
-**2. 의존을 늘리는 것보다 이관 경로를 여는 게 먼저다.** BCrypt는 지금 안전 범위 안에 있다. 급한 건 알고리즘 교체가 아니라 **교체할 수 있는 상태를 만드는 것**이다.
+**2. 72바이트 절단은 실제로 재현된다.** BCrypt는 72바이트를 넘는 입력을 조용히 자른다. 그래서 앞 72바이트가 같으면 **뒤가 달라도 같은 비밀번호로 판정한다.** 긴 패스프레이즈를 쓰는 사용자에게 실질 엔트로피 상한이 생긴다. 이 동작 차이를 테스트로 고정했다.
 
-**3. 접두사가 없으면 이관 자체가 불가능하다.** 저장된 해시가 어떤 알고리즘으로 만들어졌는지 알 수 없으면, 나중에 알고리즘을 바꿀 때 **전수 비밀번호 재설정** 말고는 방법이 없다. 접두사를 붙여 두면 맵에 argon2를 추가하고 `encodingId`만 바꿔서, **기존 해시를 그대로 둔 채 새 가입부터** 새 알고리즘으로 넘어간다. 기존 사용자는 다음 로그인 때 재인코딩하는 방식으로 점진 이관할 수 있다.
+**3. 메모리 하드가 다르다.** BCrypt는 4KB 수준이라 GPU·ASIC 병렬 공격에 상대적으로 취약하다. Argon2id는 파라미터로 메모리 비용을 강제해 전용 하드웨어의 이점을 줄인다.
 
-## 이관 절차 (나중에 할 때)
+**4. 접두사를 먼저 붙여 둔 덕에 교체가 작았다.** 이 ADR의 앞 판(접두사만 붙임)이 없었다면 저장된 해시가 어떤 알고리즘인지 알 수 없어 **전수 비밀번호 재설정** 말고는 이관할 방법이 없었다. 준비를 먼저 한 것이 여기서 값을 했다.
 
-1. BouncyCastle 의존 추가
-2. `encoders` 맵에 `"argon2"` 추가 (19MiB / iterations 2 / parallelism 1 이상)
-3. `encodingId`를 `"argon2"`로 변경 — **여기까지가 코드 변경의 전부**
-4. 로그인 성공 시 `upgradeEncoding` 판단으로 기존 해시를 점진 재인코딩
+## 실측 — 교체의 대가
+
+느린 것이 목적인 연산이라 "빨라졌다"가 개선은 아니다. 잰 이유는 ① 로그인 응답에 얼마가 붙는지 ② `/auth/login`의 DoS 표면이 얼마나 커지는지다.
+
+**로컬(Apple Silicon), 워밍업 후 7회 중앙값**
+
+| | 소요 |
+|---|---|
+| BCrypt (strength 10) | **87ms** |
+| Argon2id (19MiB · t=2 · p=1) | **32ms** |
+
+**예상과 반대로 Argon2id가 더 빨랐다.** BCrypt의 비용은 반복 횟수에서 나오고 Argon2id는 상당 부분을 메모리에서 가져오기 때문이다. 즉 **시간을 덜 쓰면서 공격자에게는 더 비싸다** — 메모리 하드의 목적이 그것이다.
+
+**대신 메모리를 쓴다.** 로그인 1건마다 19MiB를 잡는다.
+
+```
+동시 로그인 100건 → 순간 약 1.9GB
+```
+
+**이 교체는 `/auth/login`의 DoS 표면을 오히려 키운다.** 이전에는 CPU만 태웠지만 이제 메모리도 잡는다. `RateLimitFilter`가 그 경로를 IP 기준으로 막고 있는 것이 그래서 **더 중요해졌다.** 유입 제한이 없었다면 이 교체는 위험한 변경이었을 것이다.
+
+## 이관 절차 (완료)
+
+1. ~~BouncyCastle 의존 추가~~ → `org.bouncycastle:bcprov-jdk18on`
+2. ~~맵에 argon2 추가~~ → OWASP 최소 권고 파라미터로
+3. ~~`encodingId` 변경~~ → `"argon2"`
+4. **남은 것**: 로그인 성공 시 `upgradeEncoding` 판단으로 기존 BCrypt 해시를 점진 재인코딩. 지금은 **새 가입만** Argon2로 가고 기존 회원은 BCrypt 해시를 유지한다.
 
 ## 트레이드오프 / 포기한 것
 
-- **지금 당장의 강도는 안 올라간다.** 인코딩 알고리즘은 그대로 BCrypt다. 이건 **준비**이지 개선이 아니다. 그렇게 적는다.
-- 저장 문자열이 접두사만큼 길어진다(`{bcrypt}` 8바이트). 컬럼 길이 여유를 확인했다.
-- 72바이트 절단은 **여전히 남아 있다.** Argon2로 넘어가기 전까지 유효한 한계다.
+- **의존이 하나 늘었다.** BouncyCastle. "이미 있는 것으로 되면 새로 안 들인다"는 이 프로젝트의 기준을 여기서는 적용하지 않았다. BCrypt와 Argon2id는 **같은 목적을 같은 강도로 달성하지 않기** 때문이다.
+- **메모리 비용이 생겼다.** 위 실측 참고. 동시 로그인이 많으면 이게 먼저 아프다. 트래픽이 늘면 파라미터(19MiB)를 다시 재야 한다.
+- **기존 회원은 아직 BCrypt다.** `upgradeEncoding` 배선을 안 했다. 그래서 72바이트 절단은 **기존 회원에게 여전히 남아 있다.**
+- 저장 문자열이 길어진다(`{argon2}` 접두사 + Argon2 인코딩). 컬럼 길이 여유를 확인했다.
 
 ## 연결 — BCrypt를 없앨 수 없는 자리
 

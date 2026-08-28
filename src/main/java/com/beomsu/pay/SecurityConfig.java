@@ -14,6 +14,7 @@ import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -176,35 +177,40 @@ public class SecurityConfig {
     }
 
     /**
-     * 비밀번호 인코더 — <b>BCrypt로 인코딩하되 알고리즘 접두사를 붙인다</b>(ADR-009).
+     * 비밀번호 인코더 — <b>Argon2id로 인코딩하고, 기존 BCrypt 해시는 계속 검증한다</b>(ADR-009).
      *
-     * <p>BCrypt 자체는 아직 안전하지만 <b>1순위 권고가 아니다.</b> OWASP는 Argon2id를 먼저 권하고
-     * BCrypt는 그 다음으로 둔다. 한계는 두 가지 — 비밀번호가 <b>72바이트에서 잘리고</b>, 메모리 하드가
-     * 약해 전용 하드웨어 공격에 상대적으로 취약하다.
+     * <p><b>왜 Argon2id인가</b>: OWASP Password Storage Cheat Sheet의 1순위다. BCrypt는 깨진 건
+     * 아니지만 그 다음 순위이고, 한계가 둘 있다 — 비밀번호가 <b>72바이트에서 조용히 잘리고</b>,
+     * 메모리 하드가 약해(4KB) GPU·ASIC 병렬 공격에 상대적으로 취약하다.
      *
-     * <p>지금 바꾸지 않는 이유는 <b>Argon2/SCrypt 인코더가 BouncyCastle을 요구</b>하는데 이 프로젝트에
-     * 그 의존이 없어서다. 의존을 하나 더 들이는 것보다, <b>나중에 바꿀 수 있게 열어 두는 것</b>을 먼저 한다.
+     * <p><b>파라미터</b>: OWASP 최소 권고인 <b>메모리 19MiB · iterations 2 · parallelism 1</b>을 쓴다.
+     * Spring이 제공하는 {@code defaultsForSpringSecurity_v5_8()}은 메모리가 16MiB라 권고에 못 미쳐
+     * 직접 구성했다.
      *
-     * <p>그래서 {@link DelegatingPasswordEncoder}로 감싼다. 새로 만드는 해시에는 {@code {bcrypt}}
-     * 접두사가 붙어, 나중에 맵에 argon2를 추가하고 기본 id만 바꾸면 <b>기존 해시를 그대로 둔 채</b>
-     * 새 가입부터 새 알고리즘으로 넘어간다. 접두사가 없으면 어떤 알고리즘으로 만든 해시인지 알 수 없어
-     * 전수 비밀번호 재설정 말고는 이관할 방법이 없다.
+     * <p><b>기존 해시를 어떻게 하나</b>: {@link DelegatingPasswordEncoder}가 접두사로 알고리즘을 고른다.
+     * 새 가입은 {@code {argon2}...}로 저장되고, 이미 저장된 {@code {bcrypt}...}는 맵의 bcrypt 인코더가,
+     * 그보다 더 오래된 <b>접두사 없는</b> 해시는 {@code setDefaultPasswordEncoderForMatches}가 검증한다.
+     * 그래서 <b>기존 회원이 비밀번호를 재설정하지 않아도 된다.</b> 접두사를 먼저 붙여 둔 덕에 알고리즘
+     * 교체가 맵 한 줄과 기본 id 변경으로 끝났다.
      *
-     * <p>{@code setDefaultPasswordEncoderForMatches}는 <b>접두사 없이 이미 저장된 기존 해시</b>를
-     * 계속 검증하기 위한 것이다. 이게 없으면 기존 회원이 전부 로그인하지 못한다.
+     * <p><b>대가</b>: 메모리 하드는 <b>서버 메모리도</b> 쓴다. 로그인 1건마다 19MiB를 잡으므로 동시
+     * 로그인 100건이면 순간 약 1.9GB다. 즉 이 교체는 {@code /auth/login}의 <b>DoS 표면을 오히려 키운다.</b>
+     * {@link RateLimitFilter}가 그 경로를 IP 기준으로 막고 있는 것이 그래서 더 중요해졌다.
      *
-     * <p><b>주의</b>: 인코더를 바꿔도 {@code /auth/login}에서 BCrypt가 1회 도는 사실은 그대로다.
-     * 비밀번호를 실제로 대조하는 자리라 없앨 수 없고, 그래서 그 경로는 IP 기준 유입 제한으로 막는다
-     * ({@link RateLimitFilter}).
+     * <p><b>주의</b>: 알고리즘을 바꿔도 로그인 1회 해싱이 남는 사실은 그대로다. 비밀번호를 실제로
+     * 대조하는 자리라 없앨 수 없다. JWT가 없앤 것은 <b>요청마다</b> 하던 재검증이지 해싱 자체가 아니다.
      */
     @Bean
     PasswordEncoder passwordEncoder() {
-        String encodingId = "bcrypt";
-        Map<String, PasswordEncoder> encoders = Map.of(encodingId, new BCryptPasswordEncoder());
+        String encodingId = "argon2";
+        // OWASP 최소 권고: 메모리 19MiB(=19456KB), iterations 2, parallelism 1.
+        PasswordEncoder argon2 = new Argon2PasswordEncoder(16, 32, 1, 19456, 2);
+        PasswordEncoder bcrypt = new BCryptPasswordEncoder();
 
-        DelegatingPasswordEncoder delegating = new DelegatingPasswordEncoder(encodingId, encoders);
-        // 접두사 없는 레거시 해시(이미 DB에 있는 것)를 계속 검증한다.
-        delegating.setDefaultPasswordEncoderForMatches(new BCryptPasswordEncoder());
+        DelegatingPasswordEncoder delegating = new DelegatingPasswordEncoder(
+                encodingId, Map.of(encodingId, argon2, "bcrypt", bcrypt));
+        // 접두사가 아예 없는 레거시 해시(가장 오래된 것)도 계속 검증한다.
+        delegating.setDefaultPasswordEncoderForMatches(bcrypt);
         return delegating;
     }
 }
