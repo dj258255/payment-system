@@ -118,3 +118,8 @@ tasks.register('integrationTest', Test) {
     classpath = sourceSets.test.runtimeClasspath
     shouldRunAfter('test')
 }
+
+// 로컬 실측용 — 런타임 클래스패스를 뽑아 스탠드얼론 측정 프로그램을 돌린다.
+tasks.register('printRuntimeClasspath') {
+    doLast { println sourceSets.main.runtimeClasspath.asPath }
+}
