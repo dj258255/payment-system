@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -110,7 +111,14 @@ class CheckoutTx {
             // 승인 성공 시점 재고 차감(ADR-003). tryDeduct(예외 없는 boolean) — 부족해도 tx는 깨끗이 커밋하고 보상.
             List<OrderItem> deducted = new ArrayList<>();
             boolean allDeducted = true;
-            for (OrderItem item : order.getItems()) {
+            // 상품 ID 오름차순으로 잠근다 — 잠금 순서를 모든 트랜잭션에서 같게 만들어 데드락을 막는다.
+            // 정렬이 없으면 잠금 순서가 주문 항목 순서를 따르므로, 장바구니에 같은 두 상품이 반대 순서로
+            // 담긴 두 주문이 동시에 오면 서로가 상대의 행을 기다려 교착한다(A→B 대 B→A).
+            // 단일 상품 주문에서는 드러나지 않아 실측에서도 안 잡혔다.
+            List<OrderItem> lockOrdered = order.getItems().stream()
+                    .sorted(Comparator.comparing(OrderItem::getProductId))
+                    .toList();
+            for (OrderItem item : lockOrdered) {
                 if (stockDeductionService.tryDeduct(item.getProductId(), item.getQuantity())) {
                     deducted.add(item);
                 } else {
