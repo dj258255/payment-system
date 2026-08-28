@@ -88,7 +88,11 @@ CREATE TABLE order_items (
 - **order_items는 스냅샷**: 상품 가격이 나중에 바뀌어도 주문·정산·환불 금액은 주문 시점으로 고정 (velog @roycewon의 ProductSnapshot, 배민 정산의 Snapshot 엔티티와 동일 원리)
 - 주문 상태와 결제 상태는 **별개의 상태머신**이다. 주문은 비즈니스 관점(배송·확정), 결제는 자금 관점이다
 
-## 2. 결제 (payments / payment_history / payment_cancels)
+## 2. 결제 (payments / payment_history / ~~payment_cancels~~)
+
+> **`payment_cancels`는 만들지 않았다.** 취소 이력은 `payment_history`에 상태 전이 이력의 하나로
+> 함께 쌓는다. 별도 테이블로 나누면 "이 결제에 무슨 일이 있었나"를 두 테이블을 조인해야 알 수 있고,
+> 부분취소가 여러 번이면 순서 재구성이 어려워진다. 부분취소 식별은 **취소 순번**으로 한다.
 
 ```sql
 CREATE TABLE payments (
@@ -120,7 +124,7 @@ CREATE TABLE payment_history (                          -- ★ append-only, UPDA
     KEY idx_payment_history_payment (payment_id, created_at)
 );
 
-CREATE TABLE payment_cancels (
+CREATE TABLE payment_cancels (   -- (미구현) 취소 이력은 payment_history에 함께 쌓는다
     id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
     payment_id          BIGINT       NOT NULL,
     cancel_amount       BIGINT       NOT NULL,
@@ -193,7 +197,7 @@ CREATE TABLE compensation_tasks (
 > `processed_events`와 `webhook_events`는 설명대로 실재한다.
 
 ```sql
-CREATE TABLE outbox_events (                            -- Transactional Outbox
+CREATE TABLE outbox_events (   -- (미구현) 실제 이름: event_publication (Modulith, 5-1절)
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     event_id        VARCHAR(36)  NOT NULL,             -- UUID — 컨슈머 멱등 처리의 키
     aggregate_type  VARCHAR(50)  NOT NULL,             -- PAYMENT / ORDER
@@ -268,10 +272,14 @@ CREATE TABLE event_publication_archive (                -- ★ V24. 완료분이
   구분해야 할 건 "밀리는 중"과 "멈춤"이다. `outbox.pending.oldest.age` 게이지로 본다 —
   개수가 아니라 나이여야 둘이 갈린다.
 
-## 6. 원장 (ledger_accounts / ledger_transactions / ledger_entries)
+## 6. 원장 (~~ledger_accounts~~ / ledger_transactions / ledger_entries)
+
+> **`ledger_accounts`는 테이블이 아니라 enum이다**(`AccountType`: `PG_RECEIVABLE`, `SALES`,
+> `CASH`, `PG_FEE`). 계정과목은 운영 중 늘어나는 데이터가 아니라 코드가 아는 고정 집합이고,
+> 테이블로 두면 분개 코드가 문자열·ID로 계정을 참조하게 되어 오타가 컴파일에 안 잡힌다.
 
 ```sql
-CREATE TABLE ledger_accounts (
+CREATE TABLE ledger_accounts (   -- (미구현) 계정과목은 테이블이 아니라 enum AccountType
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     account_type    VARCHAR(40)  NOT NULL,             -- PG_RECEIVABLE / SALES / FEE_REVENUE / CLEARING / USER_BALANCE ...
     owner_id        BIGINT       NULL,                 -- 사용자/가맹점 계정이면 소유자, 시스템 계정이면 NULL
@@ -315,7 +323,11 @@ CREATE TABLE ledger_entries (                           -- ★ append-only. UPDA
 | FEE_REVENUE에 대응하는 비용 | 300 | |
 | SALES (매출) | | 10,000 |
 
-## 7. 정산 (settlements / settlement_details)
+## 7. 정산 (settlements / settlement_items)
+
+> **`settlement_details`의 실제 이름은 `settlement_items`다.** 아래 DDL의 테이블명만 다르고
+> 구조는 대응한다. 항목에 상태(`PENDING_CONFIRMATION`/`CONFIRMED`/`SETTLED`/`CANCELED`)가
+> 붙은 것이 설계 당시와 달라진 점이다.
 
 ```sql
 CREATE TABLE settlements (
@@ -330,7 +342,7 @@ CREATE TABLE settlements (
     UNIQUE KEY uk_settlement (merchant_id, settlement_date)   -- ★ 배치 재실행 멱등성의 핵심
 );
 
-CREATE TABLE settlement_details (
+CREATE TABLE settlement_details (   -- 실제 이름: settlement_items
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     settlement_id   BIGINT       NOT NULL,
     payment_id      BIGINT       NOT NULL,
@@ -349,7 +361,11 @@ CREATE TABLE settlement_details (
 ## 8. 대사 (pg_transactions / reconciliation_results)
 
 ```sql
-CREATE TABLE pg_transactions (                          -- PG 정산 파일 적재 (D+1 도착분)
+-- 아래 pg_transactions는 만들지 않았다. PG 정산 파일의 각 행은 대사 실행 중에만 필요한
+-- 값이라 `ExternalRecord`(자바 record, 비영속)로 파싱해 흘리고, 대사 <결과>만
+-- `reconciliation_results`에 남긴다. 원본 보관이 필요해지면 그때 테이블로 승격한다.
+-- 내부 기준 스냅샷은 `internal_records`로 실재한다.
+CREATE TABLE pg_transactions (                          -- (미구현) PG 정산 파일 적재 (D+1 도착분)
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     file_id         VARCHAR(100) NOT NULL,             -- 파일 단위 재적재 멱등성
     transaction_key VARCHAR(200) NOT NULL,             -- ★ 대사 매칭 키 (승인일이 아닌 거래번호)
