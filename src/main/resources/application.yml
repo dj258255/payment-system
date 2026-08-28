@@ -54,6 +54,12 @@ spring:
         schema-initialization:
           enabled: false         # event_publication은 Flyway(V1)가 생성한다
       republish-outstanding-events-on-restart: true   # 미완료 이벤트 재시도
+      # 완료된 이벤트를 event_publication_archive로 옮긴다(기본값 update = 행을 영원히 남김).
+      # 이유: 기본값이면 발행량에 비례해 outbox가 무한히 자란다. 부하 실험 6회 만에 150,372행이
+      # 됐고, 완료 처리 쿼리(serialized_event + listener_id 등치)가 그 전체를 풀스캔했다
+      # — 즉 결제 지연이 "그동안 처리한 이벤트 총량"에 비례해 나빠진다(V24 참고).
+      # archive는 감사 흔적을 버리지 않으면서(delete와 다름) 핫 테이블에 크기 상한을 준다.
+      completion-mode: archive
       externalization:
         # 기본 off. 브로커가 없으면 @Externalized 이벤트를 Kafka로 내보내지 않는다
         # → 브로커 없이 부팅/테스트가 깨지지 않고, Outbox 기반 인프로세스 소비는 그대로 동작한다.
@@ -197,7 +203,23 @@ app:
   ratelimit:
     enabled: ${APP_RATELIMIT_ENABLED:true}       # k6 전/후 비교용 스위치 — false면 필터가 전부 통과
     per-user-per-sec: ${APP_RATELIMIT_PER_USER:5}   # 사용자당 초당 허용(스크립트·이중클릭 억제)
-    global-per-sec: ${APP_RATELIMIT_GLOBAL:100}     # 경로당 전체 초당 허용(DB로 가는 총량 캡)
+    # 경로당 전체 초당 허용(DB로 가는 총량 캡).
+    #
+    # 이 100은 측정값이 아니라 처음에 짐작으로 정한 값이다. 다계정 실측(성능 리포트 9절)에서
+    # 이 서버의 실제 처리 능력이 ~120/s로 나왔으니, 100은 능력보다 낮게 잡혀 있다 — 포화점
+    # 아래에서는 처리할 수 있는 일을 버린다(200 VU 기준 처리량 -8.7%, p95 +15.1%).
+    #
+    # 그런데도 100을 그대로 두는 이유: ~120/s는 맥북 로컬(앱·MySQL·Redis·k6가 한 머신)에서 나온
+    # 숫자다. 운영 하드웨어에서는 다르다. 로컬 실측으로 운영 기본값을 바꾸면 짐작을 다른 짐작으로
+    # 바꾸는 것뿐이다.
+    #
+    # 배포 환경마다 다시 재고 그 환경의 값으로 덮어쓸 것(env APP_RATELIMIT_GLOBAL):
+    #   docker compose down -v && docker compose up -d mysql redis
+    #   APP_RATELIMIT_ENABLED=false ./gradlew bootRun
+    #   VUS=200 ACCOUNTS=40 k6 run k6/spike-multi-account.js
+    # 여기서 나온 "앱 도달 처리량"이 그 환경의 포화점이다. 상한은 그 근처에 둔다 — 훨씬 낮으면
+    # 멀쩡한 요청을 버리고, 훨씬 높으면 상한이 아무것도 막지 못한다.
+    global-per-sec: ${APP_RATELIMIT_GLOBAL:100}
 
   # 선착순 대기열(Redis ZSET) — 순간 트래픽 폭증 시 DB 유입을 제어한다.
   queue:

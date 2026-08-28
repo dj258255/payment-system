@@ -67,3 +67,18 @@ groups:
         annotations:
           summary: "비밀번호 해시 이관 미완료 (레거시 {{ $value }}건)"
           description: "현재 알고리즘으로 옮겨지지 않은 해시가 7일 넘게 남아 있습니다. 휴면 계정으로 보이면 재설정 유도를 검토하세요. 0이 되면 레거시 인코더를 제거할 수 있습니다."
+
+      # 7) 아웃박스 소비 정체 — 미소비 이벤트가 오래 방치됨(V24, OutboxMetrics).
+      #    @ApplicationModuleListener는 커밋 이후 별도 스레드에서 돈다. 결제가 200으로 나간 뒤에도
+      #    정산·원장·알림·에스크로는 아직일 수 있고, 그 시차 자체는 정상이다.
+      #    그래서 개수가 아니라 <나이>에 건다 — 부하 중엔 수천 건이 밀려도 곧 빠지지만(실측:
+      #    22,492건 → 6,174건), 몇 건뿐이어도 안 빠지면 소비가 멈춘 것이다. 후자만 사고다.
+      #    소비가 멈추면 겉으로는 "결제는 되는데 원장이 안 쌓인다"로 보인다 — 늦게 알수록 손해가 크다.
+      - alert: OutboxConsumptionStalled
+        expr: outbox_pending_oldest_age_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "아웃박스 소비 정체 (최고령 {{ $value }}초)"
+          description: "5분 넘게 소비되지 않은 이벤트가 있습니다. 비동기 실행기 스레드 고갈, 리스너 예외 반복, DB 잠금을 확인하세요. 재기동 시에는 republish-outstanding-events-on-restart로 재발행됩니다."
