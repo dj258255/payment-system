@@ -48,6 +48,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
             Set.of("/api/v1/auth/login", "/api/v1/members/signup");
 
     private static final Duration WINDOW = Duration.ofSeconds(1);
+
+    /** 429를 낸 층 — 응답 헤더 {@code X-RateLimit-Scope}로 나간다. {@link #reject} 참고. */
+    private static final String SCOPE_USER = "user";      // 이 사용자의 초당 한도
+    private static final String SCOPE_IP = "ip";          // 이 IP의 초당 한도(미인증 경로)
+    private static final String SCOPE_GLOBAL = "global";  // 경로 전체의 초당 한도(시스템 포화)
     private static final String RATE_LIMITED_BODY =
             "{\"code\":\"RATE_LIMITED\",\"message\":\"요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.\"}";
 
@@ -78,9 +83,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
         // 표적이라, 미인증이라고 그냥 통과시키면 비대칭 DoS·계정 열거에 노출된다.
         if (AUTH_PATHS.contains(path)) {
             String ip = clientIp(request);
-            if (!rateLimiter.tryAcquire("ip:" + ip + ":" + path, perUserPerSec, WINDOW)
-                    || !rateLimiter.tryAcquire("global:" + path, globalPerSec, WINDOW)) {
-                reject(response);
+            if (!rateLimiter.tryAcquire("ip:" + ip + ":" + path, perUserPerSec, WINDOW)) {
+                reject(response, SCOPE_IP);
+                return;
+            }
+            if (!rateLimiter.tryAcquire("global:" + path, globalPerSec, WINDOW)) {
+                reject(response, SCOPE_GLOBAL);
                 return;
             }
             chain.doFilter(request, response);
@@ -99,10 +107,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
 
-        // per-user 먼저(더 좁은 한도) — 초과면 global 카운터는 소비하지 않는다.
-        if (!rateLimiter.tryAcquire("user:" + auth.getName() + ":" + path, perUserPerSec, WINDOW)
-                || !rateLimiter.tryAcquire("global:" + path, globalPerSec, WINDOW)) {
-            reject(response);
+        // per-user 먼저(더 좁은 한도) — 초과면 global 카운터는 소비하지 않는다. 한 사람이 스크립트로
+        // 때린다고 전체 예산을 태우면, 그 사람 때문에 멀쩡한 다른 사용자가 거절된다.
+        if (!rateLimiter.tryAcquire("user:" + auth.getName() + ":" + path, perUserPerSec, WINDOW)) {
+            reject(response, SCOPE_USER);
+            return;
+        }
+        if (!rateLimiter.tryAcquire("global:" + path, globalPerSec, WINDOW)) {
+            reject(response, SCOPE_GLOBAL);
             return;
         }
         chain.doFilter(request, response);
@@ -119,10 +131,18 @@ public class RateLimitFilter extends OncePerRequestFilter {
         return request.getRemoteAddr();
     }
 
-    /** 429를 필터에서 직접 write — 컨트롤러/서비스/DB에 비용 0. */
-    private void reject(HttpServletResponse response) throws IOException {
+    /**
+     * 429를 필터에서 직접 write — 컨트롤러/서비스/DB에 비용 0.
+     *
+     * <p>{@code X-RateLimit-Scope}로 <b>어느 층이 잘랐는지</b> 알린다. 같은 429라도 대응이 정반대다 —
+     * {@code user}는 그 클라이언트만 물러나면 되고(재시도가 유효), {@code global}은 시스템 전체가
+     * 포화라 그 클라이언트가 얌전해도 안 풀린다(증설·원인 규명이 필요). 이 구분이 없으면 대시보드의
+     * 429 그래프만 보고 "누가 때리는 중"인지 "우리가 감당을 못 하는 중"인지 가릴 수 없다.
+     */
+    private void reject(HttpServletResponse response, String scope) throws IOException {
         response.setStatus(429);
         response.setHeader("Retry-After", "1");                    // 고정 윈도우 = 1초 뒤 새 윈도우
+        response.setHeader("X-RateLimit-Scope", scope);
         response.setContentType("application/json;charset=UTF-8");
         response.getOutputStream().write(RATE_LIMITED_BODY.getBytes(StandardCharsets.UTF_8));
     }
