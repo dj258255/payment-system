@@ -28,6 +28,7 @@ class ReconciliationAdminServiceTest {
     private ReconciliationResultRepository repository;
     private PgSettlementCsvParser parser;
     private ReconciliationService reconciliationService;
+    private com.beomsu.pay.audit.AuditService auditService;
     private ReconciliationAdminService service;
 
     @BeforeEach
@@ -35,7 +36,8 @@ class ReconciliationAdminServiceTest {
         repository = mock(ReconciliationResultRepository.class);
         parser = mock(PgSettlementCsvParser.class);
         reconciliationService = mock(ReconciliationService.class);
-        service = new ReconciliationAdminService(repository, parser, reconciliationService);
+        auditService = mock(com.beomsu.pay.audit.AuditService.class);
+        service = new ReconciliationAdminService(repository, auditService, parser, reconciliationService);
     }
 
     @Test
@@ -95,12 +97,15 @@ class ReconciliationAdminServiceTest {
         when(repository.findById(7L)).thenReturn(Optional.of(mismatch));
         when(repository.saveAndFlush(mismatch)).thenReturn(mismatch);
 
-        ReconMismatchView view = service.resolve(7L);
+        ReconMismatchView view = service.resolve(7L, "admin", ResolveCause.PARTIAL_CANCEL_NOT_REFLECTED, "2차 취소 미반영");
 
         assertThat(mismatch.getStatus()).isEqualTo(ReconStatus.MANUALLY_RESOLVED);
         assertThat(view.orderNo()).isEqualTo("ord-1");
         // OSIV off — 상태 변경이 DB에 남으려면 saveAndFlush가 반드시 불려야 한다.
         verify(repository).saveAndFlush(mismatch);
+        // 확정과 감사 기록은 같은 트랜잭션이다 — 확정만 되고 기록이 빠지는 상태를 만들지 않는다.
+        verify(auditService).record(eq("admin"), eq("RECON_RESOLVE"),
+                eq("RECONCILIATION_RESULT"), eq("7"), contains("PARTIAL_CANCEL_NOT_REFLECTED"));
     }
 
     @Test
@@ -109,11 +114,12 @@ class ReconciliationAdminServiceTest {
         ReconciliationResult matched = ReconciliationResult.matched(LocalDate.of(2026, 7, 5), "ord-2", 10_000); // AUTO_RESOLVED
         when(repository.findById(8L)).thenReturn(Optional.of(matched));
 
-        assertThatThrownBy(() -> service.resolve(8L))
+        assertThatThrownBy(() -> service.resolve(8L, "admin", ResolveCause.FEE_CALCULATION_DIFF, null))
                 .isInstanceOf(ReconciliationException.class)
                 .satisfies(e -> assertThat(((ReconciliationException) e).code())
                         .isEqualTo("INVALID_STATE_TRANSITION"));
         verify(repository, never()).saveAndFlush(any());
+        verify(auditService, never()).record(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -121,7 +127,7 @@ class ReconciliationAdminServiceTest {
     void resolveThrowsWhenNotFound() {
         when(repository.findById(404L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.resolve(404L))
+        assertThatThrownBy(() -> service.resolve(404L, "admin", ResolveCause.FEE_CALCULATION_DIFF, null))
                 .isInstanceOf(ReconciliationException.class)
                 .satisfies(e -> assertThat(((ReconciliationException) e).code())
                         .isEqualTo("RECON_RESULT_NOT_FOUND"));

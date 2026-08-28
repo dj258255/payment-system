@@ -59,6 +59,22 @@ public class ReconciliationResult {
     @Column(nullable = false)
     private Instant reconciledAt;
 
+    /** 수기 확정한 운영자 — 자동 종결(AUTO_RESOLVED)이면 null */
+    @Column(length = 100)
+    private String resolvedBy;
+
+    /** 확정 사유 코드 — 반복 패턴을 세기 위한 집계 축 (ADR-008) */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 40)
+    private ResolveCause resolveCause;
+
+    /** 자유 서술 — {@link ResolveCause#OTHER}면 필수 */
+    @Column(length = 500)
+    private String resolveNote;
+
+    @Column
+    private Instant resolvedAt;
+
     private ReconciliationResult(LocalDate tradeDate, String orderNo, ReconResultType result,
                                  Long internalAmount, Long externalAmount, ReconStatus status) {
         this.tradeDate = tradeDate;
@@ -91,15 +107,34 @@ public class ReconciliationResult {
     }
 
     /**
-     * 수기 확정 — 사람이 예외 큐(PENDING)를 검토한 뒤 종결 처리한다. PENDING이 아니면(이미 종결) 예외.
+     * 수기 확정 — 사람이 예외 큐(PENDING)를 검토한 뒤 사유와 함께 종결한다. PENDING이 아니면 예외.
      *
-     * <p>누가/왜 확정했는지는 엔티티에 컬럼으로 남기지 않고 어드민 <b>감사 로그</b>로 남긴다
-     * (스키마 변경 최소화). 상태만 MANUALLY_RESOLVED로 전이한다.
+     * <p><b>사유를 필수로 받는 이유</b>(ADR-008): 이전에는 상태만 전이하고 "누가/왜"는 감사 로그로
+     * 남긴다고 했으나 그 배선이 없어 <b>조사 결과가 어디에도 기록되지 않았다.</b> 같은 불일치 패턴이
+     * 다시 와도 매번 처음부터 조사해야 했다. 원인을 코드와 서술로 함께 받아 <b>반복 패턴을 셀 수 있게</b>
+     * 한다. 자주 나오는 원인은 이후 규칙으로 자동 확정할 수 있다.
+     *
+     * <p>{@link ResolveCause#OTHER}는 서술을 반드시 요구한다. 목록에 없는 원인을 기존 코드에 억지로
+     * 밀어 넣으면 집계가 오염되기 때문이다.
      */
-    public void resolveManually() {
+    public void resolveManually(String actor, ResolveCause cause, String note) {
         if (status != ReconStatus.PENDING) {
             throw ReconciliationException.notPending(status);
         }
+        if (actor == null || actor.isBlank()) {
+            throw new ReconciliationException("RESOLVE_ACTOR_REQUIRED", "확정자는 필수입니다.");
+        }
+        if (cause == null) {
+            throw new ReconciliationException("RESOLVE_CAUSE_REQUIRED", "확정 사유 코드는 필수입니다.");
+        }
+        if (cause == ResolveCause.OTHER && (note == null || note.isBlank())) {
+            throw new ReconciliationException("RESOLVE_NOTE_REQUIRED",
+                    "사유가 OTHER면 서술이 필수입니다.");
+        }
         this.status = ReconStatus.MANUALLY_RESOLVED;
+        this.resolvedBy = actor;
+        this.resolveCause = cause;
+        this.resolveNote = note;
+        this.resolvedAt = Instant.now();
     }
 }
