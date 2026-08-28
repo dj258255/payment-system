@@ -136,7 +136,7 @@ class PaymentServiceTest {
         Payment stuck = inProgress("order-r", "pk-r", 8_000, 5L);
         stuck.markUnknown("타임아웃"); // IN_PROGRESS → UNKNOWN
         when(repository.findFirstByOrderNoOrderByRequestedAtDesc("order-r")).thenReturn(Optional.of(stuck));
-        when(mockPg.query("pk-r")).thenReturn(new PgQueryResult(PgPaymentStatus.APPROVED, "CARD"));
+        when(mockPg.query("pk-r", "TOSS_PAYMENTS")).thenReturn(new PgQueryResult(PgPaymentStatus.APPROVED, "CARD"));
 
         Optional<StuckPaymentInfo> info = svc.resolveStuckPayment("order-r");
 
@@ -154,7 +154,7 @@ class PaymentServiceTest {
         PaymentService svc = new PaymentService(repository, mockPg, new PaymentCancelTx(repository, events), events, meterRegistry);
         Payment stuck = inProgress("order-c", "pk-c", 8_000, 6L); // IN_PROGRESS
         when(repository.findFirstByOrderNoOrderByRequestedAtDesc("order-c")).thenReturn(Optional.of(stuck));
-        when(mockPg.query("pk-c")).thenReturn(new PgQueryResult(PgPaymentStatus.CANCELED, null));
+        when(mockPg.query("pk-c", "TOSS_PAYMENTS")).thenReturn(new PgQueryResult(PgPaymentStatus.CANCELED, null));
 
         Optional<StuckPaymentInfo> info = svc.resolveStuckPayment("order-c");
 

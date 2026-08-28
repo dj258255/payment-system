@@ -96,8 +96,25 @@ public class Payment {
 
     /** IN_PROGRESS → DONE. */
     public void approve(String method) {
+        approve(method, null);
+    }
+
+    /**
+     * IN_PROGRESS → DONE. 어느 PG가 승인했는지 함께 적는다.
+     *
+     * <p>이 값이 나중에 취소를 어디로 보낼지 정한다. 이중화를 켜면 승인이 다른 PG로 넘어갈 수
+     * 있는데, 취소를 아무 PG에나 보내면 "그런 거래 없음"이 돌아오고 그것이 취소 결과가 된다.
+     * 고객 돈은 원 PG에 잡혀 있는데 우리 장부에는 취소로 남는다.
+     *
+     * <p>{@code provider}가 null 이면 기존 값을 그대로 둔다. 단일 PG 어댑터는 자기 이름을
+     * 알려 주지 않는다.
+     */
+    public void approve(String method, String provider) {
         transitionTo(PaymentStatus.DONE, TriggeredBy.USER, "승인 완료");
         this.method = method;
+        if (provider != null) {
+            this.pgProvider = provider;
+        }
         this.approvedAt = Instant.now();
     }
 

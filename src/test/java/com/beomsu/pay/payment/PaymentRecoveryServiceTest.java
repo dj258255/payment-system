@@ -46,7 +46,7 @@ class PaymentRecoveryServiceTest {
     @DisplayName("PG에 승인돼 있으면 전진 복구(DONE) + 완료 이벤트 발행")
     void recoverForwardWhenPgApproved() {
         Payment p = unknownPayment("pk-1");
-        when(pg.query("pk-1")).thenReturn(new PgQueryResult(PgPaymentStatus.APPROVED, "CARD"));
+        when(pg.query("pk-1", "TOSS_PAYMENTS")).thenReturn(new PgQueryResult(PgPaymentStatus.APPROVED, "CARD"));
 
         int recovered = service.recoverUnknownPayments();
 
@@ -62,7 +62,7 @@ class PaymentRecoveryServiceTest {
     @DisplayName("PG에 결제가 없으면 ABORTED (승인이 실제로 안 됨), 이벤트 미발행")
     void abortWhenPgNotFound() {
         Payment p = unknownPayment("pk-2");
-        when(pg.query("pk-2")).thenReturn(new PgQueryResult(PgPaymentStatus.NOT_FOUND, null));
+        when(pg.query("pk-2", "TOSS_PAYMENTS")).thenReturn(new PgQueryResult(PgPaymentStatus.NOT_FOUND, null));
 
         service.recoverUnknownPayments();
 
@@ -75,7 +75,7 @@ class PaymentRecoveryServiceTest {
     @DisplayName("PG에서 이미 취소됐으면 CANCELED(망취소 반영)")
     void networkCancelWhenPgCanceled() {
         Payment p = unknownPayment("pk-3");
-        when(pg.query("pk-3")).thenReturn(new PgQueryResult(PgPaymentStatus.CANCELED, null));
+        when(pg.query("pk-3", "TOSS_PAYMENTS")).thenReturn(new PgQueryResult(PgPaymentStatus.CANCELED, null));
 
         service.recoverUnknownPayments();
 
