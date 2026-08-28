@@ -108,8 +108,11 @@ class PaymentCancelTx {
 
         boolean fullyCanceled = payment.getStatus() == PaymentStatus.CANCELED;
         // 취소 후 잔액(절대값)을 실어 정산이 멱등하게 반영하게 한다(델타 차감이 아니라 절대 잔액 세팅).
+        // canceledAt은 <지금>이 맞다 — 취소가 방금 이 트랜잭션에서 일어났기 때문이다.
+        // 소비 쪽에서 Instant.now()를 쓰면 아웃박스 지연만큼 거래일이 밀리므로, 사실이 일어난
+        // 시각을 여기서 못박아 실어 보낸다(ADR-013).
         events.publishEvent(new PaymentCanceledEvent(
                 payment.getOrderNo(), payment.getId(), cancelSeq, cancelAmount.amount(),
-                payment.getBalanceAmount(), fullyCanceled));
+                payment.getBalanceAmount(), fullyCanceled, java.time.Instant.now()));
     }
 }

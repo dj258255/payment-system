@@ -20,5 +20,6 @@ import org.springframework.modulith.events.Externalized;
  */
 @Externalized("payment.canceled::#{orderNo}")
 public record PaymentCanceledEvent(String orderNo, Long paymentId, int cancelSeq, long cancelAmount,
-                                   long settleableBalance, boolean fullyCanceled) {
+                                   long settleableBalance, boolean fullyCanceled,
+                                   java.time.Instant canceledAt) {
 }

@@ -45,14 +45,30 @@ public class ReconciliationService {
     }
 
     /**
-     * 결제 취소를 내부 기록에 반영한다 — 대사 기대치를 취소 후 잔액으로 낮춘다.
+     * 결제 취소를 내부 기록에 <b>별도 행</b>으로 쌓는다 (ADR-013).
+     *
+     * <p><b>왜 덮어쓰지 않나</b>: 예전에는 원 거래일 행의 금액을 취소 후 잔액으로 갈아끼웠다.
+     * 그러면 <b>이미 확정된 대사 판정과 스냅샷이 갈라진다</b> — 실제로 재현했다.
+     * 10,000원 승인 → 대사 MATCHED 확정 → 3,000원 취소 후, 스냅샷은 7,000인데 판정은 10,000이었다.
+     * 취소가 며칠 뒤에 오면 그 날짜를 다시 대사할 계기가 없어 아무도 모른 채 남는다.
+     *
+     * <p>그리고 PG는 환불을 <b>취소가 일어난 날의 파일에 별도 행</b>으로 싣는다. 덮어쓰기 방식은
+     * 그날 대사에서 그 환불 행을 {@code EXTERNAL_ONLY}로 잡아 예외 큐를 오염시킨다.
+     * 별도 행으로 쌓으면 양쪽이 같은 날짜에서 만난다.
      *
      * <p>기록이 없으면(대사 대상이 아닌 결제 등) 조용히 넘어간다.
+     * 중복 소비는 {@code (orderNo, seq)} 유니크가 막는다.
      */
     @Transactional
     public void reflectCancellation(PaymentCanceledEvent event) {
-        internalRecords.findByOrderNo(event.orderNo())
-                .ifPresent(record -> record.applySettleableBalance(event.settleableBalance()));
+        if (internalRecords.findByOrderNo(event.orderNo()).isEmpty()) {
+            return;   // 승인 스냅샷이 없는 결제 — 대사 대상이 아니다
+        }
+        if (internalRecords.existsByOrderNoAndSeq(event.orderNo(), event.cancelSeq())) {
+            return;   // 멱등: 같은 취소가 이미 쌓였다
+        }
+        internalRecords.save(InternalRecord.canceled(
+                event.orderNo(), event.cancelAmount(), event.cancelSeq(), event.canceledAt()));
     }
 
     /**
@@ -74,11 +90,14 @@ public class ReconciliationService {
      */
     @Transactional
     public List<ReconciliationResult> reconcile(LocalDate tradeDate, List<ExternalRecord> external) {
-        // 내부는 (trade_date, order_no) 유니크라 주문당 한 행이 보장된다 — 덮어쓸 일이 없다.
-        // 외부(정산 파일)에는 그 보장이 없어서 아래는 합산으로 다룬다.
+        // 내부도 <합산>한다 (ADR-013). 취소가 별도 행으로 쌓이므로 한 주문이 여러 행일 수 있다.
+        //   8/28  ord-1  +10,000  seq=0   (승인)
+        //   8/30  ord-1   -3,000  seq=1   (취소)
+        // 다만 같은 거래일 안에서만 합산된다 — 8/30 대사는 -3,000만 본다. 그게 맞다.
+        // PG도 그날 파일에 환불 -3,000을 실으므로 양쪽이 같은 날짜에서 만난다.
         Map<String, Long> internalMap = new LinkedHashMap<>();
         for (InternalRecord record : internalRecords.findByTradeDate(tradeDate)) {
-            internalMap.put(record.getOrderNo(), record.getAmount());
+            internalMap.merge(record.getOrderNo(), record.getAmount(), Math::addExact);
         }
         // 같은 orderNo가 여러 행으로 올 수 있다. 다만 두 종류가 있고 <b>대응이 정반대</b>다.
         //

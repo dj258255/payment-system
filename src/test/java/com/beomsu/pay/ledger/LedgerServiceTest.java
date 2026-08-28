@@ -128,7 +128,7 @@ class LedgerServiceTest {
                 "PAYMENT_CANCELED", "PAYMENT", 100L, 2)).thenReturn(false);
 
         service.recordPaymentCanceled(
-                new PaymentCanceledEvent("order-1", 100L, 2, 5_000, 10_000, false));
+                new PaymentCanceledEvent("order-1", 100L, 2, 5_000, 10_000, false, java.time.Instant.now()));
 
         ArgumentCaptor<LedgerTransaction> captor = ArgumentCaptor.forClass(LedgerTransaction.class);
         verify(repository).save(captor.capture());
@@ -144,7 +144,7 @@ class LedgerServiceTest {
                 "PAYMENT_CANCELED", "PAYMENT", 100L, 1)).thenReturn(true);
 
         service.recordPaymentCanceled(
-                new PaymentCanceledEvent("order-1", 100L, 1, 5_000, 15_000, false));
+                new PaymentCanceledEvent("order-1", 100L, 1, 5_000, 15_000, false, java.time.Instant.now()));
 
         verify(repository, never()).save(any());
     }

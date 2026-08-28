@@ -6,6 +6,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import java.time.LocalDate;
 
+import java.util.Optional;
+import com.beomsu.pay.payment.PaymentCanceledEvent;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -223,5 +225,68 @@ class ReconciliationServiceTest {
         assertThat(reconciled.get(0).getResult())
                 .as("식별자가 없으면 중복을 못 잡아 불일치로 드러난다 — 감추는 것보다는 낫다")
                 .isEqualTo(ReconResultType.AMOUNT_MISMATCH);
+    }
+
+    @Test
+    @DisplayName("취소는 원 거래일을 덮어쓰지 않고 취소일에 음수 행으로 쌓인다")
+    void cancellationIsAppendedAsNegativeRow() {
+        when(internalRecords.findByOrderNo("ord-1")).thenReturn(Optional.of(
+                InternalRecord.of("ord-1", 10_000, Instant.parse("2026-08-28T05:00:00Z"))));
+        when(internalRecords.existsByOrderNoAndSeq("ord-1", 1)).thenReturn(false);
+
+        service.reflectCancellation(new PaymentCanceledEvent(
+                "ord-1", 1L, 1, 3_000, 7_000, false,
+                Instant.parse("2026-08-30T05:00:00Z")));   // 이틀 뒤 취소
+
+        var saved = org.mockito.ArgumentCaptor.forClass(InternalRecord.class);
+        verify(internalRecords).save(saved.capture());
+        assertThat(saved.getValue().getAmount())
+                .as("취소는 음수로 쌓인다. 원 행을 고치지 않으므로 확정된 판정이 무효가 되지 않는다")
+                .isEqualTo(-3_000);
+        assertThat(saved.getValue().getTradeDate())
+                .as("거래일은 취소가 일어난 날이다 — PG도 환불을 그날 파일에 싣는다")
+                .isEqualTo(LocalDate.of(2026, 8, 30));
+        assertThat(saved.getValue().getSeq()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("같은 취소가 두 번 소비되면 한 번만 쌓인다")
+    void cancellationIsIdempotent() {
+        when(internalRecords.findByOrderNo("ord-1")).thenReturn(Optional.of(
+                InternalRecord.of("ord-1", 10_000, Instant.parse("2026-08-28T05:00:00Z"))));
+        when(internalRecords.existsByOrderNoAndSeq("ord-1", 1)).thenReturn(true);   // 이미 쌓임
+
+        service.reflectCancellation(new PaymentCanceledEvent(
+                "ord-1", 1L, 1, 3_000, 7_000, false, Instant.parse("2026-08-30T05:00:00Z")));
+
+        verify(internalRecords, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("승인 스냅샷이 없는 결제의 취소는 조용히 넘어간다 — 대사 대상이 아니다")
+    void cancellationWithoutSnapshotIsIgnored() {
+        when(internalRecords.findByOrderNo("ord-x")).thenReturn(Optional.empty());
+
+        service.reflectCancellation(new PaymentCanceledEvent(
+                "ord-x", 1L, 1, 3_000, 7_000, false, Instant.now()));
+
+        verify(internalRecords, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("같은 거래일에 승인과 취소가 다 있으면 합산된다")
+    void sameDayApprovalAndCancellationAreSummed() {
+        LocalDate target = LocalDate.of(2026, 8, 30);
+        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+                InternalRecord.of("ord-1", 10_000, Instant.parse("2026-08-30T05:00:00Z")),
+                InternalRecord.canceled("ord-1", 3_000, 1, Instant.parse("2026-08-30T09:00:00Z"))));
+
+        List<ReconciliationResult> reconciled = service.reconcile(target, List.of(
+                new ExternalRecord("ord-1", 10_000, "psp-1"),
+                new ExternalRecord("ord-1", -3_000, "psp-2")));
+
+        assertThat(reconciled).hasSize(1);
+        assertThat(reconciled.get(0).getInternalAmount()).isEqualTo(7_000);
+        assertThat(reconciled.get(0).getResult()).isEqualTo(ReconResultType.MATCHED);
     }
 }

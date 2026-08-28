@@ -236,7 +236,7 @@ class SettlementServiceTest {
     void reflectCancellationFullyCancels() {
         SettlementItem item = confirmedItem(100L, "order-1", 10_000);
         when(itemRepository.findByPaymentId(100L)).thenReturn(Optional.of(item));
-        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 1, 10_000, 0, true);
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 1, 10_000, 0, true, java.time.Instant.now());
 
         service.reflectCancellation(event);
 
@@ -250,7 +250,7 @@ class SettlementServiceTest {
         SettlementItem item = confirmedItem(100L, "order-1", 10_000);
         when(itemRepository.findByPaymentId(100L)).thenReturn(Optional.of(item));
         // 3,000 취소 후 잔액 7,000
-        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 1, 3_000, 7_000, false);
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 1, 3_000, 7_000, false, java.time.Instant.now());
 
         service.reflectCancellation(event);
 
@@ -264,7 +264,7 @@ class SettlementServiceTest {
     void reflectCancellationIsIdempotentOnRedelivery() {
         SettlementItem item = confirmedItem(100L, "order-1", 10_000);
         when(itemRepository.findByPaymentId(100L)).thenReturn(Optional.of(item));
-        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 1, 3_000, 7_000, false);
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 1, 3_000, 7_000, false, java.time.Instant.now());
 
         service.reflectCancellation(event); // 1차
         service.reflectCancellation(event); // 재배달(at-least-once)
@@ -280,7 +280,7 @@ class SettlementServiceTest {
         SettlementItem item = confirmedItem(100L, "order-1", 10_000);
         item.markSettled(); // CONFIRMED → SETTLED
         when(itemRepository.findByPaymentId(100L)).thenReturn(Optional.of(item));
-        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 1, 10_000, 0, true);
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 1, 10_000, 0, true, java.time.Instant.now());
 
         service.reflectCancellation(event);
 
@@ -294,7 +294,7 @@ class SettlementServiceTest {
     @DisplayName("취소: 정산에 없는 결제면 무시")
     void reflectCancellationMissingItemIsIgnored() {
         when(itemRepository.findByPaymentId(999L)).thenReturn(Optional.empty());
-        PaymentCanceledEvent event = new PaymentCanceledEvent("order-x", 999L, 1, 10_000, 0, true);
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-x", 999L, 1, 10_000, 0, true, java.time.Instant.now());
 
         service.reflectCancellation(event);
 
@@ -307,7 +307,7 @@ class SettlementServiceTest {
         SettlementItem item = confirmedItem(100L, "order-1", 10_000);
         item.cancel(); // → CANCELED
         when(itemRepository.findByPaymentId(100L)).thenReturn(Optional.of(item));
-        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 1, 10_000, 0, true);
+        PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 1, 10_000, 0, true, java.time.Instant.now());
 
         service.reflectCancellation(event);
 
