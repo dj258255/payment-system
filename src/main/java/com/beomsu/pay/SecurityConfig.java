@@ -15,12 +15,15 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+
+import java.util.Map;
 
 /**
  * 보안 설정.
@@ -172,8 +175,36 @@ public class SecurityConfig {
         };
     }
 
+    /**
+     * 비밀번호 인코더 — <b>BCrypt로 인코딩하되 알고리즘 접두사를 붙인다</b>(ADR-009).
+     *
+     * <p>BCrypt 자체는 아직 안전하지만 <b>1순위 권고가 아니다.</b> OWASP는 Argon2id를 먼저 권하고
+     * BCrypt는 그 다음으로 둔다. 한계는 두 가지 — 비밀번호가 <b>72바이트에서 잘리고</b>, 메모리 하드가
+     * 약해 전용 하드웨어 공격에 상대적으로 취약하다.
+     *
+     * <p>지금 바꾸지 않는 이유는 <b>Argon2/SCrypt 인코더가 BouncyCastle을 요구</b>하는데 이 프로젝트에
+     * 그 의존이 없어서다. 의존을 하나 더 들이는 것보다, <b>나중에 바꿀 수 있게 열어 두는 것</b>을 먼저 한다.
+     *
+     * <p>그래서 {@link DelegatingPasswordEncoder}로 감싼다. 새로 만드는 해시에는 {@code {bcrypt}}
+     * 접두사가 붙어, 나중에 맵에 argon2를 추가하고 기본 id만 바꾸면 <b>기존 해시를 그대로 둔 채</b>
+     * 새 가입부터 새 알고리즘으로 넘어간다. 접두사가 없으면 어떤 알고리즘으로 만든 해시인지 알 수 없어
+     * 전수 비밀번호 재설정 말고는 이관할 방법이 없다.
+     *
+     * <p>{@code setDefaultPasswordEncoderForMatches}는 <b>접두사 없이 이미 저장된 기존 해시</b>를
+     * 계속 검증하기 위한 것이다. 이게 없으면 기존 회원이 전부 로그인하지 못한다.
+     *
+     * <p><b>주의</b>: 인코더를 바꿔도 {@code /auth/login}에서 BCrypt가 1회 도는 사실은 그대로다.
+     * 비밀번호를 실제로 대조하는 자리라 없앨 수 없고, 그래서 그 경로는 IP 기준 유입 제한으로 막는다
+     * ({@link RateLimitFilter}).
+     */
     @Bean
     PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        String encodingId = "bcrypt";
+        Map<String, PasswordEncoder> encoders = Map.of(encodingId, new BCryptPasswordEncoder());
+
+        DelegatingPasswordEncoder delegating = new DelegatingPasswordEncoder(encodingId, encoders);
+        // 접두사 없는 레거시 해시(이미 DB에 있는 것)를 계속 검증한다.
+        delegating.setDefaultPasswordEncoderForMatches(new BCryptPasswordEncoder());
+        return delegating;
     }
 }
