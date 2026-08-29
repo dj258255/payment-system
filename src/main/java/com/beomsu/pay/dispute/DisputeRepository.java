@@ -14,4 +14,7 @@ interface DisputeRepository extends JpaRepository<Dispute, Long> {
 
     /** 최근 분쟁 목록 — 어드민 감사용. Top50으로 상한. */
     List<Dispute> findTop50ByOrderByIdDesc();
+
+    /** 타임라인 조립용(ADR-011). 한 주문에 분쟁이 여러 번 걸릴 수 있어 목록이다. */
+    List<Dispute> findByOrderNoOrderByIdAsc(String orderNo);
 }

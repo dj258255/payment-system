@@ -14,6 +14,9 @@ interface PointHistoryRepository extends JpaRepository<PointHistory, Long> {
     /** 최근 포인트 이력 — 최신순. 잔액 조회 화면에 함께 싣는다. */
     List<PointHistory> findTop20ByUserIdOrderByIdDesc(long userId);
 
+    /** 타임라인 조립용(ADR-011). 한 주문이 만든 포인트 사건 전부 — 사용·복원·적립·회수. */
+    List<PointHistory> findByOrderNoOrderByIdAsc(String orderNo);
+
     /** 같은 주문·유형의 금액 합계. 이력이 없으면 0. 환불 가능 포인트 계산에 쓴다. */
     @Query("select coalesce(sum(h.amount),0) from PointHistory h where h.orderNo = :orderNo and h.type = :type")
     long sumAmountByOrderNoAndType(@Param("orderNo") String orderNo, @Param("type") PointHistoryType type);
