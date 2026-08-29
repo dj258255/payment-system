@@ -1,5 +1,6 @@
 package com.beomsu.pay.timeline;
 
+import com.beomsu.pay.audit.AuditTimelineFacts;
 import com.beomsu.pay.dispute.DisputeTimelineFacts;
 import com.beomsu.pay.escrow.EscrowTimelineFacts;
 import com.beomsu.pay.ledger.LedgerTimelineFacts;
@@ -127,5 +128,32 @@ class DomainContributors {
                                 "원장 분개 %s — %s".formatted(l.txType(), l.description()), l.amount()))
                         .toList())
                 .orElseGet(List::of));
+    }
+
+    /**
+     * 감사로그는 세 번째 키 형태를 쓴다 — {@code (targetType, targetId)}(ADR-011 트레이드오프 9).
+     * 그래서 <b>3단계 해석</b>이 필요하다: orderNo → 결제 id·대사 결과 id → 감사 대상.
+     *
+     * <p>현재 감사 기록을 남기는 유일한 경로가 대사 수기 확정이므로 실질적으로 그것만 잡히지만,
+     * 대상 목록 방식이라 나중에 강제취소·PII 열람이 감사를 남기기 시작하면 그대로 따라온다.
+     */
+    @Bean
+    TimelineContributor auditContributor(AuditTimelineFacts audit,
+                                         PaymentTimelineFacts payment,
+                                         ReconTimelineFacts recon) {
+        return contributor(Source.AUDIT, orderNo -> {
+            var targets = new java.util.ArrayList<AuditTimelineFacts.Target>();
+            targets.add(new AuditTimelineFacts.Target("ORDER", orderNo));
+            payment.resolvePaymentId(orderNo)
+                    .ifPresent(id -> targets.add(new AuditTimelineFacts.Target("PAYMENT", String.valueOf(id))));
+            recon.findByOrderNo(orderNo).forEach(r ->
+                    targets.add(new AuditTimelineFacts.Target("RECONCILIATION_RESULT", String.valueOf(r.id()))));
+
+            return audit.findByTargets(targets).stream()
+                    .map(a -> of(a.at(), Source.AUDIT, "AUDIT_" + a.action(),
+                            "%s 님이 %s — %s".formatted(a.actor(), a.action(),
+                                    a.detail() == null ? a.targetType() : a.detail())))
+                    .toList();
+        });
     }
 }
