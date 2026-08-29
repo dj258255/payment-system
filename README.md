@@ -191,12 +191,12 @@ k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
 ```
 
 ## 문서
-
 - [docs/02 결제 도메인 핵심 개념](docs/02-결제도메인-핵심개념.md): PG/VAN 구조, 결제 3단계, 상태머신
 - [docs/03 아키텍처 설계](docs/03-아키텍처-설계.md): 멱등성, Saga/Outbox, 원장, 웹훅, 정산/대사
 - [docs/04 장애 시나리오 설계](docs/04-장애-시나리오-설계.md): 외부 API 실패 처리 전반
 - [docs/05 성능 전략](docs/05-성능개선-전략.md): 동시성 제어, 부하테스트, 관측성
 - [docs/09 ERD](docs/09-ERD-설계.md) ([다이어그램](docs/images/erd.svg)), [docs/10 API 스펙](docs/10-API-스펙.md)
+- [docs/11 AI 운영 자동화 검토](docs/11-AI-운영자동화-검토.md): AI를 어디에 넣고 어디는 안 넣나 — 대사 원인 8개 중 6개는 산수, FDS 5단계 대조, 사람 검토 결과가 곧 라벨
 - [docs/adr](docs/adr/): 아키텍처 결정 기록
 
 ## 가정과 한계
