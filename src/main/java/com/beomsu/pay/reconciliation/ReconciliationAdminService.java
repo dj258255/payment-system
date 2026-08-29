@@ -27,6 +27,7 @@ public class ReconciliationAdminService {
     private final AuditService auditService;
     private final PgSettlementCsvParser parser;
     private final ReconciliationService reconciliationService;
+    private final CauseClassifier classifier;
 
     /**
      * PG 정산 파일(CSV)을 파싱해 대사 매칭 엔진을 돌리고 결과를 분류별로 집계한다.
@@ -93,5 +94,19 @@ public class ReconciliationAdminService {
         return new ReconMismatchView(r.getId(), r.getOrderNo(), r.getResult(),
                 r.getInternalAmount(), r.getExternalAmount(), r.getReconciledAt(),
                 r.getResolvedBy(), r.getResolveCause(), r.getResolveNote(), r.getResolvedAt());
+    }
+
+    /**
+     * 불일치 하나의 원인 후보를 제안한다 (ADR-012). <b>확정하지 않는다.</b>
+     *
+     * <p>목록 조회에 끼우지 않고 별도 호출로 둔 이유: 20건짜리 목록을 그릴 때마다
+     * 20번 분류를 돌리면 결제 조회가 그만큼 늘어난다. 사람이 <b>한 건을 열어볼 때만</b> 필요하다.
+     */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public java.util.List<CauseSuggestion> suggestCauses(Long id) {
+        ReconciliationResult result = repository.findById(id)
+                .orElseThrow(() -> new ReconciliationException(
+                        "RECON_RESULT_NOT_FOUND", "대사 결과를 찾을 수 없습니다: " + id));
+        return classifier.suggest(result);
     }
 }

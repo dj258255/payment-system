@@ -37,7 +37,10 @@ class ReconciliationAdminServiceTest {
         parser = mock(PgSettlementCsvParser.class);
         reconciliationService = mock(ReconciliationService.class);
         auditService = mock(com.beomsu.pay.audit.AuditService.class);
-        service = new ReconciliationAdminService(repository, auditService, parser, reconciliationService);
+        // 원인 분류기(ADR-012)는 이 테스트의 관심사가 아니라 목으로 둔다 — 분류 규칙은
+        // CauseClassifierTest가 따로 검증한다.
+        service = new ReconciliationAdminService(repository, auditService, parser, reconciliationService,
+                mock(CauseClassifier.class));
     }
 
     @Test

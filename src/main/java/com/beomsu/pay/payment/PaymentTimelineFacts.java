@@ -52,6 +52,36 @@ public class PaymentTimelineFacts {
         return paymentRepository.findFirstByOrderNoOrderByRequestedAtDesc(orderNo).map(Payment::getId);
     }
 
+
+    /**
+     * 대사 원인 판정에 쓰는 결제 사실 (ADR-012).
+     *
+     * <p>{@code balanceAmount}가 핵심이다 — 승인액에서 취소분을 뺀 잔여이므로,
+     * <b>취소된 금액 = amount − balance</b>가 결정적으로 나온다.
+     * "차액이 취소 금액과 같은가"를 추측이 아니라 산수로 판정할 수 있다.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<PaymentState> findState(String orderNo) {
+        return paymentRepository.findFirstByOrderNoOrderByRequestedAtDesc(orderNo)
+                .map(p -> new PaymentState(p.getAmount(), p.getBalanceAmount(),
+                        p.getCancelCount(), p.getStatus().name(), p.getRequestedAt()));
+    }
+
+    /**
+     * @param amount        승인 금액
+     * @param balanceAmount 잔여 금액(취소분 차감 후)
+     * @param cancelCount   취소 횟수. 0이면 취소가 없었다는 뜻이라 부분취소 가설을 배제할 수 있다
+     * @param status        결제 상태
+     * @param requestedAt   승인 요청 시각. 정산 파일 마감 직전인지 판단할 때 쓴다
+     */
+    public record PaymentState(long amount, long balanceAmount, int cancelCount,
+                               String status, Instant requestedAt) {
+        /** 취소된 금액. 승인액에서 잔여를 뺀 값이다. */
+        public long canceledAmount() {
+            return amount - balanceAmount;
+        }
+    }
+
     /** 전이 한 건. 상태 이름은 문자열로 내준다 — enum을 내주면 받는 쪽이 payment 내부에 묶인다. */
     public record PaymentFact(Instant at, String fromStatus, String toStatus,
                               String triggeredBy, String reason, long amount, String pgProvider) {
