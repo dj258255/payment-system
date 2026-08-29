@@ -11,6 +11,9 @@ interface ReconciliationResultRepository extends JpaRepository<ReconciliationRes
     /** 어드민 관측용 — 상태별 대사 결과 페이지(운영이 PENDING 예외 큐를 조회). 전건 로딩 방지 위해 페이지 단위. */
     Page<ReconciliationResult> findByStatus(ReconStatus status, Pageable pageable);
 
+    /** 타임라인 조립용(ADR-011). 같은 주문이 여러 날 대사에 걸릴 수 있어 목록이다 — 시간대 경계 판단의 재료. */
+    java.util.List<ReconciliationResult> findByOrderNoOrderByIdAsc(String orderNo);
+
     /** SLO 게이지용 — 상태별 대사 결과 건수(운영이 PENDING 적체를 관측). */
     long countByStatus(ReconStatus status);
 
