@@ -149,4 +149,40 @@ class ReconciliationServiceTest {
 
         verify(internalRecords, never()).save(any());
     }
+
+    @Test
+    @DisplayName("같은 주문이 여러 행으로 오면 합산한다 — 승인·환불이 별도 행인 것은 정상이다")
+    void multipleExternalRowsForSameOrderAreSummed() {
+        LocalDate target = LocalDate.of(2026, 8, 30);
+        // 내부는 부분취소 후 잔여 7,000
+        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+                InternalRecord.of("ord-1", 7_000, Instant.parse("2026-08-30T05:00:00Z"))));
+
+        // PG 파일은 승인 10,000과 환불 -3,000을 <별도 행>으로 준다.
+        // 주요 PG가 환불·챠지백을 별도 journal type으로 내면서 같은 참조번호를 공유하기 때문이다.
+        List<ReconciliationResult> reconciled = service.reconcile(target, List.of(
+                new ExternalRecord("ord-1", 10_000),
+                new ExternalRecord("ord-1", -3_000)));
+
+        assertThat(reconciled).hasSize(1);
+        assertThat(reconciled.get(0).getResult())
+                .as("합산하면 7,000이라 내부 잔여와 맞는다. 덮어쓰면 -3,000으로 읽혀 없는 불일치가 생긴다")
+                .isEqualTo(ReconResultType.MATCHED);
+        assertThat(reconciled.get(0).getExternalAmount()).isEqualTo(7_000);
+    }
+
+    @Test
+    @DisplayName("합산 결과가 내부와 다르면 그때는 진짜 불일치다")
+    void summedRowsStillDetectRealMismatch() {
+        LocalDate target = LocalDate.of(2026, 8, 30);
+        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+                InternalRecord.of("ord-1", 10_000, Instant.parse("2026-08-30T05:00:00Z"))));
+
+        List<ReconciliationResult> reconciled = service.reconcile(target, List.of(
+                new ExternalRecord("ord-1", 9_000),
+                new ExternalRecord("ord-1", -270)));   // 합계 8,730
+
+        assertThat(reconciled.get(0).getResult()).isEqualTo(ReconResultType.AMOUNT_MISMATCH);
+        assertThat(reconciled.get(0).getExternalAmount()).isEqualTo(8_730);
+    }
 }
