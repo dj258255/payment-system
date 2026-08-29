@@ -8,6 +8,9 @@ import java.util.Optional;
 
 interface InternalRecordRepository extends JpaRepository<InternalRecord, Long> {
 
+    /** 취소 행 멱등 판정(ADR-013). 같은 주문의 같은 취소 순번이 이미 쌓였는지. */
+    boolean existsByOrderNoAndSeq(String orderNo, int seq);
+
     /** 적재 멱등성: 같은 주문이 이미 내부 기록으로 쌓였는지 확인. */
     boolean existsByOrderNo(String orderNo);
 
