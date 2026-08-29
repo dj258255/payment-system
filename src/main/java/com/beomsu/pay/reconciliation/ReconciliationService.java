@@ -8,9 +8,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 
 /**
@@ -22,6 +24,7 @@ import java.util.TreeSet;
  * <p>매칭 엔진은 <b>결정적(deterministic)</b>이다 — 같은 입력(내부·외부 집합)이면 항상 같은 결과.
  * orderNo 정렬 순서로 결과를 만들어 재현·감사 가능하게 한다.
  */
+@lombok.extern.slf4j.Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReconciliationService {
@@ -77,19 +80,32 @@ public class ReconciliationService {
         for (InternalRecord record : internalRecords.findByTradeDate(tradeDate)) {
             internalMap.put(record.getOrderNo(), record.getAmount());
         }
-        // 같은 orderNo가 여러 행으로 올 수 있다 — <b>합산</b>한다. 덮어쓰면 안 된다.
+        // 같은 orderNo가 여러 행으로 올 수 있다. 다만 두 종류가 있고 <b>대응이 정반대</b>다.
         //
-        // 왜 여러 행이 오나: 주요 PG는 승인·환불·챠지백을 <b>각각 별도 행</b>으로 내면서
-        // 원거래와 같은 가맹점 참조번호를 공유한다(Adyen은 Refunded/Chargeback을 별도
-        // journal type으로, PayPal은 수수료를 여러 거래에 안분하지 않고 개별 행으로).
-        // 즉 한 주문이 "승인 10,000 / 환불 -3,000" 두 행으로 오는 것이 <b>정상</b>이다.
+        //   정상 — 승인·환불·챠지백이 각각 별도 행. 원거래와 같은 참조번호를 공유하므로 합산해야 맞다
+        //          (Adyen은 Refunded/Chargeback을 별도 journal type으로 낸다)
+        //   오류 — 같은 거래가 중복 기록됨. 합산하면 금액이 부풀어 <b>불일치를 오히려 감춘다</b>
+        //          (Uber 사례: "$100 거래가 두 번 기록되면 $200으로 집계")
         //
-        // 이전 구현은 put으로 덮어써서 마지막 행만 남았다. 그러면 위 예에서
-        // "내부 10,000 vs 외부 -3,000"이라는 <b>없는 불일치</b>를 만들어낸다.
-        // 합산하면 7,000이 되어 내부의 잔여와 맞는다.
+        // 이 둘은 PG의 <b>행 단위 거래 식별자</b>로만 갈린다. 그래서 식별자가 있으면 먼저 중복을
+        // 걸러내고, 그다음 합산한다. 식별자가 없는 파일은 걸러낼 수 없으므로 합산만 한다 —
+        // 그 경우 중복이 있으면 못 잡는다는 것을 알고 쓰는 것이다.
         Map<String, Long> externalMap = new LinkedHashMap<>();
+        Set<String> seenTransactionIds = new HashSet<>();
+        int duplicateRows = 0;
         for (ExternalRecord record : external) {
+            if (record.transactionId() != null && !seenTransactionIds.add(record.transactionId())) {
+                // 같은 거래 식별자가 두 번 왔다. 합산하면 금액이 부풀므로 버린다.
+                duplicateRows++;
+                log.warn("정산 파일 중복 행 무시 tradeDate={} orderNo={} transactionId={}",
+                        tradeDate, record.orderNo(), record.transactionId());
+                continue;
+            }
             externalMap.merge(record.orderNo(), record.amount(), Math::addExact);
+        }
+        if (duplicateRows > 0) {
+            // 조용히 넘기지 않는다 — 중복이 나온다는 것 자체가 PG 파일 생성에 문제가 있다는 신호다.
+            log.warn("정산 파일에 중복 행 {}건 tradeDate={}", duplicateRows, tradeDate);
         }
 
         // 양쪽 키의 합집합을 정렬 → 결정적 순서
