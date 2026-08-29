@@ -526,7 +526,7 @@ k6 run k6/capacity-knee.js
 스크립트가 setup에서 429를 만나면 **바로 중단한다.** 제어를 끄는 걸 잊으면 무릎이 아니라
 자기가 설정한 숫자를 재게 되고, 그건 측정이 아니라 동어반복이다.
 
-## 13. 느린 쿼리를 우연이 아니라 로그로 찾는다 (설정 완료 · 실행 검증 미완)
+## 13. 느린 쿼리를 우연이 아니라 로그로 찾는다 (검증 완료)
 
 10절의 아웃박스 풀스캔은 **우연히 찾았다.** 부하 실험 결과가 회차마다 달라 원인을 쫓다가
 DB를 열어보고서야 `event_publication`이 150,372행이고 완료 처리가 매번 풀스캔이라는 걸 알았다.
@@ -558,17 +558,43 @@ spring.jpa.properties.hibernate.log_slow_query: ${APP_SLOW_QUERY_MS:300}
 
 Hibernate 7 jar에서 상수를 직접 확인했다: `LOG_SLOW_QUERY = "hibernate.log_slow_query"`.
 
-### 남은 것: 실행 검증
+### 실제로 찍히는 것을 확인했다 — DB 없이
 
-**아직 실제로 찍히는 것을 보지 못했다.** 검증하려던 시점에 로컬 도커 데몬이 반복해서 내려갔다.
-확인 방법은 이렇다 — 임계를 1ms로 낮춰 띄우면 평범한 쿼리도 걸려야 한다.
+**설정이 맞다는 것과 로그가 찍힌다는 것은 다른 문장이다.** 그래서 발화를 검증했다.
 
-```bash
-docker compose up -d mysql redis
-APP_SLOW_QUERY_MS=1 ./gradlew bootRun
-# 아무 API나 한 번 호출한 뒤
-grep SlowQuery <로그>
+처음엔 앱을 띄워 확인하려 했는데 로컬 도커 데몬이 반복해서 내려갔다. 그러다 알아챈 것 —
+**이건 Hibernate 기능이지 MySQL 기능이 아니다.** DB가 전혀 필요 없다.
+`SqlStatementLogger`를 직접 호출해 `org.hibernate.SQL_SLOW` 로거로 나가는지만 보면 된다
+(`SlowQueryLoggingTest`, 4건).
+
+- 임계 초과 → 찍힌다. SQL 본문과 소요 시간을 함께 남긴다
+- 임계 이내 → 안 찍힌다
+- 임계 0 → 기능이 꺼진다
+- `application.yml`의 프로퍼티 이름이 이 Hibernate 버전 상수와 일치한다
+
+**컨테이너 없이 기본 스위트에서 매번 돈다.** 나중에 Hibernate를 올려 로거 이름이나 프로퍼티가
+또 바뀌면 여기서 깨진다.
+
+### 검증하다 하나 더 찾았다 — 메시지 형식
+
+실제 로그는 이렇게 나온다.
+
+```
+Slow query took 5 milliseconds [select * from payments where order_no = ?]
 ```
 
-**이걸 보기 전까지는 "켰다"고 말하지 않는다.** 설정이 맞다는 것과 로그가 찍힌다는 것은
-다른 문장이다.
+처음엔 `SlowQuery`라는 단어를 단언했다가 테스트가 깨졌다.
+**그래서 이 문서에 적어뒀던 `grep SlowQuery`도 틀린 것이었다.**
+로그가 제대로 찍혀도 **검색어가 틀리면 못 찾는다.**
+
+운영에서 확인할 때는 이렇게 본다.
+
+```bash
+grep "Slow query took" <로그>
+```
+
+임계를 낮춰 눈으로 보고 싶으면:
+
+```bash
+APP_SLOW_QUERY_MS=1 ./gradlew bootRun   # 1ms면 평범한 쿼리도 걸린다
+```
