@@ -37,7 +37,8 @@ public class NumberGuard {
 
     /** 1,000원 / 10000 원 — 천 단위 구분자 유무 모두. */
     private static final Pattern AMOUNT = Pattern.compile("([0-9][0-9,]*)\\s*원");
-    private static final Pattern ISO_DATE = Pattern.compile("\\b(\\d{4})-(\\d{2})-(\\d{2})\\b");
+    /** 뒤에 시각이 붙어도 잡는다 — {@code 2026-09-06T11:06} 의 T 는 단어 경계가 아니다. */
+    private static final Pattern ISO_DATE = Pattern.compile("\\b(\\d{4})-(\\d{2})-(\\d{2})(?!\\d)");
     private static final Pattern KO_DATE =
             Pattern.compile("(\\d{4})년\\s*(\\d{1,2})월\\s*(\\d{1,2})일");
 

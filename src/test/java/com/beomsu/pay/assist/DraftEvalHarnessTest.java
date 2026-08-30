@@ -198,4 +198,45 @@ class DraftEvalHarnessTest {
         assertThat(new NumberGuard().verify("확인 결과 1,234원이 차감되었습니다.", facts))
                 .anySatisfy(m -> assertThat(m).contains("출처에 없는 금액"));
     }
+
+    @Test
+    @DisplayName("사실 문장 안의 금액을 인용해도 통과한다 — 실제 모델이 찾아낸 자리")
+    void amountsInsideFactSentencesAreQuotable() {
+        // 타임라인 요약이 "내부 10,000 / 외부 9,730" 처럼 두 값을 문장에 담는다.
+        // entry.amount() 에는 하나만 들어가므로, 문장을 읽고 인용하면 나머지가 반려됐다.
+        OrderTimeline timeline = new OrderTimeline("ORD-7",
+                List.of(TimelineEntry.of(
+                        java.time.LocalDate.of(2026, 8, 30).atTime(14, 0)
+                                .atZone(java.time.ZoneId.of("Asia/Seoul")).toInstant(),
+                        TimelineEntry.Source.RECONCILIATION, "MISMATCH",
+                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 9,730", 10_000L)),
+                List.of());
+        FactPack facts = FactPack.from(timeline, null);
+
+        assertThat(facts.amounts()).contains(10_000L, 9_730L);
+        assertThat(new NumberGuard().verify("정산 파일에는 9,730원으로 기록돼 있습니다.", facts))
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("사실 문장 안의 미래 날짜도 인용할 수 있다 — 반복 실측에서 반려의 100%가 이 값이었다")
+    void datesInsideFactSentencesAreQuotable() {
+        // 에스크로 사실이 "자동해제 예정 2026-09-06T..." 을 담는다. 사건 시각(at)은 8/30이지만
+        // 문장이 말하는 날짜는 9/6이다. entry.at() 만 모으면 후자가 빠진다.
+        OrderTimeline timeline = new OrderTimeline("ORD-8",
+                List.of(TimelineEntry.of(
+                        java.time.LocalDate.of(2026, 8, 30).atTime(14, 0)
+                                .atZone(java.time.ZoneId.of("Asia/Seoul")).toInstant(),
+                        TimelineEntry.Source.ESCROW, "HELD",
+                        "에스크로 보류 — 자동해제 예정 2026-09-06T11:06:29Z")),
+                List.of());
+        FactPack facts = FactPack.from(timeline, null);
+
+        assertThat(facts.dates())
+                .contains(java.time.LocalDate.of(2026, 8, 30), java.time.LocalDate.of(2026, 9, 6));
+        assertThat(new NumberGuard().verify("2026-09-06에 자동 해제될 예정입니다.", facts)).isEmpty();
+        assertThat(new NumberGuard().verify("2027-01-01에 해제됩니다.", facts))
+                .as("사실에 없는 날짜는 여전히 걸려야 한다")
+                .isNotEmpty();
+    }
 }

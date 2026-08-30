@@ -35,8 +35,29 @@ public record FactPack(String orderNo,
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-    /** 근거 문장에 섞인 금액을 뽑는다 — {@code 8,888원} / {@code 270 원}. */
+    /** 근거 문장에 섞인 금액 — {@code 8,888원} / {@code 270 원}. */
     private static final Pattern HINT_AMOUNT = Pattern.compile("([0-9][0-9,]*)\\s*원");
+
+    /**
+     * 사실 문장 안의 자릿수 구분된 숫자 — {@code 내부 10,000 / 외부 9,730}.
+     *
+     * <p>쉼표가 있는 것만 잡는다. 코드가 {@code %,d} 로 찍은 값이라는 뜻이고,
+     * 날짜({@code 2026-08-30})나 식별자와 섞이지 않는다.
+     */
+    private static final Pattern FACT_AMOUNT = Pattern.compile("\\b([0-9]{1,3}(?:,[0-9]{3})+)\\b");
+
+    /**
+     * 사실 문장 안의 날짜 — {@code 자동해제 예정 2026-09-06T11:06:29Z}.
+     *
+     * <p>{@code entry.at()} 만 모으면 <b>사건이 일어난 시각</b>만 들어가고,
+     * 문장이 말하는 <b>다른 날짜</b>(에스크로 해제 예정일, 정산 확정일)가 빠진다.
+     * 실측에서 반려의 100%가 이 한 값 때문이었다.
+     *
+     * <p>뒤에 {@code \\b} 를 붙이면 안 된다 — {@code 2026-09-06T11:06} 의 {@code T} 는
+     * 단어 문자라 경계가 성립하지 않아 ISO 시각이 통째로 안 잡힌다. 실제로 그렇게 짰다가
+     * 테스트가 잡았다. 숫자만 이어지지 않으면 된다.
+     */
+    private static final Pattern FACT_DATE = Pattern.compile("\\b(\\d{4}-\\d{2}-\\d{2})(?!\\d)");
 
     /**
      * 타임라인과 <b>분류기 근거</b>를 사실 묶음으로 옮긴다. <b>스스로 계산하지 않는다.</b>
@@ -70,6 +91,28 @@ public record FactPack(String orderNo,
                 amounts.add(Math.abs(e.amount()));
             }
             facts.add("%s · %s · %s".formatted(d, e.source(), e.summary()));
+        }
+        // 사실 문장 안의 금액도 넣는다. 실측에서 모델이 "외부 9,730원"이라고 썼다가 반려됐는데,
+        // 그 값은 타임라인 요약 문장("내부 10,000 / 외부 9,730")에 있는 <코드가 만든> 숫자였다.
+        // 템플릿은 amounts() 만 찍으므로 이걸 못 잡는다 — 사실을 읽고 인용하는
+        // 실제 모델을 붙여야만 드러난다.
+        for (String fact : facts) {
+            Matcher fm = FACT_AMOUNT.matcher(fact);
+            while (fm.find()) {
+                try {
+                    amounts.add(Long.parseLong(fm.group(1).replace(",", "")));
+                } catch (NumberFormatException ignored) {
+                    // 자릿수가 넘치는 값. 허용 목록만 못 넓힌다.
+                }
+            }
+            Matcher fd = FACT_DATE.matcher(fact);
+            while (fd.find()) {
+                try {
+                    dates.add(LocalDate.parse(fd.group(1)));
+                } catch (java.time.DateTimeException ignored) {
+                    // 날짜꼴이지만 실재하지 않는 값. 넣지 않는다.
+                }
+            }
         }
         amounts.addAll(amountsIn(causeHint));
 

@@ -27,7 +27,7 @@ import java.util.Optional;
  * {@link DraftService} 가 템플릿으로 폴백할 수 있어야 한다.
  *
  * <pre>
- * ollama serve &amp;&amp; ollama pull qwen2.5:7b
+ * ollama serve &amp;&amp; ollama pull qwen3:8b
  * APP_ASSIST_DRAFT_PROVIDER=ollama ./gradlew bootRun
  * </pre>
  */
@@ -42,7 +42,7 @@ public class OllamaDraftAdapter implements DraftPort {
 
     OllamaDraftAdapter(PromptBuilder prompts,
                        @Value("${app.assist.ollama.base-url:http://localhost:11434}") String baseUrl,
-                       @Value("${app.assist.ollama.model:qwen2.5:7b}") String model,
+                       @Value("${app.assist.ollama.model:qwen3:8b}") String model,
                        @Value("${app.assist.ollama.timeout-seconds:60}") long timeoutSeconds) {
         this.prompts = prompts;
         this.model = model;
@@ -64,6 +64,9 @@ public class OllamaDraftAdapter implements DraftPort {
                     .body(Map.of(
                             "model", model,
                             "stream", false,
+                            // 추론 토큰을 끈다. 서술만 시키는데 켜두면 응답이 두 배 넘게 느려진다
+                            // (실측 19초 → 8초). 끄면 thinking 필드가 비고 content 는 그대로다.
+                            "think", false,
                             // 서술만 시키므로 낮게 둔다. 높으면 표현이 다양해지는 게 아니라
                             // 사실에서 벗어날 여지가 늘어난다.
                             "options", Map.of("temperature", 0.2),
