@@ -68,6 +68,7 @@ public class ReconciliationAdminService {
                     money.size(), money);
         }
         return new ReconRunSummary(parsed.records().size(), parsed.skipped(), money.size(),
+                reconciliationService.lastRunDuplicateRows(),
                 matched, internalOnly, externalOnly, amountMismatch, pending);
     }
 

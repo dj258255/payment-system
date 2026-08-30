@@ -73,15 +73,37 @@ public class AnthropicDraftAdapter implements DraftPort {
         if (facts.empty()) {
             return Optional.empty();
         }
+        return call(prompts.system(facts), prompts.user(facts), facts.orderNo(), "draft");
+    }
+
+    /**
+     * 지적된 것만 고쳐 다시 쓴다.
+     *
+     * <p><b>이게 없으면 조용히 꺼진다.</b> {@link DraftPort#revise} 는 기본 구현이 빈 값이라,
+     * 프로바이더를 이쪽으로 바꾸면 2단계 수정이 <b>아무 오류 없이</b> 동작을 멈춘다.
+     * 루브릭 점수가 4.10 으로 돌아가는데 로그에는 아무것도 안 남는다.
+     * 포트에 기본 구현을 둔 대가이고, 그래서 어댑터를 늘릴 때마다 여기를 같이 봐야 한다.
+     */
+    @Override
+    public Optional<String> revise(FactPack facts, String draft, List<String> issues) {
+        if (draft == null || draft.isBlank() || issues.isEmpty()) {
+            return Optional.empty();
+        }
+        return call(prompts.reviseSystem(), prompts.reviseUser(facts, draft, issues),
+                facts.orderNo(), "revise");
+    }
+
+    /** 생성과 수정이 공유하는 호출부. 두 벌 두면 한쪽만 고쳐지는 일이 생긴다. */
+    private Optional<String> call(String system, String user, String orderNo, String stage) {
         try {
             Map<?, ?> res = client.post().uri("/v1/messages")
                     .body(Map.of(
                             "model", model,
                             "max_tokens", maxTokens,
                             "temperature", 0.2,
-                            "system", prompts.system(facts),
+                            "system", system,
                             "messages", List.of(
-                                    Map.of("role", "user", "content", prompts.user(facts)))))
+                                    Map.of("role", "user", "content", user))))
                     .retrieve().body(Map.class);
 
             // content 는 블록 배열이다. text 블록만 이어 붙인다.
@@ -97,7 +119,7 @@ public class AnthropicDraftAdapter implements DraftPort {
 
             return text.isEmpty() ? Optional.empty() : Optional.of(text);
         } catch (RuntimeException e) {
-            log.warn("[anthropic] 초안 생성 실패 model={} order={}", model, facts.orderNo(), e);
+            log.warn("[anthropic] {} 실패 model={} order={}", stage, model, orderNo, e);
             return Optional.empty();
         }
     }

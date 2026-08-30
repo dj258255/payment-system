@@ -33,6 +33,20 @@ public class ReconciliationService {
     private final ReconciliationResultRepository results;
 
     /**
+     * 직전 실행에서 버린 중복 행 수. 실행 요약이 읽어 화면에 올린다.
+     *
+     * <p><b>왜 필드인가</b>: 반환형을 바꾸면 이 메서드를 쓰는 곳이 전부 바뀐다.
+     * 대사 실행은 어드민 한 곳에서 <b>동기적으로</b> 부르므로 이 한 값을 남겨 읽는다.
+     * 동시에 여러 번 돌리는 경로가 생기면 그때 반환형으로 옮겨야 한다 —
+     * 지금은 없고, 없는 문제를 위해 시그니처를 흔들지 않는다.
+     */
+    private volatile int lastRunDuplicateRows;
+
+    int lastRunDuplicateRows() {
+        return lastRunDuplicateRows;
+    }
+
+    /**
      * 결제 승인 이벤트를 내부 기록으로 적재한다. 멱등: 같은 orderNo가 이미 있으면 건너뛴다.
      */
     @Transactional
@@ -126,6 +140,8 @@ public class ReconciliationService {
             // 조용히 넘기지 않는다 — 중복이 나온다는 것 자체가 PG 파일 생성에 문제가 있다는 신호다.
             log.warn("정산 파일에 중복 행 {}건 tradeDate={}", duplicateRows, tradeDate);
         }
+        // 로그만으로는 <확정하는 사람>에게 닿지 않는다. 실행 요약에 실어 화면까지 보낸다.
+        lastRunDuplicateRows = duplicateRows;
 
         // 양쪽 키의 합집합을 정렬 → 결정적 순서
         TreeSet<String> orderNos = new TreeSet<>();
