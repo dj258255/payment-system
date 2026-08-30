@@ -197,6 +197,19 @@
       <div class="list" id="cd"></div>
     </div>
     <div class="panel">
+      <div class="sub">블라인드 리뷰 — 초안이 <b>쓸 만한지</b>를 재는 유일한 방법(ADR-014).
+        <b>사실만 보고 먼저 직접 써야</b> 합니다. 초안을 먼저 보면 그 문장에 끌려가서
+        "고칠 게 없었다"와 "고칠 생각이 안 났다"가 구분되지 않습니다.</div>
+      <div class="row">
+        <input id="brReconId" placeholder="대사 결과 ID" style="width:130px">
+        <input id="brOrderNo" placeholder="주문번호" style="flex:1">
+        <button onclick="brStart()">리뷰 시작</button>
+        <button onclick="brStats()" style="background:#6B7280">집계</button>
+      </div>
+      <div id="brStage" class="sub" style="display:none;padding:6px 0;font-weight:700"></div>
+      <div class="list" id="br"></div>
+    </div>
+    <div class="panel">
       <div class="sub">수기 확정 — <b>사유가 필수</b>입니다. 조사 결과를 남겨야 같은 패턴이 다시 왔을 때 처음부터 조사하지 않습니다.</div>
       <div class="row">
         <input id="rcId" placeholder="대사 결과 ID" style="width:140px">
@@ -459,6 +472,127 @@ async function loadDraft(){
   foot.style.cssText='padding:0 12px 10px;color:var(--sub)';
   foot.textContent='생성기: '+d.source+' \u00B7 숫자 검증 통과 \u00B7 발송 전 상담원이 확인하세요';
   box.appendChild(pre); box.appendChild(foot);
+}
+// ── 블라인드 리뷰 (ADR-014) ──
+// 서버가 단계에 따라 다른 것을 준다. 초안은 1단계를 마치기 전까지 응답에 <아예 없다> —
+// 화면이 감추는 게 아니라 서버가 안 보낸다. 클라이언트를 믿고 감추면 개발자 도구로 뚫린다.
+let brId = null;
+
+function brBox(){ return $('br'); }
+function brEl(tag, css, text){
+  const e = document.createElement(tag);
+  if(css) e.style.cssText = css;
+  if(text != null) e.textContent = text;
+  return e;
+}
+function brLabel(t){ return brEl('div','font-weight:700;margin:14px 0 6px', t); }
+
+async function brStart(){
+  const rid = $('brReconId').value.trim(), ono = $('brOrderNo').value.trim();
+  if(!rid || !ono){ logLine('err','\u2717 대사 ID와 주문번호를 모두 입력하세요'); return }
+  const r = await api('POST','/api/v1/admin/assist/reviews/start?reconResultId='
+    + encodeURIComponent(rid) + '&orderNo=' + encodeURIComponent(ono));
+  if(!r.ok) return;
+  brId = r.data.id;
+  brRender(r.data);
+}
+
+async function brSubmitBlind(){
+  const t = $('brInput').value.trim();
+  if(!t){ logLine('err','\u2717 답변을 먼저 작성하세요'); return }
+  const r = await api('POST','/api/v1/admin/assist/reviews/'+brId+'/blind', {text:t});
+  if(r.ok) brRender(r.data);
+}
+async function brReveal(){
+  const r = await api('POST','/api/v1/admin/assist/reviews/'+brId+'/reveal');
+  if(r.ok) brRender(r.data);
+}
+async function brSubmitEdited(){
+  const t = $('brInput').value;
+  const r = await api('POST','/api/v1/admin/assist/reviews/'+brId+'/edited', {text:t});
+  if(r.ok) brRender(r.data);
+}
+
+function brRender(d){
+  const box = brBox(); box.textContent = '';
+  const stage = $('brStage');
+  stage.style.display = 'block';
+  stage.textContent = {
+    BLIND:    '\u2460 사실만 보고 직접 작성하세요 (초안은 아직 안 보여줍니다)',
+    REVEALED: '\u2461 모델 초안이 공개됐습니다. 발송 가능하게 고쳐 주세요',
+    DONE:     '\u2713 완료 \u2014 집계에 반영됩니다'
+  }[d.stage] || d.stage;
+  stage.style.color = d.stage === 'DONE' ? '#15803D' : '#B45309';
+
+  // 사실은 모든 단계에서 보여준다. 감출 이유가 없고, 대조에도 쓴다.
+  box.appendChild(brLabel('확인된 사실'));
+  const ul = brEl('div','padding:8px 12px;background:#F8FAFB;border-radius:8px;font-size:12px;line-height:1.7');
+  (d.facts||[]).forEach(f => ul.appendChild(brEl('div',null,'\u00B7 '+f)));
+  if(d.causeHint) ul.appendChild(brEl('div','margin-top:8px;color:#4a8db8;font-weight:700',
+    '추정 원인: '+d.causeHint));
+  box.appendChild(ul);
+
+  if(d.stage === 'BLIND'){
+    box.appendChild(brLabel('여기에 고객 답변을 직접 작성하세요'));
+    const ta = brEl('textarea','width:100%;min-height:110px;padding:10px;font-size:13px;'
+      + 'font-family:inherit;border:1px solid #CBD5E1;border-radius:8px;box-sizing:border-box');
+    ta.id = 'brInput'; ta.placeholder = '이 상황을 고객에게 어떻게 설명하시겠습니까?';
+    box.appendChild(ta);
+    const b = brEl('button', 'margin-top:8px', '제출하고 모델 초안 보기');
+    b.addEventListener('click', async () => { await brSubmitBlind(); await brReveal(); });
+    box.appendChild(b);
+    return;
+  }
+
+  box.appendChild(brLabel('내가 쓴 답 (블라인드)'));
+  box.appendChild(brEl('pre','white-space:pre-wrap;padding:10px 12px;margin:0;font-size:12.5px;'
+    + 'background:#F8FAFB;border-radius:8px;line-height:1.7', d.blindReply || ''));
+
+  box.appendChild(brLabel('모델 초안 \u2014 '+(d.modelSource||'')));
+  box.appendChild(brEl('pre','white-space:pre-wrap;padding:10px 12px;margin:0;font-size:12.5px;'
+    + 'background:#EFF6FF;border-radius:8px;line-height:1.7',
+    d.modelDraft || '(초안 없음 \u2014 검증에 걸렸거나 만들 사실이 없었습니다)'));
+
+  if(d.stage === 'REVEALED'){
+    box.appendChild(brLabel('모델 초안을 발송 가능하게 고치세요'));
+    const ta = brEl('textarea','width:100%;min-height:110px;padding:10px;font-size:13px;'
+      + 'font-family:inherit;border:1px solid #CBD5E1;border-radius:8px;box-sizing:border-box');
+    ta.id = 'brInput'; ta.value = d.modelDraft || '';
+    box.appendChild(ta);
+    const b = brEl('button','margin-top:8px','수정본 제출');
+    b.addEventListener('click', brSubmitEdited);
+    box.appendChild(b);
+  } else {
+    box.appendChild(brLabel('내가 고친 것'));
+    box.appendChild(brEl('pre','white-space:pre-wrap;padding:10px 12px;margin:0;font-size:12.5px;'
+      + 'background:#F0FDF4;border-radius:8px;line-height:1.7', d.editedDraft || ''));
+  }
+}
+
+async function brStats(){
+  const r = await api('GET','/api/v1/admin/assist/reviews/stats');
+  if(!r.ok) return;
+  const d = r.data, box = brBox();
+  box.textContent = ''; $('brStage').style.display = 'none';
+  box.appendChild(brLabel('집계 \u2014 표본 '+d.samples+'건'));
+  const rows = [
+    ['편집률 중앙값 (모델 \u2192 수정본)', (d.medianEditRatio*100).toFixed(1)+'%  \u2190 낮을수록 좋음'],
+    ['괴리 중앙값 (내 답 \u2194 모델 초안)', (d.medianDivergence*100).toFixed(1)+'%'],
+    ['그대로 쓴 건', d.usedAsIs+'건'],
+    ['절반 이상 새로 쓴 건', d.rewritten+'건']
+  ];
+  const t = brEl('div','padding:8px 12px;font-size:12.5px;line-height:2');
+  rows.forEach(([k,v]) => {
+    const line = brEl('div','display:flex;justify-content:space-between');
+    line.appendChild(brEl('span','color:var(--sub)', k));
+    line.appendChild(brEl('span','font-weight:800', v));
+    t.appendChild(line);
+  });
+  box.appendChild(t);
+  box.appendChild(brLabel('이 숫자를 읽을 때'));
+  const c = brEl('div','padding:8px 12px;font-size:12px;color:#B45309;line-height:1.8');
+  (d.caveat||[]).forEach(x => c.appendChild(brEl('div',null,'\u26A0 '+x)));
+  box.appendChild(c);
 }
 // 출처별 색. 자금이 실제로 움직인 곳(결제·원장·월렛·포인트)을 초록으로, 예외 신호를 빨강으로.
 function srcBadge(src){

@@ -71,6 +71,18 @@ public class DraftService {
     }
 
     /**
+     * 사실 묶음만 만든다 — <b>초안은 만들지 않는다.</b>
+     *
+     * <p>블라인드 리뷰 1단계가 이걸 쓴다. 사람이 사실만 보고 자기 답을 먼저 써야 하는데,
+     * 초안을 만들어 두면 응답 어딘가에 실릴 유혹이 생긴다. <b>만들지 않는 것</b>이
+     * 가장 확실한 차단이다.
+     */
+    @Transactional(readOnly = true)
+    public FactPack factsFor(String orderNo, Long reconResultId) {
+        return FactPack.from(timelineService.assemble(orderNo), causeHint(reconResultId));
+    }
+
+    /**
      * 규칙 분류기의 최상위 제안을 한 줄로. 실패해도 초안은 만든다 —
      * 원인 힌트는 있으면 좋은 것이지 없으면 못 만드는 것이 아니다.
      */
