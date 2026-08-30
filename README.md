@@ -74,7 +74,7 @@
 - **MySQL 8.4** + JPA(도메인 모델), **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화, 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito. 기본 스위트 **603개** + 실 MySQL 통합 **13개**(`integrationTest`) + Toxiproxy 네트워크 카오스 **1개**(`chaosTest`) = 총 617개. 뒤의 둘은 컨테이너가 필요해 기본 스위트에서 제외하고 별도 태스크로 돌린다. Spring Modulith 경계 검증 포함. 락 전략 비교는 H2와 Testcontainers 실 MySQL에서 각각 재서 순위가 뒤집히는 것을 확인했다
+- 테스트: JUnit5 + Mockito. 기본 스위트 **606개** + 실 MySQL 통합 **13개**(`integrationTest`) + Toxiproxy 네트워크 카오스 **1개**(`chaosTest`) = 총 620개. 뒤의 둘은 컨테이너가 필요해 기본 스위트에서 제외하고 별도 태스크로 돌린다. Spring Modulith 경계 검증 포함. 락 전략 비교는 H2와 Testcontainers 실 MySQL에서 각각 재서 순위가 뒤집히는 것을 확인했다
 
 ## 아키텍처: 모듈형 모놀리스
 
@@ -121,7 +121,7 @@ com.beomsu.pay
 | 정합성 | 복식부기 원장(차변=대변)으로 자금 이동을 수학적으로 검증, 대사가 최종 방어선 |
 | 동시성 | 재고·잔액 차감 락 3종 비교 실측 후 조건부 UPDATE 채택 ([ADR-004](docs/adr/ADR-004-stock-deduction-locking.md)) |
 | 운영 조사 | 주문 한 건의 전 과정을 10개 도메인에서 시간순으로 조립 ([ADR-011](docs/adr/ADR-011-order-timeline-assembly.md)) — 조회 7회·목록 뒤지기 6회가 **1회**로 |
-| 원인 분류 | 대사 불일치 원인을 **규칙으로** 제안하고 근거를 함께 낸다 ([ADR-012](docs/adr/ADR-012-rule-based-cause-classifier.md)). AI를 쓰지 않는 이유는 8종 중 6종이 산수로 결정되기 때문 |
+| 원인 분류 | 대사 불일치 원인을 **규칙으로** 제안하고 근거를 함께 낸다 ([ADR-012](docs/adr/ADR-012-rule-based-cause-classifier.md)). AI를 쓰지 않는 이유는 8종 중 6종이 산수로 결정되기 때문 — 그 수를 커버리지 하네스가 세어서 고정한다 |
 
 ## 쌓아 올린 순서
 

@@ -1,13 +1,19 @@
 package com.beomsu.pay.reconciliation;
 
 import com.beomsu.pay.payment.PaymentTimelineFacts;
+import com.beomsu.pay.payment.PaymentTimelineFacts.PaymentState;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 불일치 원인을 <b>규칙으로</b> 제안한다 (ADR-012).
@@ -26,6 +32,9 @@ import java.util.List;
  */
 @Service
 public class CauseClassifier {
+
+    /** 거래일 경계로 볼 폭. 자정 기준 앞뒤 이 시간 안의 승인은 날짜가 갈릴 수 있다. */
+    private static final Duration BOUNDARY_WINDOW = Duration.ofHours(2);
 
     private final PaymentTimelineFacts paymentFacts;
     private final ReconciliationResultRepository resultRepository;
@@ -111,14 +120,36 @@ public class CauseClassifier {
     /** 내부에만 있을 때 — 아직 안 온 것인지, 영영 안 올 것인지. */
     private void classifyInternalOnly(ReconciliationResult r, List<CauseSuggestion> out) {
         LocalDate tradeDate = r.getTradeDate();
-        // 다음 날 파일에 같은 주문이 잡혔으면 "지연"이 사실로 확인된다.
-        boolean appearsLater = resultRepository.findByOrderNoOrderByIdAsc(r.getOrderNo()).stream()
-                .anyMatch(other -> other.getTradeDate().isAfter(tradeDate)
-                        && other.getExternalAmount() != null);
-        if (appearsLater) {
-            out.add(CauseSuggestion.decisive(ResolveCause.PG_FILE_DELAY,
-                    "이후 거래일 파일에 같은 주문이 외부 기록으로 잡혔다. 파일 도착이 늦었을 뿐이다"));
-            return;
+
+        // 같은 주문이 <다른 거래일> 파일에 외부 기록으로 잡혔는가.
+        // 잡혔다면 "안 온 것"이 아니라 "다른 날로 간 것"이므로, 어느 쪽인지를 가른다.
+        List<ReconciliationResult> elsewhere =
+                resultRepository.findByOrderNoOrderByIdAsc(r.getOrderNo()).stream()
+                        .filter(o -> o.getExternalAmount() != null)
+                        .filter(o -> !o.getTradeDate().equals(tradeDate))
+                        .toList();
+
+        if (!elsewhere.isEmpty()) {
+            // 인접일(±1)에 잡혔고 승인이 자정 근처였으면 <경계>다. 파일이 늦은 게 아니라
+            // 같은 거래를 양쪽이 다른 날짜로 센 것이다. 대응이 다르다 —
+            // 지연은 기다리면 맞춰지지만, 경계는 기준을 고쳐야 한다.
+            boolean adjacent = elsewhere.stream().anyMatch(
+                    o -> Math.abs(ChronoUnit.DAYS.between(tradeDate, o.getTradeDate())) == 1);
+            Optional<Instant> approvedAt =
+                    paymentFacts.findState(r.getOrderNo()).map(PaymentState::requestedAt);
+
+            if (adjacent && approvedAt.filter(CauseClassifier::nearMidnight).isPresent()) {
+                out.add(CauseSuggestion.decisive(ResolveCause.TIMEZONE_BOUNDARY,
+                        "인접 거래일에 같은 주문이 외부 기록으로 있고, 승인 시각 %s이 자정에서 %d시간 안이다. "
+                                .formatted(approvedAt.orElseThrow(), BOUNDARY_WINDOW.toHours())
+                                + "같은 거래를 양쪽이 다른 날짜로 셌을 가능성이 높다"));
+                return;
+            }
+            if (elsewhere.stream().anyMatch(o -> o.getTradeDate().isAfter(tradeDate))) {
+                out.add(CauseSuggestion.decisive(ResolveCause.PG_FILE_DELAY,
+                        "이후 거래일 파일에 같은 주문이 외부 기록으로 잡혔다. 파일 도착이 늦었을 뿐이다"));
+                return;
+            }
         }
         paymentFacts.findState(r.getOrderNo()).ifPresent(p -> {
             if (p.cancelCount() > 0) {
@@ -131,5 +162,20 @@ public class CauseClassifier {
                                 .formatted(p.requestedAt())));
             }
         });
+    }
+
+    /**
+     * 승인 시각이 거래일 경계(자정) 근처인가.
+     *
+     * <p>경계 문제는 <b>자정 근처 승인에서만</b> 생긴다. 낮 2시 거래가 날짜를 넘어갈 일은 없다.
+     * 이 조건을 안 걸면 인접일에 기록이 있다는 이유만으로 전부 경계로 몰려, 정작 흔한
+     * 파일 지연을 경계로 잘못 부른다.
+     */
+    private static boolean nearMidnight(Instant at) {
+        LocalTime t = at.atZone(InternalRecord.TRADE_ZONE).toLocalTime();
+        Duration sinceMidnight = Duration.ofSeconds(t.toSecondOfDay());
+        Duration untilMidnight = Duration.ofDays(1).minus(sinceMidnight);
+        return sinceMidnight.compareTo(BOUNDARY_WINDOW) <= 0
+                || untilMidnight.compareTo(BOUNDARY_WINDOW) <= 0;
     }
 }
