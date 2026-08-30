@@ -68,6 +68,18 @@ public class DraftRubric {
     /** 자릿수 구분된 금액 — 근거 문장의 핵심 수치를 뽑는 데 쓴다. */
     private static final Pattern AMOUNT = Pattern.compile("([0-9][0-9,]*)\\s*원");
 
+    /**
+     * <b>근거 없이 "돈은 멀쩡하다"고 단정하는</b> 표현들.
+     *
+     * <p>원인이 확정된 건에는 맞는 말이고, 모르는 건에는 <b>확인되지 않은 주장</b>이다.
+     * 다른 계열 심판이 처음 잡아준 결함인데, 심판은 흔들린다 —
+     * 초안이 고쳐진 뒤에도 같은 건을 계속 위반이라고 했다(오탐 70%).
+     * 그래서 <b>아는 결함은 코드로 고정</b>한다. 심판은 모르는 결함을 찾는 데 쓴다.
+     */
+    private static final List<String> UNSUPPORTED_CLAIM = List.of(
+            "그대로 유지", "변동이 없", "변동은 없", "변동 없",
+            "영향은 없", "영향이 없", "영향을 주지 않");
+
     private static final int MIN_LEN = 40;
     private static final int MAX_LEN = 400;
 
@@ -96,7 +108,7 @@ public class DraftRubric {
     /** 초안 하나를 채점한다. {@code draft} 가 없으면 전부 실패로 본다. */
     public Score score(String draft, FactPack facts) {
         List<String> failed = new ArrayList<>();
-        int total = 5;
+        int total = 6;
 
         if (draft == null || draft.isBlank()) {
             return new Score(0, total, List.of("초안 없음"));
@@ -136,7 +148,16 @@ public class DraftRubric {
                     : "고객 영향 없음 — <그래서 나는 어떻게 되나>가 빠졌다");
         }
 
-        // ⑤ 길이
+        // ⑤ 원인을 모르는데 <돈은 멀쩡하다>고 단정하지 않는가
+        //
+        // "추가로 청구되지 않겠다"는 우리가 지킬 <약속>이라 괜찮지만,
+        // "이미 청구된 것이 멀쩡하다"는 확인되지 않은 <주장>이다. 그 둘은 다르다.
+        if (!requiresImpact(facts.causeHint())) {
+            UNSUPPORTED_CLAIM.stream().filter(draft::contains).findFirst().ifPresent(
+                    c -> failed.add("근거 없는 단정: \"" + c + "\" — 원인을 모르는데 결과를 장담했다"));
+        }
+
+        // ⑥ 길이
         int len = draft.replaceAll("\\s+", "").length();
         if (len < MIN_LEN) {
             failed.add("너무 짧음 (" + len + "자)");

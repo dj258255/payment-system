@@ -59,7 +59,7 @@ public class OllamaDraftAdapter implements DraftPort {
         if (facts.empty()) {
             return Optional.empty();
         }
-        return chat(prompts.system(), prompts.user(facts), facts.orderNo(), "draft");
+        return chat(prompts.system(facts), prompts.user(facts), facts.orderNo(), "draft");
     }
 
     /** 생성과 수정이 공유하는 호출부. */

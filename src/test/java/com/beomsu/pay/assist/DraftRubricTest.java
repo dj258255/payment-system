@@ -143,7 +143,9 @@ class DraftRubricTest {
                 "고객님께 미치는 영향은 없습니다.",
                 "실제 결제 금액에는 영향을 주지 않습니다.",
                 "추가로 청구되는 금액은 없습니다.")) {
-            assertThat(rubric.score(base + tail, facts()).failed())
+            // 원인이 확정된 건이어야 결과를 단정할 수 있다. WEAK 건에 같은 문장을 쓰면
+            // <근거 없는 단정>으로 잡히는 것이 맞다(아래 테스트가 그걸 지킨다).
+            assertThat(rubric.score(base + tail, decisiveFacts()).failed())
                     .as("표현이 달라도 고객 영향을 말하고 있다: " + tail)
                     .isEmpty();
         }
@@ -178,5 +180,31 @@ class DraftRubricTest {
         assertThat(rubric.score(noImpact, decisive).failed())
                 .as("수수료로 확정된 건은 청구가 그대로라고 말할 수 있고, 말해야 한다")
                 .anySatisfy(f -> assertThat(f).contains("고객 영향"));
+    }
+
+    @Test
+    @DisplayName("원인을 모르는데 <돈은 멀쩡하다>고 단정하면 잡는다 — 심판이 처음 찾아준 결함")
+    void catchesUnsupportedMoneyClaim() {
+        String draft = "2026-08-30 결제 10,000원이 정상 확인됩니다. "
+                + "차액 8,888원의 원인을 확인 중입니다. 청구 금액은 그대로 유지됩니다.";
+        assertThat(rubric.score(draft, facts()).failed())
+                .anySatisfy(f -> assertThat(f).contains("근거 없는 단정"));
+    }
+
+    @Test
+    @DisplayName("<추가로 청구하지 않겠다>는 약속이라 괜찮다 — 주장과 약속은 다르다")
+    void promiseIsNotAnUnsupportedClaim() {
+        String draft = "2026-08-30 결제 10,000원이 정상 확인됩니다. "
+                + "차액 8,888원의 원인을 확인 중이며, 확인이 끝날 때까지 "
+                + "추가로 청구되는 금액은 없습니다.";
+        assertThat(rubric.score(draft, facts()).failed()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("원인이 확정된 건에는 <변동이 없다>고 말해도 된다")
+    void decisiveCaseMayAssertNoChange() {
+        String draft = "2026-08-30 결제 10,000원이 정상 확인됩니다. "
+                + "차액 8,888원은 결제 수수료이며 청구 금액에는 변동이 없습니다.";
+        assertThat(rubric.score(draft, decisiveFacts()).failed()).isEmpty();
     }
 }

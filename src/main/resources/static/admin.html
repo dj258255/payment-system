@@ -118,7 +118,7 @@
     <div class="spacer"></div>
     <span class="health" id="health">health —</span>
     <span class="who" id="who">로그인 안 됨</span>
-    <button class="ghost" onclick="adminLogin()">관리자 로그인</button>
+    <button class="ghost" id="authBtn" onclick="toggleAuth()">관리자 로그인</button>
   </div>
 
   <!-- ══ 개요 ══ -->
@@ -343,6 +343,14 @@ async function api(method,path,body){
   catch(e){logLine('err','✗ 네트워크 오류 '+e);throw e}
   const text=await res.text(); let data;try{data=text?JSON.parse(text):null}catch{data=text}
   logLine(res.ok?'ok':'err',(res.ok?'✓ ':'✗ ')+res.status+' '+(typeof data==='object'?JSON.stringify(data):data));
+  // 토큰 만료를 조용히 넘기지 않는다. 이 세션에서 401을 두 번 맞았는데
+  // 화면은 <아무 표시가 없어> 서버나 모델 문제로 오해했다.
+  if(res.status===401 && token){
+    token=null; role=null;
+    sessionStorage.removeItem('pay.token'); sessionStorage.removeItem('pay.role');
+    setWho();
+    logLine('err','✗ 세션이 만료됐습니다. 다시 로그인하세요.');
+  }
   return {ok:res.ok,status:res.status,data};
 }
 // ── 내비게이션 (hash) ──
@@ -357,6 +365,16 @@ document.querySelectorAll('aside a[data-sec]').forEach(a=>a.onclick=e=>{go(a.dat
 function setWho(){
   $('who').innerHTML=token?('<b>'+(role||'사용자')+'</b> 로그인됨'):'로그인 안 됨';
   $('stRole').textContent=role||'미로그인';
+  // 버튼이 상태를 따라간다. "로그인됨" 옆에 "로그인" 버튼이 남아 있으면
+  // 눌러야 하는지 아닌지 알 수 없고, 실제로 그렇게 방치돼 있었다.
+  const b=$('authBtn');
+  if(b){ b.textContent = token ? '로그아웃' : '관리자 로그인'; }
+}
+function toggleAuth(){ token ? adminLogout() : adminLogin(); }
+function adminLogout(){
+  token=null; role=null;
+  sessionStorage.removeItem('pay.token'); sessionStorage.removeItem('pay.role');
+  setWho(); logLine('ok','\u2713 로그아웃');
 }
 async function adminLogin(){
   const r=await api('POST','/api/v1/auth/login',{username:'admin',password:'admin-local-only'});

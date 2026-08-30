@@ -79,7 +79,7 @@ public class AnthropicDraftAdapter implements DraftPort {
                             "model", model,
                             "max_tokens", maxTokens,
                             "temperature", 0.2,
-                            "system", prompts.system(),
+                            "system", prompts.system(facts),
                             "messages", List.of(
                                     Map.of("role", "user", "content", prompts.user(facts)))))
                     .retrieve().body(Map.class);

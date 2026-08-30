@@ -19,46 +19,13 @@ import org.springframework.stereotype.Component;
 public class PromptBuilder {
 
     private final CustomerGlossary glossary;
+    private final DraftExamples examples;
 
-    PromptBuilder(CustomerGlossary glossary) {
+    PromptBuilder(CustomerGlossary glossary, DraftExamples examples) {
         this.glossary = glossary;
+        this.examples = examples;
     }
 
-    /**
-     * 예시 — <b>좋은 것과 나쁜 것을 같이 준다.</b>
-     *
-     * <p>지시만으로는 "어려운 건에서 무엇을 말해야 하는지"가 전달되지 않았다. 실측에서
-     * 위변조 의심 건(초안이 가장 필요한 자리)의 초안이 정작 문제인 차액을 말하지 않고
-     * 에스크로 일정만 읊었다. 그건 프롬프트 표현 문제가 아니라
-     * <b>좋은 답이 어떻게 생겼는지를 안 보여준 것</b>이다.
-     *
-     * <p>나쁜 예를 <b>나쁘다고 이름 붙여</b> 함께 준다. 피할 것을 말로 설명하는 것보다
-     * 보여주는 쪽이 전달된다. 고객지원 응답 생성에서 권장되는 방식이다.
-     */
-    private static final String EXAMPLES = """
-            [예시 1 — 원인이 분명할 때]
-            사실: 결제 승인 10,000원 / 결제사 정산 9,730원 / 차액 270원 = 수수료율과 일치
-            좋은 초안:
-              2026-08-30 결제 10,000원이 정상 승인되었습니다.
-              결제사 정산 내역에는 수수료가 차감된 9,730원으로 기록되어 있으며,
-              차액 270원은 결제 수수료로 확인 중입니다. 고객님께 청구된 금액에는 변동이 없습니다.
-
-            [예시 2 — 원인을 아직 모를 때] ← 이 경우가 가장 중요합니다
-            사실: 결제 승인 10,000원 / 결제사 정산 1,112원 / 차액 8,888원 / 취소 이력 없음
-            좋은 초안:
-              2026-08-30 결제 10,000원이 승인된 기록은 정상 확인됩니다.
-              다만 결제사 정산 내역의 금액이 달라 차액 8,888원의 원인을 확인 중입니다.
-              취소 이력은 없으며, 확인이 끝나는 대로 안내드리겠습니다.
-
-            나쁜 초안 (이렇게 쓰지 마십시오):
-              2026-08-30 결제 승인 완료 및 주문 상태 PAID 확인 중입니다.
-              에스크로 보류 자동 해제 예정일은 2026-09-06입니다.
-            나쁜 이유: (1) 고객이 물어본 <금액이 왜 다른가>를 한 마디도 말하지 않았습니다.
-              (2) PAID 같은 내부 코드를 그대로 썼습니다.
-              (3) 에스크로 일정은 이 문의와 상관없는 정보입니다.
-
-            핵심: 사실을 나열하지 말고, <무엇이 문제이고 지금 어디까지 확인됐는지>를 쓰십시오.
-            """;
 
     /** 모델에게 주는 역할과 금지사항. 사실 목록은 여기 없다 — 아래에서 붙인다. */
     private static final String SYSTEM = """
@@ -90,8 +57,12 @@ public class PromptBuilder {
      * <p>셋을 한 덩어리로 두는 이유: 어댑터가 바뀌어도 같은 것이 나가야 한다.
      * 하나라도 어댑터 쪽에 두면 모델 간 비교가 성립하지 않는다.
      */
-    public String system() {
-        return SYSTEM + "\n" + glossary.asPromptSection() + "\n" + EXAMPLES;
+    public String system(FactPack facts) {
+        // 예시를 <케이스에 맞는 것 하나로> 갈아 끼운다. 고정 예시 하나가
+        // "청구된 금액에는 변동이 없습니다"로 끝나 있어서, 모델이 기록조차 없는 건에도
+        // 그 꼴을 복사했다(13 문서 실험 9). 늘리지 않고 바꾸는 것이 요점이다 —
+        // 지시를 더할 때마다 나빠졌다.
+        return SYSTEM + "\n" + glossary.asPromptSection() + "\n" + examples.forCase(facts);
     }
 
     /**
