@@ -207,4 +207,50 @@ class DraftRubricTest {
                 + "차액 8,888원은 결제 수수료이며 청구 금액에는 변동이 없습니다.";
         assertThat(rubric.score(draft, decisiveFacts()).failed()).isEmpty();
     }
+
+    @Test
+    @DisplayName("가점은 통과를 바꾸지 않는다 — 필수로 걸면 모델이 채우려고 단정한다")
+    void bonusNeverAffectsPassing() {
+        String plain = "2026-08-30 결제 10,000원이 정상 확인됩니다. "
+                + "차액 8,888원의 원인을 확인 중이며, 확인이 끝나는 대로 안내드리겠습니다.";
+        DraftRubric.Score s = rubric.score(plain, facts());
+
+        assertThat(s.failed()).as("가점이 없다고 실패가 되면 안 된다").isEmpty();
+        assertThat(s.ratio()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("불확실할 때의 약속에 가점 — 같은 만점끼리 가른다")
+    void promiseUnderUncertaintyEarnsBonus() {
+        String plain = "2026-08-30 결제 10,000원이 정상 확인됩니다. "
+                + "차액 8,888원의 원인을 확인 중이며, 확인이 끝나는 대로 안내드리겠습니다.";
+        String better = plain.replace("확인이 끝나는 대로",
+                "확인이 끝날 때까지 추가로 청구되는 금액은 없으며, 결과가 나오는 대로");
+
+        assertThat(rubric.score(plain, facts()).comparable())
+                .as("둘 다 6/6 인데 가점이 갈라준다")
+                .isLessThan(rubric.score(better, facts()).comparable());
+    }
+
+    @Test
+    @DisplayName("상관없는 내부 일정을 넣으면 가점을 잃는다")
+    void irrelevantInternalScheduleLosesBonus() {
+        String clean = "2026-08-30 결제 10,000원이 정상 확인됩니다. "
+                + "차액 8,888원의 원인을 확인 중입니다. 확인 후 안내드리겠습니다.";
+        String noisy = clean + " 에스크로 자동해제 예정일은 2026-09-06입니다.";
+
+        assertThat(rubric.score(clean, facts()).bonus())
+                .contains("상관없는 내부 일정을 넣지 않았다");
+        assertThat(rubric.score(noisy, facts()).bonus())
+                .doesNotContain("상관없는 내부 일정을 넣지 않았다");
+    }
+
+    @Test
+    @DisplayName("원인이 확정된 건에는 약속 가점을 주지 않는다 — 거기선 결과를 말하는 게 필수다")
+    void noPromiseBonusWhenCauseIsDecisive() {
+        String draft = "2026-08-30 결제 10,000원이 정상 확인됩니다. 차액 8,888원은 결제 수수료이며 "
+                + "청구 금액에는 변동이 없습니다. 추가로 청구되는 금액은 없습니다.";
+        assertThat(rubric.score(draft, decisiveFacts()).bonus())
+                .doesNotContain("불확실할 때 추가 청구 없음을 약속했다");
+    }
 }

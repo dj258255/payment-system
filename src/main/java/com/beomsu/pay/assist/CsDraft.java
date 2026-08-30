@@ -42,14 +42,14 @@ public record CsDraft(String orderNo,
     /** 검증 실패. 본문을 <b>버린다</b> — 사람이 읽으면 그 문장에 끌려간다(앵커링). */
     static CsDraft rejected(String orderNo, String source, List<String> rejected, boolean complete) {
         return new CsDraft(orderNo, null, source, false, List.copyOf(rejected), complete,
-                List.of(), new DraftRubric.Score(0, 6, List.of("초안 없음 — 검증 반려")),
+                List.of(), new DraftRubric.Score(0, 6, List.of("초안 없음 — 검증 반려"), List.of()),
                 DraftJudge.Verdict.unavailable("초안이 없어 판정하지 않음"));
     }
 
     /** 만들 재료가 없었다. 실패와 구분한다 — 이건 정상이다. */
     static CsDraft none(String orderNo, String source, boolean complete) {
         return new CsDraft(orderNo, null, source, true, List.of(), complete,
-                List.of(), new DraftRubric.Score(0, 6, List.of("초안 없음 — 사실 부족")),
+                List.of(), new DraftRubric.Score(0, 6, List.of("초안 없음 — 사실 부족"), List.of()),
                 DraftJudge.Verdict.unavailable("초안이 없어 판정하지 않음"));
     }
 }

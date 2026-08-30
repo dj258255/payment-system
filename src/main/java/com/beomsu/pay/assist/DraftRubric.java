@@ -80,6 +80,21 @@ public class DraftRubric {
             "그대로 유지", "변동이 없", "변동은 없", "변동 없",
             "영향은 없", "영향이 없", "영향을 주지 않");
 
+    /**
+     * <b>불확실할 때의 약속</b> — 원인을 몰라도 "추가로 청구하지 않겠다"는 말할 수 있다.
+     *
+     * <p>이건 <b>주장이 아니라 약속</b>이다. "이미 청구된 것이 멀쩡하다"는 확인되지 않은
+     * 주장이지만, "앞으로 더 청구하지 않겠다"는 우리가 지킬 수 있는 것이다.
+     * 고객이 원인 불명 상황에서 가장 궁금해하는 것이 그거다.
+     */
+    private static final List<String> UNCERTAIN_PROMISE = List.of(
+            "추가로 청구되는 금액은 없", "추가 청구는 없", "추가로 청구되지",
+            "추가 비용은 없", "추가로 결제되지");
+
+    /** 이 문의와 상관없는 내부 일정. 있으면 상담원이 지워야 한다. */
+    private static final List<String> IRRELEVANT_INTERNAL = List.of(
+            "정산 확정일", "정산 항목", "에스크로", "포인트 적립", "원장 분개", "자동해제");
+
     private static final int MIN_LEN = 40;
     private static final int MAX_LEN = 400;
 
@@ -98,10 +113,25 @@ public class DraftRubric {
      * @param total  전체 항목 수
      * @param failed 못 지킨 항목들. <b>이름만이 아니라 왜인지 적는다</b> —
      *               점수만 있으면 무엇을 고쳐야 할지 모른다
+     * @param bonus  <b>필수는 아니지만 좋은 것</b>들. 통과 여부를 바꾸지 않는다.
+     *
+     *               <p>왜 필수가 아닌가: 필수로 걸면 모델이 점수를 채우려고
+     *               <b>알 수 없는 것까지 단언한다</b>(실험 9에서 실제로 그랬다).
+     *               그래서 <b>재기만 하고 요구하지 않는다</b> — 프롬프트에도 넣지 않는다.
+     *
+     *               <p>왜 필요한가: 루브릭 6항목만으로는 프런티어 모델과 8B 가 <b>둘 다 만점</b>이라
+     *               구분이 안 됐다(실험 11). 잣대가 구분하지 못하면 개선을 이끌 수도 없다.
      */
-    public record Score(int passed, int total, List<String> failed) {
+    public record Score(int passed, int total, List<String> failed, List<String> bonus) {
+
+        /** 필수 항목만 본 비율. 가점은 여기 안 들어간다 — 통과 기준을 흔들지 않는다. */
         public double ratio() {
             return total == 0 ? 0 : (double) passed / total;
+        }
+
+        /** 비교용 점수. 같은 만점끼리 <b>가르는</b> 값이다. */
+        public int comparable() {
+            return passed + bonus.size();
         }
     }
 
@@ -111,7 +141,7 @@ public class DraftRubric {
         int total = 6;
 
         if (draft == null || draft.isBlank()) {
-            return new Score(0, total, List.of("초안 없음"));
+            return new Score(0, total, List.of("초안 없음"), List.of());
         }
 
         // ① 지어낸 숫자가 없는가 — 가장 무거운 항목. 틀리면 초안을 못 쓴다
@@ -165,7 +195,17 @@ public class DraftRubric {
             failed.add("너무 긺 (" + len + "자) — 상담원이 잘라내야 한다");
         }
 
-        return new Score(total - failed.size(), total, List.copyOf(failed));
+        // 가점 — 통과를 바꾸지 않고 <같은 만점끼리 가르는> 축이다.
+        List<String> bonus = new ArrayList<>();
+        if (!requiresImpact(facts.causeHint())
+                && UNCERTAIN_PROMISE.stream().anyMatch(draft::contains)) {
+            bonus.add("불확실할 때 추가 청구 없음을 약속했다");
+        }
+        if (IRRELEVANT_INTERNAL.stream().noneMatch(draft::contains)) {
+            bonus.add("상관없는 내부 일정을 넣지 않았다");
+        }
+
+        return new Score(total - failed.size(), total, List.copyOf(failed), List.copyOf(bonus));
     }
 
 
