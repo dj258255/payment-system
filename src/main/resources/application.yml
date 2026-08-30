@@ -133,6 +133,11 @@ app:
     ollama:
       base-url: ${APP_ASSIST_OLLAMA_BASE_URL:http://localhost:11434}
       model: ${APP_ASSIST_OLLAMA_MODEL:qwen3:8b}
+    # 초안이 <근거 없이 단정>하는지 다른 계열 모델에게 묻는다(ADR-014).
+    # 기본 꺼짐 — 호출이 한 번 더 늘어난다. 켤 때는 초안 모델과 다른 계열이어야 한다.
+    judge:
+      enabled: ${APP_ASSIST_JUDGE_ENABLED:false}
+      model: ${APP_ASSIST_JUDGE_MODEL:llama3.1:8b}
     anthropic:
       # 비워 두면 provider=anthropic 일 때 기동이 막힌다. 호출 시점에 실패하면
       # 초안이 조용히 비어 나가고 아무도 모른다.

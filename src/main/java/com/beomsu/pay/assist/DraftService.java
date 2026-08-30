@@ -31,6 +31,8 @@ public class DraftService {
     private final NumberGuard numberGuard;
     private final CustomerGlossary glossary;
     private final DraftRubric rubric;
+    /** 심판은 선택이다 — 켜지 않으면 없다. 켜면 호출이 한 번 더 는다. */
+    private final java.util.Optional<DraftJudge> judge;
 
     /**
      * 주문 한 건의 상담 초안을 만든다.
@@ -79,8 +81,17 @@ public class DraftService {
             log.info("초안 루브릭 {}/{} order={} 미충족={}",
                     score.passed(), score.total(), orderNo, score.failed());
         }
+        // 코드가 못 잡는 것 — <근거 없는 단정> — 을 다른 계열 모델에게 묻는다.
+        // 버리지 않는다. 심판도 틀릴 수 있어서, 사람이 보고 판단할 표시로만 쓴다.
+        DraftJudge.Verdict verdict = judge
+                .flatMap(j -> j.judge(facts, best))
+                .orElseGet(() -> DraftJudge.Verdict.unavailable("심판 없음"));
+        if (!verdict.grounded()) {
+            log.info("[judge] 근거 없는 단정 order={} judge={} 문장={} 이유={}",
+                    orderNo, verdict.judge(), verdict.quote(), verdict.why());
+        }
         return CsDraft.ok(orderNo, best, draftPort.name(), timeline.complete(),
-                jargon, score);
+                jargon, score, verdict);
     }
 
 

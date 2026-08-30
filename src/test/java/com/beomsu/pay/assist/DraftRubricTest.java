@@ -33,6 +33,20 @@ class DraftRubricTest {
                 "SUSPECTED_TAMPERING (WEAK) — 차액 8,888원이 수수료(270원)로도 설명되지 않는다");
     }
 
+
+    /** 원인이 확정된 건 — 고객 영향을 요구해도 되는 자리. */
+    private FactPack decisiveFacts() {
+        OrderTimeline t = new OrderTimeline("ORD-D",
+                List.of(TimelineEntry.of(
+                        LocalDate.of(2026, 8, 30).atTime(14, 0)
+                                .atZone(ZoneId.of("Asia/Seoul")).toInstant(),
+                        TimelineEntry.Source.RECONCILIATION, "MISMATCH",
+                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 1,112", 10_000L)),
+                List.of());
+        return FactPack.from(t,
+                "FEE_CALCULATION_DIFF (DECISIVE) — 차액 8,888원이 수수료(270원)로 확정");
+    }
+
     @Test
     @DisplayName("좋은 초안은 만점")
     void goodDraftScoresFull() {
@@ -50,7 +64,7 @@ class DraftRubricTest {
         // 블라인드 리뷰 당시 위변조 의심 건에서 실제로 나온 초안
         String draft = "2026-08-30 결제 승인 완료 및 주문 상태 PAID 확인 중입니다. "
                 + "에스크로 보류 자동 해제 예정일은 2026-09-06입니다.";
-        DraftRubric.Score s = rubric.score(draft, facts());
+        DraftRubric.Score s = rubric.score(draft, decisiveFacts());
 
         assertThat(s.failed())
                 .anySatisfy(f -> assertThat(f).contains("핵심 수치 누락"))
@@ -103,7 +117,8 @@ class DraftRubricTest {
         String draft = "2026-08-30 결제 10,000원이 정상 확인됩니다. "
                 + "결제사 정산 내역의 금액이 달라 차액 8,888원의 원인을 확인 중입니다. "
                 + "취소 이력은 없으며, 확인이 끝나는 대로 안내드리겠습니다.";
-        DraftRubric.Score s = rubric.score(draft, facts());
+        // 원인이 확정된 건이어야 영향을 요구한다 — 모르는 건에 요구하면 지어낸다
+        DraftRubric.Score s = rubric.score(draft, decisiveFacts());
 
         assertThat(s.failed())
                 .as("이 문장은 고객에게 돈이 어떻게 되는지를 알려주지 않는다")
@@ -132,5 +147,36 @@ class DraftRubricTest {
                     .as("표현이 달라도 고객 영향을 말하고 있다: " + tail)
                     .isEmpty();
         }
+    }
+
+    @Test
+    @DisplayName("원인을 모르는 건에는 고객 영향을 요구하지 않는다 — 요구하면 모델이 지어낸다")
+    void doesNotRequireImpactWhenCauseUnknown() {
+        // facts() 의 원인은 WEAK(설명되지 않는 차액). 결과를 장담할 수 없다.
+        String honest = "2026-08-30 결제 10,000원이 정상 확인됩니다. "
+                + "차액 8,888원의 원인을 확인 중이며, 확인이 끝나는 대로 안내드리겠습니다.";
+        assertThat(rubric.score(honest, facts()).failed())
+                .as("모르는 것을 모른다고 쓴 초안을 감점하면, 채우려고 지어낸다")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("원인이 확정된 건에는 여전히 고객 영향을 요구한다")
+    void stillRequiresImpactWhenCauseIsDecisive() {
+        OrderTimeline t = new OrderTimeline("ORD-3",
+                List.of(TimelineEntry.of(
+                        LocalDate.of(2026, 8, 30).atTime(14, 0)
+                                .atZone(ZoneId.of("Asia/Seoul")).toInstant(),
+                        TimelineEntry.Source.RECONCILIATION, "MISMATCH",
+                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 9,730", 10_000L)),
+                List.of());
+        FactPack decisive = FactPack.from(t,
+                "FEE_CALCULATION_DIFF (DECISIVE) — 차액 270원 = 내부 10,000원 x 270 bps");
+
+        String noImpact = "2026-08-30 결제 10,000원이 정상 확인됩니다. "
+                + "차액 270원은 결제 수수료입니다. 확인이 끝나는 대로 안내드리겠습니다.";
+        assertThat(rubric.score(noImpact, decisive).failed())
+                .as("수수료로 확정된 건은 청구가 그대로라고 말할 수 있고, 말해야 한다")
+                .anySatisfy(f -> assertThat(f).contains("고객 영향"));
     }
 }

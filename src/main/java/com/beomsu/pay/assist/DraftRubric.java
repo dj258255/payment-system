@@ -120,8 +120,16 @@ public class DraftRubric {
             failed.add("핵심 수치 누락: " + key + "원 (이 건의 쟁점)");
         }
 
-        // ④ 고객에게 미치는 영향을 말하는가
-        if (IMPACT_PHRASES.stream().noneMatch(draft::contains)) {
+        // ④ 고객에게 미치는 영향을 말하는가 — <원인을 아는 건에만> 요구한다.
+        //
+        // 처음엔 모든 건에 요구했다. 그랬더니 2단계 수정이 점수를 채우려고
+        // 원인 불명 건에도 "청구 금액은 그대로 유지됩니다"라고 <단언>하게 만들었다.
+        // 다른 계열 심판이 그걸 잡았다 — "수수료로도 취소로도 설명되지 않는데
+        // 청구 유지라는 근거가 사실에 없다".
+        //
+        // 지표를 올리려다 지표가 목표가 된 것이다. 원인을 모르면 결과도 장담할 수 없고,
+        // 그때 요구해야 할 것은 영향이 아니라 <모른다는 사실>이다.
+        if (requiresImpact(facts.causeHint()) && IMPACT_PHRASES.stream().noneMatch(draft::contains)) {
             boolean onlyClosing = CLOSING_ONLY.stream().anyMatch(draft::contains);
             failed.add(onlyClosing
                     ? "고객 영향 없음 — 마무리 인사뿐이다. 돈이 어떻게 되는지를 말하지 않았다"
@@ -137,6 +145,18 @@ public class DraftRubric {
         }
 
         return new Score(total - failed.size(), total, List.copyOf(failed));
+    }
+
+
+    /**
+     * 고객 영향을 요구해도 되는가 — <b>원인이 확정된 건만</b>.
+     *
+     * <p>{@code DECISIVE} 는 산수로 확정된 것이라 결과도 말할 수 있다(수수료 차감이면
+     * 청구는 그대로다). {@code LIKELY}·{@code WEAK} 이거나 원인이 없으면 <b>결과를 모른다.</b>
+     * 그때 영향을 요구하면 모델은 지어낸다.
+     */
+    private static boolean requiresImpact(String causeHint) {
+        return causeHint != null && causeHint.contains("DECISIVE");
     }
 
     /**
