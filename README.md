@@ -74,7 +74,7 @@
 - **MySQL 8.4** + JPA(도메인 모델), **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화, 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito. 기본 스위트 **616개** + 실 MySQL 통합 **13개**(`integrationTest`) + Toxiproxy 네트워크 카오스 **1개**(`chaosTest`) = 총 630개. 뒤의 둘은 컨테이너가 필요해 기본 스위트에서 제외하고 별도 태스크로 돌린다. Spring Modulith 경계 검증 포함. 락 전략 비교는 H2와 Testcontainers 실 MySQL에서 각각 재서 순위가 뒤집히는 것을 확인했다
+- 테스트: JUnit5 + Mockito. 기본 스위트 **621개** + 실 MySQL 통합 **13개**(`integrationTest`) + Toxiproxy 네트워크 카오스 **1개**(`chaosTest`) = 총 635개. 뒤의 둘은 컨테이너가 필요해 기본 스위트에서 제외하고 별도 태스크로 돌린다. Spring Modulith 경계 검증 포함. 락 전략 비교는 H2와 Testcontainers 실 MySQL에서 각각 재서 순위가 뒤집히는 것을 확인했다
 
 ## 아키텍처: 모듈형 모놀리스
 
@@ -237,7 +237,8 @@ BENCH_INFRA=external BENCH_DB_PORT=3307 BENCH_ALLOW_DB_RESET=1 ./gradlew bench -
   [ADR-014 상담 초안 포트](docs/adr/ADR-014-cs-draft-port-and-number-guard.md)
 
 실측 기록: [13 상담 초안 실측](docs/13-상담초안-실측.md) — 실데이터와 실제 로컬 모델(Qwen3 8B)을 붙여
-  검증기 결함 3건을 찾아 고친 과정. 오반려 50%→0%, 모델 초안 통과율 58%→100%
+  검증기 결함 3건을 찾아 고친 과정. 오반려 50%→0%, 모델 초안 통과율 58%→100%,
+  내부 용어 누출 →0%
 
 ## 가정과 한계
 

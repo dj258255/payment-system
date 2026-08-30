@@ -29,6 +29,7 @@ public class DraftService {
     private final ReconciliationAdminService reconciliationAdmin;
     private final DraftPort draftPort;
     private final NumberGuard numberGuard;
+    private final CustomerGlossary glossary;
 
     /**
      * 주문 한 건의 상담 초안을 만든다.
@@ -59,7 +60,14 @@ public class DraftService {
                     orderNo, draftPort.name(), rejected);
             return CsDraft.rejected(orderNo, draftPort.name(), rejected, timeline.complete());
         }
-        return CsDraft.ok(orderNo, text.get(), draftPort.name(), timeline.complete());
+        // 용어 누출은 <버리지 않고> 표시한다. 틀린 게 아니라 다듬을 문제다.
+        // 세어서 남기는 이유는 프롬프트를 고쳤을 때 나아졌는지 알기 위해서다.
+        List<String> jargon = glossary.findJargon(text.get());
+        if (!jargon.isEmpty()) {
+            log.info("초안에 내부 용어 남음 order={} source={} 용어={}",
+                    orderNo, draftPort.name(), jargon);
+        }
+        return CsDraft.ok(orderNo, text.get(), draftPort.name(), timeline.complete(), jargon);
     }
 
     /**
