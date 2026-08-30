@@ -95,11 +95,11 @@ com.beomsu.pay
 ([ADR-002](docs/adr/ADR-002-outbox-event-publication-registry.md)).
 결제 이벤트는 Kafka로 외부화되어([ADR-005](docs/adr/ADR-005-event-externalization-kafka.md))
 분리된 두 서비스가 소비한다: [`settlement-service/`](settlement-service/)(정산 배치·집계,
-[ADR-009](docs/adr/ADR-009-settlement-service-extraction.md))와
+[ADR-016](docs/adr/ADR-016-settlement-service-extraction.md))와
 [`notification-service/`](notification-service/)(알림 발송, 멱등 컨슈머 + DLQ 어드민).
 프로세스 밖 소비자와 공유하는 이벤트 계약(record 3종·토픽 상수)은 독립 아티팩트
 [`contracts/`](contracts/)(pay-contracts)로 분리해 composite build로 조합한다
-([ADR-008](docs/adr/ADR-008-event-contracts-artifact.md)).
+([ADR-015](docs/adr/ADR-015-event-contracts-artifact.md)).
 
 ## 핵심 설계
 

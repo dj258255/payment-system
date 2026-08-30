@@ -1,6 +1,6 @@
 # Ingress 경로 라우팅 — 클라이언트(데모 콘솔)에게 서비스 분리를 숨긴다.
 # 정산·알림 어드민 API가 same-origin이 되므로 로컬 개발에서 쓰던 CORS가 불필요해진다.
-# (게이트웨이 서버를 안 두는 이유: 라우팅만 필요하고 엣지 공통 로직이 없다 — ADR-009 참고 서사)
+# (게이트웨이 서버를 안 두는 이유: 라우팅만 필요하고 엣지 공통 로직이 없다 — ADR-016 참고 서사)
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

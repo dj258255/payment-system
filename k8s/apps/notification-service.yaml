@@ -1,6 +1,6 @@
 # notification-service — 알림 발송·멱등 소비·DLQ 어드민.
 # 스케줄러가 없어 다중화에 스케줄러 제약은 없다. 컨슈머 그룹 리밸런싱 중 일시적
-# 중복 배달은 ProcessedEvent 멱등층이 흡수한다(ADR-010).
+# 중복 배달은 ProcessedEvent 멱등층이 흡수한다(ADR-017).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

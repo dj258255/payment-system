@@ -1,13 +1,16 @@
-# ADR-010. 알림을 별도 서비스로 추출하고 consumer-app 데모를 은퇴시킨다
+# ADR-017. 알림을 별도 서비스로 추출하고 consumer-app 데모를 은퇴시킨다
+
+> **번호 변경**: 원래 ADR-010이었다. `main`이 모듈러 모놀리스로 되돌아가면서 이 번호를 다른 결정에 다시 썼다 — `main`의 ADR-010은 「안 만들기로 한 것」이다. 충돌을 피해 017로 옮겼다. 내용은 그대로다.
+
 
 - 상태: 채택 (Accepted)
 - 날짜: 2026-08-04
-- 관련: [ADR-009](ADR-009-settlement-service-extraction.md)(정산 추출 — 같은 패턴),
-  [ADR-008](ADR-008-event-contracts-artifact.md)(이벤트 계약)
+- 관련: [ADR-016](ADR-016-settlement-service-extraction.md)(정산 추출 — 같은 패턴),
+  [ADR-015](ADR-015-event-contracts-artifact.md)(이벤트 계약)
 
 ## 맥락
 
-정산 추출(ADR-009)로 서비스 분리 패턴(독립 빌드, 전용 스키마, Kafka 컨슈머 그룹, JWT 로컬
+정산 추출(ADR-016)로 서비스 분리 패턴(독립 빌드, 전용 스키마, Kafka 컨슈머 그룹, JWT 로컬
 검증)이 확립됐다. 알림(notification) 모듈은 남은 추출 후보 중 결합도가 가장 낮고
 (`PaymentConfirmedEvent` 하나만 구독, 역참조 0), 멱등 소비(`ProcessedEvent`)와
 DLQ(`DeadLetter`)를 인프로세스 시절부터 갖고 있었다. 이 방어선들은 in-process Outbox에서는
@@ -22,7 +25,7 @@ DLQ(`DeadLetter`)를 인프로세스 시절부터 갖고 있었다. 이 방어�
   추출한다. 컨슈머 그룹 `notification-service`로 `payment.confirmed`를 구독한다.
 - **실패의 두 층위를 구분**한다. 발송 실패(외부 채널 오류)는 기존대로 서비스가 삼켜 자기
   DLQ 테이블에 격리하고 오프셋은 진행한다. 역직렬화 실패(poison)는 서비스에 넣을 수 없으므로
-  재시도 3회 후 Kafka DLT(`-dlt`)로 격리한다(ADR-009와 동일 구성).
+  재시도 3회 후 Kafka DLT(`-dlt`)로 격리한다(ADR-016와 동일 구성).
 - DLQ 어드민(조회·재처리)은 서비스와 함께 이동하고, 데모 콘솔 DLQ 탭은 :8091을 직접
   호출한다(CORS, K8s Ingress 도입 시 제거).
 - **consumer-app을 삭제한다.** 실증 목적이 실서비스로 대체됐고, 유지하면 빌드·문서 관리

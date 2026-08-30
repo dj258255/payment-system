@@ -29,7 +29,7 @@ import java.time.ZoneOffset;
  *
  * <p><b>실패 처리</b>: 여기서 던진 예외는 {@link KafkaConsumerConfig}의 에러 핸들러가 받아
  * 재시도 후 DLT로 보낸다(파싱 실패 포함). 실패 건이 파티션을 막지 않게 하는 선택의 근거는
- * ADR-009 참고.
+ * ADR-016 참고.
  */
 @Component
 @RequiredArgsConstructor

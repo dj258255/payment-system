@@ -1,8 +1,11 @@
-# ADR-009. 정산을 별도 서비스로 추출하고, 컨슈머 실패는 재시도 후 DLT로 처리한다
+# ADR-016. 정산을 별도 서비스로 추출하고, 컨슈머 실패는 재시도 후 DLT로 처리한다
+
+> **번호 변경**: 원래 ADR-009이었다. `main`이 모듈러 모놀리스로 되돌아가면서 이 번호를 다른 결정에 다시 썼다 — `main`의 ADR-009은 「비밀번호 해싱과 이행 경로」다. 충돌을 피해 016로 옮겼다. 내용은 그대로다.
+
 
 - 상태: 채택 (Accepted)
 - 날짜: 2026-08-04
-- 관련: [ADR-008](ADR-008-event-contracts-artifact.md)(이벤트 계약),
+- 관련: [ADR-015](ADR-015-event-contracts-artifact.md)(이벤트 계약),
   [ADR-005](ADR-005-event-externalization-kafka.md)(Kafka 외부화),
   [실측 문서](../performance/msa-baseline-experiments.md)
 

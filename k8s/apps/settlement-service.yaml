@@ -1,6 +1,6 @@
 # settlement-service — 정산 배치·집계·지급 (스케줄러 단일 소유자).
 # replicas는 1로 고정한다 — @Scheduled는 컨슈머 그룹처럼 나눠지지 않아 다중화 시
-# 중복 실행이 재발한다(ADR-009 정직한 한계). 다중화가 필요해지면 ShedLock/리더 선출.
+# 중복 실행이 재발한다(ADR-016 정직한 한계). 다중화가 필요해지면 ShedLock/리더 선출.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

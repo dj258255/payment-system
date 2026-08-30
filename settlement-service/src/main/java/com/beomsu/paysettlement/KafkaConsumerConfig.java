@@ -18,7 +18,7 @@ import org.springframework.util.backoff.FixedBackOff;
  * 파티션은 계속 흐르므로 한 건의 실패(예: poison message)가 뒤 주문들의 정산을 막지 않는다.
  *
  * <p>대안(B안: 커밋 보류 무한 재시도)은 유실 0이지만 head-of-line blocking으로 파티션 전체가
- * 정지한다. 선택 근거와 실측은 ADR-009 참고 — DLT로 빠진 건은 자동 처리에서 이탈하지만,
+ * 정지한다. 선택 근거와 실측은 ADR-016 참고 — DLT로 빠진 건은 자동 처리에서 이탈하지만,
  * 대사(reconciliation)가 결제·정산 원장 불일치를 최종 검출하는 방어선이 이미 있다.
  */
 @Configuration
