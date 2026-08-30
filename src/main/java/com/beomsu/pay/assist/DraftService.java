@@ -28,6 +28,7 @@ public class DraftService {
     private final OrderTimelineService timelineService;
     private final ReconciliationAdminService reconciliationAdmin;
     private final DraftPort draftPort;
+    private final PromptBuilder prompts;
     private final NumberGuard numberGuard;
     private final CustomerGlossary glossary;
     private final DraftRubric rubric;
@@ -127,6 +128,66 @@ public class DraftService {
         log.info("수정이 나아지지 않아 원본 유지 order={} {}/{} -> {}/{}", facts.orderNo(),
                 before.passed(), before.total(), after.passed(), after.total());
         return original;
+    }
+
+    /**
+     * 이 건의 프롬프트를 <b>그대로</b> 꺼낸다 — 사람이 다른 곳에서 모델을 돌려보려고.
+     *
+     * <p><b>왜 필요한가</b>: 앱이 부를 수 있는 모델은 지금 로컬뿐이다. 생성형 AI 는 아직
+     * 금융권 망분리 예외가 아니고, 외부 API 를 켜려면 키가 필요하다.
+     * 그런데 <b>더 좋은 모델이 어떤 초안을 쓰는지</b>는 궁금하고, 그걸 보는 데
+     * 앱이 직접 호출할 필요는 없다.
+     *
+     * <p>프롬프트를 꺼내 어디서든 돌리고, 받은 초안을 {@link #scoreImported} 로 되돌리면
+     * <b>같은 잣대</b>로 채점된다. 앱에 키를 넣지 않고도 모델을 비교할 수 있다.
+     *
+     * <p><b>주의</b>: 꺼낸 프롬프트에는 주문번호·금액·거래일이 들어 있다.
+     * 어디에 붙여 넣는지는 그걸 꺼낸 사람의 책임이다 — 앱은 데이터를 내보내지 않지만,
+     * 사람이 내보낼 수는 있다.
+     */
+    @Transactional(readOnly = true)
+    public ExportedPrompt exportPrompt(String orderNo, Long reconResultId) {
+        FactPack facts = factsFor(orderNo, reconResultId);
+        return new ExportedPrompt(orderNo, prompts.system(facts), prompts.user(facts),
+                facts.facts().size());
+    }
+
+    /**
+     * 밖에서 받아온 초안을 <b>같은 검사</b>로 채점한다. 저장하지 않는다.
+     *
+     * <p>여기가 없으면 "저 모델이 더 잘 쓰더라"가 인상으로만 남는다.
+     * 숫자 검증·용어·루브릭을 그대로 태워야 <b>비교</b>가 된다.
+     *
+     * @param source 어디서 받았는지. 화면에 그대로 실린다 — 출처 없는 초안을 만들지 않는다
+     */
+    @Transactional(readOnly = true)
+    public CsDraft scoreImported(String orderNo, Long reconResultId, String text, String source) {
+        FactPack facts = factsFor(orderNo, reconResultId);
+        String label = "manual:" + (source == null || source.isBlank() ? "unknown" : source.trim());
+
+        if (text == null || text.isBlank()) {
+            return CsDraft.none(orderNo, label, facts.complete());
+        }
+        List<String> rejected = numberGuard.verify(text, facts);
+        if (!rejected.isEmpty()) {
+            return CsDraft.rejected(orderNo, label, rejected, facts.complete());
+        }
+        // 심판도 켜져 있으면 같이 태운다. 밖에서 온 초안이라고 봐주지 않는다 —
+        // 오히려 이 경로가 <다른 모델을 비교하는 자리>라 잣대가 같아야 의미가 있다.
+        DraftJudge.Verdict verdict = judge
+                .flatMap(j -> j.judge(facts, text))
+                .orElseGet(() -> DraftJudge.Verdict.unavailable("심판 없음"));
+
+        return CsDraft.ok(orderNo, text, label, facts.complete(),
+                glossary.findJargon(text), rubric.score(text, facts), verdict);
+    }
+
+    /**
+     * 꺼낸 프롬프트.
+     *
+     * @param factCount 사실이 몇 줄인지. 0이면 프롬프트를 돌려봐야 나올 게 없다
+     */
+    public record ExportedPrompt(String orderNo, String system, String user, int factCount) {
     }
 
     /**
