@@ -1,0 +1,39 @@
+package com.beomsu.pay.assist;
+
+import java.util.List;
+
+/**
+ * 초안 생성 결과.
+ *
+ * <p><b>실패도 결과로 돌려준다.</b> 예외로 던지면 화면이 "오류"만 보여주고 사람은
+ * 왜 초안이 없는지 모른다. 검증에 걸린 숫자를 함께 실어야 "모델이 없는 값을 만들었다"는 걸
+ * 사람이 알 수 있다.
+ *
+ * @param orderNo   대상 주문
+ * @param text      초안 본문. 검증에 실패했으면 null
+ * @param source    어느 구현이 만들었나 ({@link DraftPort#name()})
+ * @param verified  {@link NumberGuard}를 통과했나
+ * @param rejected  출처에서 확인되지 않은 값들. 비어 있지 않으면 초안을 쓰지 않는다
+ * @param complete  근거 타임라인이 완전했나. false면 초안도 불완전하다
+ */
+public record CsDraft(String orderNo,
+                      String text,
+                      String source,
+                      boolean verified,
+                      List<String> rejected,
+                      boolean complete) {
+
+    static CsDraft ok(String orderNo, String text, String source, boolean complete) {
+        return new CsDraft(orderNo, text, source, true, List.of(), complete);
+    }
+
+    /** 검증 실패. 본문을 <b>버린다</b> — 사람이 읽으면 그 문장에 끌려간다(앵커링). */
+    static CsDraft rejected(String orderNo, String source, List<String> rejected, boolean complete) {
+        return new CsDraft(orderNo, null, source, false, List.copyOf(rejected), complete);
+    }
+
+    /** 만들 재료가 없었다. 실패와 구분한다 — 이건 정상이다. */
+    static CsDraft none(String orderNo, String source, boolean complete) {
+        return new CsDraft(orderNo, null, source, true, List.of(), complete);
+    }
+}
