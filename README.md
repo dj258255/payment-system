@@ -74,7 +74,7 @@
 - **MySQL 8.4** + JPA(도메인 모델), **Flyway**(스키마 마이그레이션)
 - **Redis**(캐시·분산락), **Resilience4j**(서킷브레이커·재시도), **Kafka**(결제 이벤트 외부화, 프로세스 밖 소비자용, 브로커 있을 때만)
 - **Micrometer + Prometheus/Grafana**(관측성), **Spring Security**(인증·인가)
-- 테스트: JUnit5 + Mockito. 기본 스위트 **643개** + 실 MySQL 통합 **13개**(`integrationTest`) + Toxiproxy 네트워크 카오스 **1개**(`chaosTest`) = 총 657개. 뒤의 둘은 컨테이너가 필요해 기본 스위트에서 제외하고 별도 태스크로 돌린다. Spring Modulith 경계 검증 포함. 락 전략 비교는 H2와 Testcontainers 실 MySQL에서 각각 재서 순위가 뒤집히는 것을 확인했다
+- 테스트: JUnit5 + Mockito. 기본 스위트 **649개** + 실 MySQL 통합 **13개**(`integrationTest`) + Toxiproxy 네트워크 카오스 **1개**(`chaosTest`) = 총 663개. 뒤의 둘은 컨테이너가 필요해 기본 스위트에서 제외하고 별도 태스크로 돌린다. Spring Modulith 경계 검증 포함. 락 전략 비교는 H2와 Testcontainers 실 MySQL에서 각각 재서 순위가 뒤집히는 것을 확인했다
 
 ## 아키텍처: 모듈형 모놀리스
 

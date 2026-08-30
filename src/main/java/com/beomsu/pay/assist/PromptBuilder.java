@@ -95,6 +95,52 @@ public class PromptBuilder {
     }
 
     /**
+     * 수정 프롬프트 — <b>짧게, 목표 하나만.</b>
+     *
+     * <p>생성 프롬프트(규칙 8개 + 사전 22줄 + 예시 3개)를 여기 다시 싣지 않는다.
+     * 그러면 같은 주의 예산 문제가 되풀이된다. 고칠 것 하나와 쓸 수 있는 값만 준다.
+     */
+    public String reviseSystem() {
+        // "고치십시오"라고 썼더니 모델이 초안을 <그대로> 돌려줬다. 지적은 "빠졌다"인데
+        // 지시는 "편집하라"였고, 모델은 고치기를 <기존 문장 수정>으로 읽었다.
+        // 없는 것을 채우려면 <덧붙이라>고 해야 한다. 이 한 단어가 결과를 갈랐다.
+        return """
+                당신은 결제사 상담 초안을 보완합니다.
+                지적된 내용이 <빠져 있다>는 뜻이면, 그 내용을 담은 문장을 <새로 덧붙이십시오>.
+
+                1. 기존 문장은 그대로 두고 뒤에 문장을 추가하십시오.
+                2. 금액과 날짜는 [인용해도 되는 값] 목록의 것만 쓰십시오.
+                3. 대문자 영문 코드는 쓰지 마십시오.
+                4. 완성된 초안 <본문만> 출력하십시오. 설명이나 머리말을 붙이지 마십시오.
+                """;
+    }
+
+    /** 무엇이 빠졌는지와 쓸 수 있는 값만. 사실 목록은 초안에 이미 반영돼 있다. */
+    public String reviseUser(FactPack facts, String draft, java.util.List<String> issues) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("[초안]\n").append(draft).append("\n\n[빠진 것]\n");
+        for (String i : issues) {
+            sb.append("- ").append(i).append('\n');
+            // 무엇을 쓰면 되는지까지 알려준다. "영향이 없다"만으로는 무엇을 덧붙일지 모른다.
+            if (i.contains("고객 영향")) {
+                sb.append("  청구 금액이 그대로인지, 추가 청구가 있는지, ")
+                  .append("고객이 무엇을 해야 하는지 중 해당하는 것을 한 문장으로 덧붙이십시오.\n");
+            }
+        }
+        if (!facts.amounts().isEmpty()) {
+            sb.append("\n[인용해도 되는 금액] 이 목록의 값만 쓰십시오.\n");
+            facts.amounts().stream().sorted()
+                    .forEach(a -> sb.append("- ").append(String.format("%,d", a)).append("원\n"));
+        }
+        if (!facts.dates().isEmpty()) {
+            sb.append("\n[인용해도 되는 날짜]\n");
+            facts.dates().stream().sorted().forEach(d -> sb.append("- ").append(d).append('\n'));
+        }
+        sb.append("\n문장을 덧붙인 초안 본문을 출력하십시오.");
+        return sb.toString();
+    }
+
+    /**
      * 사실 묶음을 사용자 프롬프트로. <b>여기서 계산하지 않는다</b> —
      * 넘기는 것은 이미 코드가 낸 값들뿐이다.
      */

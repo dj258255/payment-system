@@ -29,6 +29,24 @@ public interface DraftPort {
      */
     Optional<String> draft(FactPack facts);
 
+    /**
+     * 지적받은 것만 고쳐 다시 쓴다. <b>기본은 "못 한다"</b> — 템플릿은 고칠 게 없다.
+     *
+     * <p><b>왜 별도 메서드인가</b>: 한 번에 다 시키려고 지시를 늘렸다가 세 번 연속 나빠졌다.
+     * 긴 프롬프트에서는 지시들이 서로 경쟁하고, 모델이 어느 제약을 지킬지
+     * <b>예측 불가하게</b> 고른다. 짧은 프롬프트 하나에 목표 하나면 그 경쟁이 없다.
+     *
+     * <p><b>비평은 모델이 하지 않는다.</b> 흔한 self-refine 은 모델이 자기 글을 비평하게 하는데,
+     * 그러면 비평 자체가 틀릴 수 있다. 여기서는 {@link DraftRubric} 이 <b>결정적으로</b>
+     * 무엇이 빠졌는지 짚고, 모델은 그것만 고친다.
+     *
+     * @param issues 루브릭이 짚은 미충족 항목. <b>비어 있으면 부르지 않는다</b>
+     * @return 고친 초안. 못 고치면 {@link Optional#empty()} — 원본을 쓴다
+     */
+    default Optional<String> revise(FactPack facts, String draft, java.util.List<String> issues) {
+        return Optional.empty();
+    }
+
     /** 어느 구현이 만들었는지. 초안에 함께 실어 사람이 출처를 알게 한다. */
     String name();
 }

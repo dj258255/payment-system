@@ -59,6 +59,11 @@ public class OllamaDraftAdapter implements DraftPort {
         if (facts.empty()) {
             return Optional.empty();
         }
+        return chat(prompts.system(), prompts.user(facts), facts.orderNo(), "draft");
+    }
+
+    /** 생성과 수정이 공유하는 호출부. */
+    private Optional<String> chat(String system, String user, String orderNo, String stage) {
         try {
             Map<?, ?> res = client.post().uri("/api/chat")
                     .body(Map.of(
@@ -71,8 +76,8 @@ public class OllamaDraftAdapter implements DraftPort {
                             // 사실에서 벗어날 여지가 늘어난다.
                             "options", Map.of("temperature", 0.2),
                             "messages", java.util.List.of(
-                                    Map.of("role", "system", "content", prompts.system()),
-                                    Map.of("role", "user", "content", prompts.user(facts)))))
+                                    Map.of("role", "system", "content", system),
+                                    Map.of("role", "user", "content", user))))
                     .retrieve().body(Map.class);
 
             String text = Optional.ofNullable(res)
@@ -86,9 +91,22 @@ public class OllamaDraftAdapter implements DraftPort {
             return Optional.ofNullable(text);
         } catch (RuntimeException e) {
             // 죽어도 업무는 흘러야 한다. 예외를 올리면 섀도 기록이 확정을 오염시킨다.
-            log.warn("[ollama] 초안 생성 실패 model={} order={}", model, facts.orderNo(), e);
+            log.warn("[ollama] {} 실패 model={} order={}", stage, model, orderNo, e);
             return Optional.empty();
         }
+    }
+
+    /**
+     * 지적된 것만 고쳐 다시 쓴다. 생성과 <b>같은 호출 경로</b>를 쓰고 프롬프트만 다르다 —
+     * 파싱·타임아웃·실패 처리를 두 벌 두면 한쪽만 고쳐지는 일이 생긴다.
+     */
+    @Override
+    public Optional<String> revise(FactPack facts, String draft, java.util.List<String> issues) {
+        if (draft == null || draft.isBlank() || issues.isEmpty()) {
+            return Optional.empty();
+        }
+        return chat(prompts.reviseSystem(), prompts.reviseUser(facts, draft, issues),
+                facts.orderNo(), "revise");
     }
 
     @Override

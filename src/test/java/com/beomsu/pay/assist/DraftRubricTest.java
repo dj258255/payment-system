@@ -118,4 +118,19 @@ class DraftRubricTest {
                 + "추가로 청구되는 금액은 없습니다.";
         assertThat(rubric.score(draft, facts()).failed()).isEmpty();
     }
+
+    @Test
+    @DisplayName("같은 뜻의 다른 표현도 인정한다 — 오탐 하나가 실험 결론을 뒤집을 뻔했다")
+    void recognizesEquivalentPhrasings() {
+        String base = "2026-08-30 결제 10,000원이 정상 확인됩니다. 차액 8,888원을 확인 중입니다. ";
+        for (String tail : java.util.List.of(
+                "청구 금액은 그대로 유지됩니다.",
+                "고객님께 미치는 영향은 없습니다.",
+                "실제 결제 금액에는 영향을 주지 않습니다.",
+                "추가로 청구되는 금액은 없습니다.")) {
+            assertThat(rubric.score(base + tail, facts()).failed())
+                    .as("표현이 달라도 고객 영향을 말하고 있다: " + tail)
+                    .isEmpty();
+        }
+    }
 }

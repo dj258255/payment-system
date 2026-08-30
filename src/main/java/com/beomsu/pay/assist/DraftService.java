@@ -53,7 +53,11 @@ public class DraftService {
             return CsDraft.none(orderNo, draftPort.name(), timeline.complete());
         }
 
-        List<String> rejected = numberGuard.verify(text.get(), facts);
+        // 루브릭이 짚은 것만 짧은 프롬프트로 한 번 고쳐본다(ADR-014).
+        // <절대 나빠지지 않는다> — 고친 것이 원본보다 못하면 원본을 쓴다.
+        String best = reviseIfWorthIt(facts, text.get());
+
+        List<String> rejected = numberGuard.verify(best, facts);
         if (!rejected.isEmpty()) {
             // 버리되 조용히 버리지 않는다. 어느 구현이 무슨 값을 지어냈는지가
             // 그 구현을 계속 쓸지 판단하는 유일한 근거다.
@@ -63,20 +67,55 @@ public class DraftService {
         }
         // 용어 누출은 <버리지 않고> 표시한다. 틀린 게 아니라 다듬을 문제다.
         // 세어서 남기는 이유는 프롬프트를 고쳤을 때 나아졌는지 알기 위해서다.
-        List<String> jargon = glossary.findJargon(text.get());
+        List<String> jargon = glossary.findJargon(best);
         if (!jargon.isEmpty()) {
             log.info("초안에 내부 용어 남음 order={} source={} 용어={}",
                     orderNo, draftPort.name(), jargon);
         }
         // 정답 없이 채점한다(reference-free). 버리지 않고 실어 보낸다 —
         // 상담원이 무엇이 빠졌는지 보고 판단할 근거가 된다.
-        DraftRubric.Score score = rubric.score(text.get(), facts);
+        DraftRubric.Score score = rubric.score(best, facts);
         if (!score.failed().isEmpty()) {
             log.info("초안 루브릭 {}/{} order={} 미충족={}",
                     score.passed(), score.total(), orderNo, score.failed());
         }
-        return CsDraft.ok(orderNo, text.get(), draftPort.name(), timeline.complete(),
+        return CsDraft.ok(orderNo, best, draftPort.name(), timeline.complete(),
                 jargon, score);
+    }
+
+
+    /**
+     * 루브릭이 지적한 것만 한 번 고쳐본다. <b>고친 것이 원본보다 못하면 원본을 돌려준다.</b>
+     *
+     * <p><b>이 보장이 핵심이다.</b> 체이닝은 앞 단계 오류가 뒤로 번질 수 있고,
+     * 단계별 정확도가 높아도 전체 정확도는 낮아질 수 있다. 그래서 두 초안을
+     * <b>같은 잣대로 채점해 나은 쪽을 고른다</b> — 최악이라도 한 번 더 부른 비용만 든다.
+     *
+     * <p>지적이 없으면 부르지 않는다. 고칠 게 없는데 다시 쓰게 하면 멀쩡한 문장이 흔들린다.
+     */
+    private String reviseIfWorthIt(FactPack facts, String original) {
+        DraftRubric.Score before = rubric.score(original, facts);
+        if (before.failed().isEmpty()) {
+            return original;
+        }
+        Optional<String> revised = draftPort.revise(facts, original, before.failed());
+        if (revised.isEmpty() || revised.get().isBlank()) {
+            return original;
+        }
+        // 지어낸 값이 들어갔으면 그것만으로 탈락이다. 루브릭 점수와 무관하게 버린다.
+        if (!numberGuard.verify(revised.get(), facts).isEmpty()) {
+            log.info("수정본이 검증에 걸려 원본 유지 order={}", facts.orderNo());
+            return original;
+        }
+        DraftRubric.Score after = rubric.score(revised.get(), facts);
+        if (after.passed() > before.passed()) {
+            log.info("수정으로 개선 order={} {}/{} -> {}/{}", facts.orderNo(),
+                    before.passed(), before.total(), after.passed(), after.total());
+            return revised.get();
+        }
+        log.info("수정이 나아지지 않아 원본 유지 order={} {}/{} -> {}/{}", facts.orderNo(),
+                before.passed(), before.total(), after.passed(), after.total());
+        return original;
     }
 
     /**
