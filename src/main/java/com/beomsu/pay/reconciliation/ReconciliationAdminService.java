@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import com.beomsu.pay.audit.AuditService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +31,7 @@ public class ReconciliationAdminService {
     private final ReconciliationService reconciliationService;
     private final CauseClassifier classifier;
     private final ClassifierAccuracyMetrics accuracyMetrics;
+    private final ApplicationEventPublisher events;
 
     /**
      * PG 정산 파일(CSV)을 파싱해 대사 매칭 엔진을 돌리고 결과를 분류별로 집계한다.
@@ -99,6 +101,11 @@ public class ReconciliationAdminService {
         // 감사 기록 — 같은 트랜잭션에 남긴다. 확정은 됐는데 기록만 빠지는 상태를 만들지 않는다.
         auditService.record(actor, "RECON_RESOLVE", "RECONCILIATION_RESULT", String.valueOf(id),
                 "cause=" + cause + (note == null || note.isBlank() ? "" : " note=" + note));
+
+        // 확정됐음을 알린다. 누가 듣는지는 모른다 — 섀도 초안 기록이 여기에 붙는다(ADR-014).
+        // 커밋 뒤에 처리되므로 듣는 쪽이 느리거나 실패해도 확정은 이미 끝나 있다.
+        events.publishEvent(new ReconciliationResolvedEvent(
+                id, result.getOrderNo(), cause.name(), actor, java.time.Instant.now()));
         return toView(result);
     }
 

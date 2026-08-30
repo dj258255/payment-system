@@ -1,5 +1,7 @@
 package com.beomsu.pay.assist;
 
+import com.beomsu.pay.timeline.OrderTimeline;
+import com.beomsu.pay.timeline.TimelineEntry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -161,5 +163,39 @@ class DraftEvalHarnessTest {
         FactPack withHint = goldens().get("승인+부분취소");
         String text = new TemplateDraftAdapter().draft(withHint).orElseThrow();
         assertThat(text).contains("추정 원인").contains("제안일 뿐");
+    }
+
+    @Test
+    @DisplayName("분류기가 계산한 근거 금액은 검증을 통과한다 — 실측에서 4건 중 2건이 오반려됐던 자리")
+    void classifierEvidenceAmountsAreFacts() {
+        // 실제 대사에서 나온 근거 문장 그대로. 8,888 과 270 은 타임라인 금액이 아니라
+        // 분류기가 <계산>한 값이다. 코드가 낸 숫자이므로 초안에 나와도 된다.
+        OrderTimeline timeline = new OrderTimeline("ORD-9",
+                List.of(TimelineEntry.of(
+                        java.time.LocalDate.of(2026, 8, 30).atTime(14, 0)
+                                .atZone(java.time.ZoneId.of("Asia/Seoul")).toInstant(),
+                        TimelineEntry.Source.PAYMENT, "PAID", "결제 승인", 10_000L)),
+                List.of());
+        String hint = "SUSPECTED_TAMPERING (WEAK) — 차액 8,888원이 수수료(270원)로도 "
+                + "취소로도 설명되지 않는다. 취소 이력이 없다";
+
+        FactPack facts = FactPack.from(timeline, hint);
+        String draft = new TemplateDraftAdapter().draft(facts).orElseThrow();
+
+        assertThat(new NumberGuard().verify(draft, facts))
+                .as("분류기 근거의 숫자를 반려하면, 확신이 가장 높은 규칙과 "
+                        + "초안이 가장 필요한 건에서 초안이 사라진다")
+                .isEmpty();
+        assertThat(facts.amounts()).contains(8_888L, 270L, 10_000L);
+    }
+
+    @Test
+    @DisplayName("근거에 없는 숫자는 여전히 걸린다 — 허용 범위를 넓힌 게 아니다")
+    void stillCatchesInventionAfterWidening() {
+        OrderTimeline timeline = new OrderTimeline("ORD-9", List.of(), List.of());
+        FactPack facts = FactPack.from(timeline, "차액 8,888원");
+
+        assertThat(new NumberGuard().verify("확인 결과 1,234원이 차감되었습니다.", facts))
+                .anySatisfy(m -> assertThat(m).contains("출처에 없는 금액"));
     }
 }

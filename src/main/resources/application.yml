@@ -119,6 +119,25 @@ logging:
 # 애플리케이션 시크릿 — 운영에서는 반드시 환경변수/시크릿 매니저로 주입한다.
 # 아래 값은 로컬 개발 전용 기본값(env가 우선). 코드에는 키를 두지 않는다.
 app:
+  # 상담 답변 초안 (ADR-014). 기본은 외부 호출이 없는 템플릿.
+  assist:
+    # template | ollama | anthropic
+    #   template  — 외부 호출 없음. 기준선이자 폴백
+    #   ollama    — 로컬 모델. 데이터가 기계 밖으로 안 나간다
+    #   anthropic — 외부 API. BYOK(운영자가 자기 키를 넣는다).
+    #               생성형 AI 는 아직 금융권 망분리 예외가 아니다 — 켜는 것은 의식적 선택이어야 한다
+    draft-provider: ${APP_ASSIST_DRAFT_PROVIDER:template}
+    # 확정 시 초안을 만들어 <기록만> 한다. 사람에게 보여주지 않아 앵커링이 생기지 않는다.
+    # 기본 꺼짐 — 확정마다 타임라인 조립(10개 도메인) 비용이 붙는다.
+    shadow-enabled: ${APP_ASSIST_SHADOW_ENABLED:false}
+    ollama:
+      base-url: ${APP_ASSIST_OLLAMA_BASE_URL:http://localhost:11434}
+      model: ${APP_ASSIST_OLLAMA_MODEL:qwen2.5:7b}
+    anthropic:
+      # 비워 두면 provider=anthropic 일 때 기동이 막힌다. 호출 시점에 실패하면
+      # 초안이 조용히 비어 나가고 아무도 모른다.
+      api-key: ${APP_ASSIST_ANTHROPIC_API_KEY:}
+      model: ${APP_ASSIST_ANTHROPIC_MODEL:claude-sonnet-5}
   crypto:
     key: ${APP_CRYPTO_KEY:devlocalkey_0123456789abcdef0123}   # (단일 키·AesGcmFieldCipher용) AES-256=32바이트, 운영은 KMS/env
     # 필드 암호화 방식: envelope(기본, DEK/KEK) | simple(단일 키 AesGcm).

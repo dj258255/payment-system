@@ -40,7 +40,8 @@ class ReconciliationAdminServiceTest {
         // 원인 분류기(ADR-012)는 이 테스트의 관심사가 아니라 목으로 둔다 — 분류 규칙은
         // CauseClassifierTest가 따로 검증한다.
         service = new ReconciliationAdminService(repository, auditService, parser, reconciliationService,
-                mock(CauseClassifier.class), mock(ClassifierAccuracyMetrics.class));
+                mock(CauseClassifier.class), mock(ClassifierAccuracyMetrics.class),
+                mock(org.springframework.context.ApplicationEventPublisher.class));
     }
 
     @Test
