@@ -472,6 +472,18 @@ async function loadDraft(){
   foot.style.cssText='padding:0 12px 10px;color:var(--sub)';
   foot.textContent='생성기: '+d.source+' \u00B7 숫자 검증 통과 \u00B7 발송 전 상담원이 확인하세요';
   box.appendChild(pre); box.appendChild(foot);
+  // 루브릭 — 정답 없이 매긴 점수. 못 지킨 항목을 함께 보여야 상담원이 무엇을 채울지 안다.
+  const rb = d.rubric;
+  if (rb) {
+    const line = document.createElement('div');
+    line.className = 'sub';
+    line.style.cssText = 'padding:0 12px 10px;font-weight:700;'
+      + (rb.failed && rb.failed.length ? 'color:#B45309' : 'color:#15803D');
+    line.textContent = '루브릭 ' + rb.passed + '/' + rb.total
+      + (rb.failed && rb.failed.length ? ' \u00B7 미충족: ' + rb.failed.join(' / ') : ' \u00B7 전 항목 충족');
+    box.appendChild(line);
+  }
+
 }
 // ── 블라인드 리뷰 (ADR-014) ──
 // 서버가 단계에 따라 다른 것을 준다. 초안은 1단계를 마치기 전까지 응답에 <아예 없다> —

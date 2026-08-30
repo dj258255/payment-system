@@ -30,6 +30,7 @@ public class DraftService {
     private final DraftPort draftPort;
     private final NumberGuard numberGuard;
     private final CustomerGlossary glossary;
+    private final DraftRubric rubric;
 
     /**
      * 주문 한 건의 상담 초안을 만든다.
@@ -67,7 +68,15 @@ public class DraftService {
             log.info("초안에 내부 용어 남음 order={} source={} 용어={}",
                     orderNo, draftPort.name(), jargon);
         }
-        return CsDraft.ok(orderNo, text.get(), draftPort.name(), timeline.complete(), jargon);
+        // 정답 없이 채점한다(reference-free). 버리지 않고 실어 보낸다 —
+        // 상담원이 무엇이 빠졌는지 보고 판단할 근거가 된다.
+        DraftRubric.Score score = rubric.score(text.get(), facts);
+        if (!score.failed().isEmpty()) {
+            log.info("초안 루브릭 {}/{} order={} 미충족={}",
+                    score.passed(), score.total(), orderNo, score.failed());
+        }
+        return CsDraft.ok(orderNo, text.get(), draftPort.name(), timeline.complete(),
+                jargon, score);
     }
 
     /**

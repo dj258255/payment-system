@@ -18,6 +18,7 @@ import java.util.List;
  * @param jargon    초안에 남은 내부 용어들. <b>버리지 않고 표시한다</b> —
  *                  지어낸 숫자와 달리 <b>틀린 것이 아니라</b> 상담원이 고칠 수 있는 문제다.
  *                  같은 잣대로 버리면 쓸 만한 초안까지 사라진다
+ * @param rubric    정답 없이 매긴 점수와 미충족 항목. 표본을 늘려도 편향이 안 들어간다
  */
 public record CsDraft(String orderNo,
                       String text,
@@ -25,20 +26,24 @@ public record CsDraft(String orderNo,
                       boolean verified,
                       List<String> rejected,
                       boolean complete,
-                      List<String> jargon) {
+                      List<String> jargon,
+                      DraftRubric.Score rubric) {
 
     static CsDraft ok(String orderNo, String text, String source, boolean complete,
-                      List<String> jargon) {
-        return new CsDraft(orderNo, text, source, true, List.of(), complete, List.copyOf(jargon));
+                      List<String> jargon, DraftRubric.Score rubric) {
+        return new CsDraft(orderNo, text, source, true, List.of(), complete,
+                List.copyOf(jargon), rubric);
     }
 
     /** 검증 실패. 본문을 <b>버린다</b> — 사람이 읽으면 그 문장에 끌려간다(앵커링). */
     static CsDraft rejected(String orderNo, String source, List<String> rejected, boolean complete) {
-        return new CsDraft(orderNo, null, source, false, List.copyOf(rejected), complete, List.of());
+        return new CsDraft(orderNo, null, source, false, List.copyOf(rejected), complete,
+                List.of(), new DraftRubric.Score(0, 5, List.of("초안 없음 — 검증 반려")));
     }
 
     /** 만들 재료가 없었다. 실패와 구분한다 — 이건 정상이다. */
     static CsDraft none(String orderNo, String source, boolean complete) {
-        return new CsDraft(orderNo, null, source, true, List.of(), complete, List.of());
+        return new CsDraft(orderNo, null, source, true, List.of(), complete,
+                List.of(), new DraftRubric.Score(0, 5, List.of("초안 없음 — 사실 부족")));
     }
 }
