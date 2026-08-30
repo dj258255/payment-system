@@ -90,16 +90,20 @@ class PgSettlementCsvParserTest {
     }
 
     @Test
-    @DisplayName("음수 amount는 skip한다(금액 음수 금지)")
-    void skipsNegativeAmount() {
+    @DisplayName("음수 amount를 읽는다 — 환불·챠지백이 음수 행으로 온다")
+    void readsNegativeAmount() {
+        // 원래 이 테스트는 "음수는 skip한다"였다. 그런데 그건 PG 파일의 모양과 어긋났고,
+        // ADR-013 에서 내부 기록도 취소를 음수 행으로 쌓게 바꾸면서 양쪽이 완전히 갈렸다.
+        // 파서가 음수를 버리면 <정상 환불이 매번 예외 큐에 쌓인다>.
         var result = parser.parse(csv("""
                 orderNo,amount
                 ord-neg,-100
                 ord-ok,100
                 """));
 
-        assertThat(result.records()).containsExactly(ExternalRecord.of("ord-ok", 100));
-        assertThat(result.skipped()).isEqualTo(1);
+        assertThat(result.records())
+                .containsExactly(ExternalRecord.of("ord-neg", -100), ExternalRecord.of("ord-ok", 100));
+        assertThat(result.skipped()).isZero();
     }
 
     @Test

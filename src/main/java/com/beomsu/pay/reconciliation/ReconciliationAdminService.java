@@ -59,7 +59,15 @@ public class ReconciliationAdminService {
             }
         }
         int pending = internalOnly + externalOnly + amountMismatch;
-        return new ReconRunSummary(parsed.records().size(), parsed.skipped(),
+
+        // 금액이 걸린 채 건너뛴 행은 <조용히 넘길 수 없다>. 대사의 존재 이유가
+        // "돈이 모르게 움직이지 않는다"인데, 파일에 금액이 있는데 매칭조차 안 된 행이다.
+        var money = parsed.moneyBearing();
+        if (!money.isEmpty()) {
+            log.warn("정산 파일에 금액이 있는데 건너뛴 행 {}건 — 원본 확인 필요: {}",
+                    money.size(), money);
+        }
+        return new ReconRunSummary(parsed.records().size(), parsed.skipped(), money.size(),
                 matched, internalOnly, externalOnly, amountMismatch, pending);
     }
 

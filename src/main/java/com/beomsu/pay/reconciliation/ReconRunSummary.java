@@ -5,6 +5,9 @@ package com.beomsu.pay.reconciliation;
  *
  * @param external       파싱된 외부 기록 수(엔진에 투입된 행 수)
  * @param skipped        파싱 중 건너뛴 불량/요약 행 수
+ * @param skippedWithAmount <b>금액이 있는데</b> 건너뛴 행 수. 요약행 노이즈와 달리
+ *                          <b>돈이 걸린 행</b>이라 사람이 원본을 봐야 한다 —
+ *                          수만 세면 요약행 3개와 50만원짜리 3건이 구분되지 않는다
  * @param matched        일치(자동 종결)
  * @param internalOnly   내부에만 있음(PG 누락 의심)
  * @param externalOnly   외부에만 있음(내부 유실 의심)
@@ -14,6 +17,7 @@ package com.beomsu.pay.reconciliation;
 public record ReconRunSummary(
         int external,
         int skipped,
+        int skippedWithAmount,
         int matched,
         int internalOnly,
         int externalOnly,

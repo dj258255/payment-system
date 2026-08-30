@@ -51,8 +51,26 @@ public class PgSettlementCsvParser {
      *
      * @param records 매칭 엔진에 넘길 외부 기록
      * @param skipped orderNo 빈 값 또는 amount 파싱 실패로 건너뛴 데이터행 수(요약행 등 방어)
+     * @param skippedRows 건너뛴 행의 <b>내역</b>. 수만 세면 요약행 3개와
+     *                    금액 50만원짜리 거래 3건을 구분할 수 없다
      */
-    public record ParseResult(List<ExternalRecord> records, int skipped) {
+    public record ParseResult(List<ExternalRecord> records, int skipped,
+                              List<SkippedRow> skippedRows) {
+
+        /**
+         * 건너뛴 행 하나.
+         *
+         * @param line   파일 내 줄 번호. 사람이 원본을 찾아볼 수 있어야 한다
+         * @param reason 왜 건너뛰었나
+         * @param amount 그 행에서 읽을 수 있었던 금액. <b>null 이 아니면 돈이 걸린 행</b>이다
+         */
+        public record SkippedRow(int line, String reason, Long amount) {
+        }
+
+        /** 금액이 있는데 건너뛴 행 — <b>요약행 노이즈가 아니라 조사 대상이다.</b> */
+        public List<SkippedRow> moneyBearing() {
+            return skippedRows.stream().filter(r -> r.amount() != null && r.amount() != 0).toList();
+        }
     }
 
     /**
@@ -78,32 +96,38 @@ public class PgSettlementCsvParser {
             int maxIdx = Math.max(orderNoIdx, amountIdx);
 
             List<ExternalRecord> records = new ArrayList<>();
-            int skipped = 0;
+            List<ParseResult.SkippedRow> skippedRows = new ArrayList<>();
+            int lineNo = 1;                    // 헤더가 1행
             String line;
             while ((line = reader.readLine()) != null) {
+                lineNo++;
                 if (line.isBlank()) {
                     continue; // 공백행은 노이즈로 무시(스킵 카운트에 넣지 않음)
                 }
                 String[] cols = line.split(",", -1);
                 if (cols.length <= maxIdx) {
-                    skipped++; // 컬럼 수 부족(요약행 등)
+                    skippedRows.add(new ParseResult.SkippedRow(
+                            lineNo, "컬럼 수 부족(요약행 등)", null));
                     continue;
                 }
                 String orderNo = cols[orderNoIdx].trim();
                 if (orderNo.isEmpty()) {
-                    skipped++; // orderNo 빈 행
+                    // 금액은 읽어 둔다. 주문번호만 없고 <돈은 있는> 행이면 조사 대상이다.
+                    skippedRows.add(new ParseResult.SkippedRow(
+                            lineNo, "주문번호 없음", parseAmount(cols[amountIdx])));
                     continue;
                 }
                 Long amount = parseAmount(cols[amountIdx]);
                 if (amount == null) {
-                    skipped++; // amount 파싱 실패
+                    skippedRows.add(new ParseResult.SkippedRow(
+                            lineNo, "금액 해석 불가: " + cols[amountIdx].trim(), null));
                     continue;
                 }
                 String transactionId = (txIdIdx >= 0 && txIdIdx < cols.length)
                         ? blankToNull(cols[txIdIdx].trim()) : null;
                 records.add(new ExternalRecord(orderNo, amount, transactionId));
             }
-            return new ParseResult(records, skipped);
+            return new ParseResult(records, skippedRows.size(), List.copyOf(skippedRows));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -135,15 +159,23 @@ public class PgSettlementCsvParser {
         return raw.trim().toLowerCase().replaceAll("\\s", "");
     }
 
-    /** 금액 토큰 파싱 — 천단위 콤마·공백 제거 후 long. 실패하거나 음수면 null(스킵 신호). */
+    /**
+     * 금액 토큰 파싱 — 천단위 콤마·공백 제거 후 long. 실패하면 null(스킵 신호).
+     *
+     * <p><b>음수를 받는다.</b> 원래는 음수를 버렸는데, 그건 PG 파일의 모양과 맞지 않았다 —
+     * <b>환불·챠지백은 음수 행으로 온다</b>({@link ExternalRecord} 계약).
+     * ADR-013 에서 내부 기록도 취소를 음수 행으로 쌓게 바꿨으므로, 파서가 음수를 버리면
+     * 환불이 있는 날마다 <b>내부에만 있음</b>으로 잡힌다 — 정상 환불이 예외 큐를 채운다.
+     *
+     * <p>재현으로 확인했다: 승인 10,000 / 환불 -3,000 두 행짜리 파일에서 환불이 사라졌다.
+     */
     private static Long parseAmount(String raw) {
         String cleaned = raw.trim().replace(",", "");
         if (cleaned.isEmpty()) {
             return null;
         }
         try {
-            long value = Long.parseLong(cleaned);
-            return value < 0 ? null : value;
+            return Long.parseLong(cleaned);
         } catch (NumberFormatException e) {
             return null;
         }

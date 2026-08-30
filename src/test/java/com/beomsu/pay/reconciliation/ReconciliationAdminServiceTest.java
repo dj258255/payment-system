@@ -50,7 +50,7 @@ class ReconciliationAdminServiceTest {
         // 파서는 2건 파싱 + 1건 스킵을 보고한다.
         InputStream in = new ByteArrayInputStream("dummy".getBytes(StandardCharsets.UTF_8));
         when(parser.parse(any())).thenReturn(new PgSettlementCsvParser.ParseResult(
-                List.of(ExternalRecord.of("ord-1", 10_000), ExternalRecord.of("ord-2", 20_000)), 1));
+                List.of(ExternalRecord.of("ord-1", 10_000), ExternalRecord.of("ord-2", 20_000)), 1, java.util.List.of()));
         // 대사 엔진은 임의의 4분류 결과 목록을 돌려준다(엔진 로직은 여기서 검증 대상 아님).
         when(reconciliationService.reconcile(any(LocalDate.class), anyList())).thenReturn(List.of(
                 ReconciliationResult.matched(LocalDate.of(2026, 7, 5), "ord-1", 10_000),
