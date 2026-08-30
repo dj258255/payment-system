@@ -198,6 +198,29 @@ APP_RATELIMIT_ENABLED=false ./gradlew bootRun
 k6 run k6/checkout-load.js        # 주문→승인 흐름 (인증 필요)
 ```
 
+### 성능 실측 재현
+
+```bash
+./gradlew bench -Pprofile=smoke     # 배관 검증(1분) — 본 측정 전에 먼저
+./gradlew bench                     # capacity: 제어를 끄고 무릎을 찾는다
+./gradlew bench -Pprofile=spike     # 제어를 켜고 넘치는 부하가 어떻게 버려지는지
+```
+
+인프라 초기화 → 앱 기동 → k6 → 리포트까지 한 번에 돈다. 결과는
+`docs/performance/runs/<시각>-<프로파일>/report.md` 에 **측정 환경과 함께** 남는다.
+
+**이 태스크가 막는 것은 느린 코드가 아니라 잘못된 측정이다.** 이 저장소의 성능 수치는
+한 번 틀렸었다 — 닫힌 루프(`ramping-vus`)로 재서 용량을 과소평가했고, 열린 루프로 다시 재서
+뒤집었다. 그 외에 좀비 JVM 때문에 "대조군"이 실은 2회차였던 적, DB 누적으로 회차 비교가
+무의미했던 적이 있다. 그래서 매 회차 볼륨을 지우고, 띄운 PID 가 정말 포트를 잡았는지
+확인하고, 환경을 리포트에 박는다.
+
+로컬 Docker 가 불안정하거나 CI 가 서비스를 따로 제공하면:
+
+```bash
+BENCH_INFRA=external BENCH_DB_PORT=3307 BENCH_ALLOW_DB_RESET=1 ./gradlew bench -Pprofile=smoke
+```
+
 ## 문서
 - [docs/02 결제 도메인 핵심 개념](docs/02-결제도메인-핵심개념.md): PG/VAN 구조, 결제 3단계, 상태머신
 - [docs/03 아키텍처 설계](docs/03-아키텍처-설계.md): 멱등성, Saga/Outbox, 원장, 웹훅, 정산/대사

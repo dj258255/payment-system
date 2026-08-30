@@ -130,3 +130,22 @@ tasks.register('integrationTest', Test) {
 tasks.register('printRuntimeClasspath') {
     doLast { println sourceSets.main.runtimeClasspath.asPath }
 }
+
+// 성능 실측 — 인프라 초기화부터 리포트까지 한 번에. 누구나 같은 절차로 다시 잴 수 있게 한다.
+//
+// 이 저장소의 성능 수치는 한 번 틀렸었다(닫힌 루프로 재서 용량을 과소평가). 그 외에도
+// 좀비 JVM 때문에 '대조군'이 실은 2회차였던 적, DB 누적으로 회차 비교가 무의미했던 적이 있다.
+// 그래서 이 태스크가 막는 것은 느린 코드가 아니라 <잘못된 측정>이다 —
+// 회차마다 볼륨을 지우고, 띄운 PID 가 정말 포트를 잡았는지 확인하고, 환경을 리포트에 박는다.
+//
+//   ./gradlew bench                     # capacity(기본)
+//   ./gradlew bench -Pprofile=spike
+//   ./gradlew bench -Pprofile=all
+//
+// bootRun 을 직접 부르지 않고 스크립트에 위임하는 이유: 인프라 기동·헬스 대기·프로세스 검증·
+// k6 실행이 Gradle 밖 순서 제어라 태스크 그래프로 표현하면 오히려 흐름이 가려진다.
+tasks.register('bench', Exec) {
+    description = '성능 실측을 재현 가능한 절차로 실행한다 (Docker·k6 필요)'
+    group = 'verification'
+    commandLine 'bash', "${projectDir}/tools/bench.sh", (project.findProperty('profile') ?: 'capacity')
+}

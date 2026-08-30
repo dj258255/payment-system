@@ -27,3 +27,6 @@ ROADMAP-MSA.local.md
 .playwright-mcp/
 .toss-test-key
 .toss-test-card
+
+# bench 실행 산출물 — 환경마다 다르므로 커밋하지 않는다
+docs/performance/runs/
