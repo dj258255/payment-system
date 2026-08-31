@@ -59,7 +59,8 @@ class TossPgLiveLifecycleTest {
                 .defaultHeader("Authorization", "Basic " + basic)
                 .build();
         mapper = new ObjectMapper();
-        client = new TossPgClient("https://api.tosspayments.com", secretKey, mapper);
+        client = new TossPgClient("https://api.tosspayments.com", secretKey,
+                java.time.Duration.ofSeconds(2), java.time.Duration.ofSeconds(5), mapper);
 
         // 토스는 테스트용 국내 카드번호를 제공하지 않는다(테스트 환경에서도 실제 카드 유형이어야
         // 승인이 난다. 단 실제 출금은 일어나지 않는다). 그래서 카드 정보는 커밋하지 않고

@@ -19,6 +19,9 @@ spring:
     hikari:
       maximum-pool-size: 20
       connection-timeout: 3000     # 폭주 시 30초 대기 대신 3초 빠른 실패
+                                   # 주의: 이건 <풀에서 커넥션을 빌리려고 기다리는> 상한이다.
+                                   # 이미 빌린 커넥션의 점유 시간은 못 막는다 —
+                                   # 그건 payment.toss.read-timeout 이 맡는다.
       validation-timeout: 2000
 
   jpa:

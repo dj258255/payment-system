@@ -15,6 +15,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -43,12 +44,28 @@ public class TossPgClient implements PgClient {
     public TossPgClient(
             @Value("${payment.toss.base-url:https://api.tosspayments.com}") String baseUrl,
             @Value("${payment.toss.secret-key:}") String secretKey,
+            @Value("${payment.toss.connect-timeout:2s}") Duration connectTimeout,
+            @Value("${payment.toss.read-timeout:5s}") Duration readTimeout,
             ObjectMapper objectMapper) {
         // 토스 인증: 시크릿 키를 아이디로 쓰고 비밀번호는 비운다 — Basic base64(secretKey + ":")
         String basic = Base64.getEncoder()
                 .encodeToString((secretKey + ":").getBytes(StandardCharsets.UTF_8));
+
+        // 이 타임아웃이 없으면 느린 PG가 <응답할 때까지> 스레드를 잡는다. 체크아웃은 아직 PG 호출을
+        // 트랜잭션 안에서 하므로(ADR-007), 그동안 DB 커넥션도 같이 묶인다.
+        //
+        // Hikari 의 connection-timeout 은 이걸 못 막는다. 그건 <풀에서 커넥션을 빌리려고
+        // 기다리는> 시간 상한이지, 이미 빌린 커넥션을 얼마나 오래 쥐고 있는지와 무관하다.
+        // 읽기 타임아웃이 없으면 커넥션 점유에 상한 자체가 없다.
+        //
+        // 끊긴 호출은 실패가 아니라 TIMEOUT(=UNKNOWN)으로 흘러 복구 배치가 조회로 확정한다.
+        var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(connectTimeout);
+        factory.setReadTimeout(readTimeout);
+
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
+                .requestFactory(factory)
                 .defaultHeader("Authorization", "Basic " + basic)
                 .build();
         this.objectMapper = objectMapper;

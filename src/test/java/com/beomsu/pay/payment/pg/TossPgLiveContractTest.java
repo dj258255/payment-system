@@ -44,7 +44,8 @@ class TossPgLiveContractTest {
         assumeTrue(Files.exists(p), "테스트 키 파일이 없어 건너뜀: " + KEY_PATH);
         secretKey = Files.readString(p).trim();
         assumeTrue(secretKey.startsWith("test_sk_"), "테스트 키(test_sk_)가 아니라 건너뜀");
-        client = new TossPgClient("https://api.tosspayments.com", secretKey, new ObjectMapper());
+        client = new TossPgClient("https://api.tosspayments.com", secretKey,
+                java.time.Duration.ofSeconds(2), java.time.Duration.ofSeconds(5), new ObjectMapper());
     }
 
     @Test
