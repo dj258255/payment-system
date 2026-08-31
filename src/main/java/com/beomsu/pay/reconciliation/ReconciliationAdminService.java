@@ -86,8 +86,9 @@ public class ReconciliationAdminService {
      * 상태가 생기고, 그건 "누가 왜 확정했는지 모르는 종결"이라 감사 관점에서 최악이다.
      *
      * <p>상태 전이는 {@link ReconciliationResultRepository#saveAndFlush(Object)}로 <b>명시 영속</b>한다.
-     * dirty-check 자동 flush는 readOnly 조회로 세션 FlushMode가 MANUAL이 되거나 엔티티가 detached인
-     * 경우 신뢰할 수 없어(pay-26 사건 교훈), 상태 확정을 명시적으로 강제한다.
+     * dirty-check 자동 flush는 <b>엔티티가 detached면 아예 동작하지 않아</b>(ReadOnlyFlushSemanticsTest ④)
+     * 상태 확정을 명시적으로 강제한다. 예전에 "readOnly 조회가 끼면 MANUAL이 된다"고 적어뒀는데,
+     * 재현해 보니 <b>바깥이 read-write면 참여한 안쪽 readOnly는 무시된다</b>(같은 테스트 ②). 그 설명은 틀렸다.
      */
     @Transactional
     public ReconMismatchView resolve(long id, String actor, ResolveCause cause, String note) {

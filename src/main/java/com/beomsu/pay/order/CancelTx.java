@@ -94,8 +94,9 @@ class CancelTx {
                 stockDeductionService.restore(item.getProductId(), item.getQuantity());
             }
             order.cancel();
-            // 상태 전이를 saveAndFlush로 명시 영속한다. dirty-check 자동 flush는 readOnly 조회로 세션
-            // FlushMode가 MANUAL이거나 detached 엔티티인 경우 신뢰할 수 없어(pay-26 교훈) 확정을 강제한다.
+            // 상태 전이를 saveAndFlush로 명시 영속한다. 이 경로는 조회와 변경 사이에 트랜잭션 경계가
+            // 있어 엔티티가 detached일 수 있고, 그러면 dirty check가 아예 동작하지 않는다
+            // (ReadOnlyFlushSemanticsTest ④). "readOnly 조회 탓"이라던 옛 설명은 재현으로 반증됐다.
             orderRepository.saveAndFlush(order);
         }
         // 부분취소는 금액 단위라 수량 단위 재고에 매핑되지 않아 복원하지 않는다. 주문은 PAID 유지.
