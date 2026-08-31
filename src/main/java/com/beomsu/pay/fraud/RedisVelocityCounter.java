@@ -5,8 +5,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -37,6 +39,15 @@ public class RedisVelocityCounter implements VelocityCounter {
 
     private static final Duration WINDOW = Duration.ofSeconds(60);
 
+    /** INCR 하고, 그 호출이 키를 만들었으면 같은 원자 단위에서 TTL 을 건다. */
+    private static final RedisScript<Long> INCR_WITH_TTL = RedisScript.of("""
+            local n = redis.call('INCR', KEYS[1])
+            if n == 1 then
+              redis.call('EXPIRE', KEYS[1], ARGV[1])
+            end
+            return n
+            """, Long.class);
+
     private final StringRedisTemplate redis;
 
     public RedisVelocityCounter(StringRedisTemplate redis) {
@@ -48,11 +59,10 @@ public class RedisVelocityCounter implements VelocityCounter {
         try {
             long epochMinute = Instant.now().getEpochSecond() / WINDOW.getSeconds();
             String redisKey = "velocity:" + key + ":" + epochMinute;
-            Long count = redis.opsForValue().increment(redisKey);
-            if (count != null && count == 1L) {
-                // 첫 요청이 윈도우 키를 만들었다 → 윈도우 길이만큼 TTL을 걸어 자동 정리.
-                redis.expire(redisKey, WINDOW);
-            }
+            // INCR 과 EXPIRE 를 나눠 부르면 그 사이에 죽었을 때 <TTL 없는 키>가 영구히 남는다.
+            // 카드마다 분마다 키가 생기므로 그런 키가 쌓이면 Redis 가 계속 커진다. 한 번에 실행한다.
+            Long count = redis.execute(INCR_WITH_TTL, List.of(redisKey),
+                    String.valueOf(WINDOW.getSeconds()));
             return count == null ? 1 : count.intValue();
         } catch (RuntimeException e) {
             log.warn("velocity Redis 실패 — fail-open(이번 시도만 카운트)으로 처리합니다. key={}, err={}",

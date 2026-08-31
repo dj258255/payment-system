@@ -3,73 +3,76 @@ package com.beomsu.pay.fraud;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
-import java.time.Duration;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * RedisVelocityCounter 단위 테스트 — StringRedisTemplate 목. 고정 윈도우 INCR/EXPIRE 규약과
- * Redis 장애 시 fail-open(이번 시도만 카운트)을 검증한다(RateLimiter와 같은 패턴).
+ * 고정 윈도우 카운터 규약과 Redis 장애 시 fail-open을 검증한다.
+ *
+ * <p>INCR과 EXPIRE를 나눠 부르면 그 사이에 죽었을 때 <b>TTL 없는 키</b>가 영구히 남는다.
+ * 카드마다 분마다 키가 생기므로 Redis가 계속 커진다. 그래서 한 스크립트로 실행한다.
  */
 @ExtendWith(MockitoExtension.class)
 class RedisVelocityCounterTest {
 
     @Mock
     StringRedisTemplate redis;
-    @Mock
-    ValueOperations<String, String> valueOps;
 
     private RedisVelocityCounter counter() {
         return new RedisVelocityCounter(redis);
     }
 
     @Test
-    @DisplayName("첫 INCR(count=1)이면 60초 TTL(EXPIRE)을 걸고 1을 반환한다")
-    void firstHitSetsExpireAndReturnsOne() {
-        when(redis.opsForValue()).thenReturn(valueOps);
-        when(valueOps.increment(startsWith("velocity:card:c1:"))).thenReturn(1L);
+    @DisplayName("INCR과 EXPIRE를 한 스크립트로 실행한다 — 둘 사이에 죽어도 TTL 없는 키가 안 남는다")
+    void incrementAndExpireAreAtomic() {
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class))).thenReturn(1L);
 
         int count = counter().recordAndCount("card:c1");
 
         assertThat(count).isEqualTo(1);
-        verify(redis).expire(startsWith("velocity:card:c1:"),
-                org.mockito.ArgumentMatchers.eq(Duration.ofSeconds(60)));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<Object> args = ArgumentCaptor.forClass(Object.class);
+        verify(redis).execute(any(RedisScript.class), keys.capture(), args.capture());
+
+        assertThat(keys.getValue()).singleElement()
+                .asString().startsWith("velocity:card:c1:");
+        assertThat(args.getValue())
+                .as("TTL은 윈도우 길이(초)로 넘긴다")
+                .isEqualTo("60");
+
+        verify(redis, never()).expire(anyString(), any());
     }
 
     @Test
-    @DisplayName("후속 INCR(count>1)은 그 값을 반환하고 EXPIRE는 다시 걸지 않는다")
-    void subsequentHitReturnsCountNoExpire() {
-        when(redis.opsForValue()).thenReturn(valueOps);
-        when(valueOps.increment(anyString())).thenReturn(4L);
+    @DisplayName("후속 호출은 스크립트가 돌려준 값을 그대로 쓴다")
+    void subsequentHitReturnsCount() {
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class))).thenReturn(4L);
 
-        int count = counter().recordAndCount("card:c1");
-
-        assertThat(count).isEqualTo(4);
-        verify(redis, never()).expire(anyString(), any(Duration.class));
+        assertThat(counter().recordAndCount("card:c1")).isEqualTo(4);
     }
 
     @Test
-    @DisplayName("Redis 예외 시 fail-open — 1을 반환하고 EXPIRE를 걸지 않는다(velocity 룰 통과)")
+    @DisplayName("Redis 예외 시 fail-open — 이번 시도만 센 것으로 보고 1을 반환한다")
     void redisFailureFailOpen() {
-        when(redis.opsForValue()).thenReturn(valueOps);
-        when(valueOps.increment(anyString()))
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenThrow(new RedisConnectionFailureException("redis down"));
 
-        int count = counter().recordAndCount("card:c1");
-
-        assertThat(count).isEqualTo(1);
-        verify(redis, never()).expire(anyString(), any(Duration.class));
+        assertThat(counter().recordAndCount("card:c1")).isEqualTo(1);
     }
 }

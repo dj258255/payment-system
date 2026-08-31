@@ -12,12 +12,14 @@ import static org.mockito.Mockito.*;
 class FraudServiceTest {
 
     private VelocityCounter velocityCounter;
+    private CardBlocklist cardBlocklist;
     private FraudService service;
 
     @BeforeEach
     void setUp() {
         velocityCounter = mock(VelocityCounter.class);
-        service = new FraudService(velocityCounter);
+        cardBlocklist = mock(CardBlocklist.class);
+        service = new FraudService(velocityCounter, cardBlocklist);
         // @Value 기본값을 테스트에서 명시적으로 설정 (무배포 조정 파라미터)
         ReflectionTestUtils.setField(service, "velocityThreshold", 5);
         ReflectionTestUtils.setField(service, "velocityWeight", 40);
@@ -82,11 +84,27 @@ class FraudServiceTest {
     void blacklistBlocks() {
         when(velocityCounter.recordAndCount(anyString())).thenReturn(1);
         service.blacklistCard("card-1");
+        // 차단 목록은 이제 인스턴스 사이에 공유된다 — 조회도 그 목록에 묻는다.
+        when(cardBlocklist.contains("card-1")).thenReturn(true);
 
         FraudResult r = service.evaluate(req(10_000));
 
         assertThat(r.decision()).isEqualTo(FdsDecision.BLOCK);
         assertThat(r.isBlocked()).isTrue();
+        assertThat(r.reasons()).contains("BLACKLISTED_CARD");
+        verify(cardBlocklist).block("card-1");
+    }
+
+    @Test
+    @DisplayName("다른 인스턴스가 차단한 카드도 막힌다 — 인메모리 Set이었으면 통과했다")
+    void blockedByAnotherInstance() {
+        when(velocityCounter.recordAndCount(anyString())).thenReturn(1);
+        // 이 인스턴스는 blacklistCard 를 부른 적이 없다. 공유 목록에만 있다.
+        when(cardBlocklist.contains("card-1")).thenReturn(true);
+
+        FraudResult r = service.evaluate(req(10_000));
+
+        assertThat(r.decision()).isEqualTo(FdsDecision.BLOCK);
         assertThat(r.reasons()).contains("BLACKLISTED_CARD");
     }
 }

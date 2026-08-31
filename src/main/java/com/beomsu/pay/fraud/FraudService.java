@@ -43,12 +43,18 @@ public class FraudService {
     private int challengeThreshold;
 
     private final VelocityCounter velocityCounter;
-    // REJECTED 리뷰가 진실 원천(DB), 이 인메모리 Set은 캐시 — 기동 시 FraudBlacklistReloader가 재적재한다.
-    private final Set<String> cardBlacklist = ConcurrentHashMap.newKeySet();
 
-    /** 블랙리스트에 카드 추가(런타임, 무배포). */
+    /**
+     * 차단 목록. 진실 원천은 DB의 REJECTED 심사이고, 이건 인스턴스들이 <b>같은 답을 보게</b> 하는 층이다.
+     *
+     * <p>예전에는 인스턴스마다 인메모리 {@code Set}이었다. 기동 시 재적재하니 재시작은 견뎠지만,
+     * <b>런타임에 A에서 차단한 카드를 B·C가 모르는</b> 문제가 남아 있었다.
+     */
+    private final CardBlocklist cardBlocklist;
+
+    /** 블랙리스트에 카드 추가(런타임, 무배포). 공유 목록이라 모든 인스턴스에 즉시 반영된다. */
     public void blacklistCard(String cardKey) {
-        cardBlacklist.add(cardKey);
+        cardBlocklist.block(cardKey);
     }
 
     public FraudResult evaluate(FraudCheckRequest req) {
@@ -56,7 +62,7 @@ public class FraudService {
         List<String> reasons = new ArrayList<>();
 
         // 룰 1: 블랙리스트 (즉시 BLOCK 수준 가중치)
-        if (cardBlacklist.contains(req.cardKey())) {
+        if (cardBlocklist.contains(req.cardKey())) {
             score += blacklistWeight;
             reasons.add("BLACKLISTED_CARD");
         }
