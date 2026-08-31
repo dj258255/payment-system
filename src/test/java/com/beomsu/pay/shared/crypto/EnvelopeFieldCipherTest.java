@@ -135,4 +135,33 @@ class EnvelopeFieldCipherTest {
         assertThat(cipher.decrypt("110-1234-567890")).isEqualTo("110-1234-567890");
         assertThat(cipher.decrypt("not-an-envelope")).isEqualTo("not-an-envelope");
     }
+
+    @Test
+    @DisplayName("평문으로 읽힌 횟수를 센다 — 0이 돼야 하위호환 분기를 없앨 수 있다")
+    void countsLegacyPlaintextReads() {
+        var registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        var cipher = new EnvelopeFieldCipher(provider("v1", keys("v1", KEK_V1)), registry, false);
+
+        assertThat(cipher.decrypt("1234-5678")).isEqualTo("1234-5678");
+        assertThat(cipher.decrypt(cipher.encrypt("secret"))).isEqualTo("secret");
+
+        assertThat(registry.counter("crypto.legacy.plaintext.reads").count())
+                .as("암호문은 세지 않고 평문만 센다")
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("이관 완료를 선언하면 평문을 통과시키지 않는다 — 우회 형식이 영구히 남지 않게")
+    void rejectsLegacyPlaintextAfterMigrationDeclared() {
+        var registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        var cipher = new EnvelopeFieldCipher(provider("v1", keys("v1", KEK_V1)), registry, true);
+
+        assertThatThrownBy(() -> cipher.decrypt("1234-5678"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("평문");
+
+        assertThat(cipher.decrypt(cipher.encrypt("secret")))
+                .as("정상 암호문은 그대로 읽힌다")
+                .isEqualTo("secret");
+    }
 }

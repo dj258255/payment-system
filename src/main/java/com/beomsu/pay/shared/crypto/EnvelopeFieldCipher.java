@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
+import io.micrometer.core.instrument.Counter;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -50,6 +51,17 @@ import java.util.Base64;
 public class EnvelopeFieldCipher implements FieldCipher {
 
     private static final String PREFIX = "env:";
+
+    /**
+     * 평문으로 읽힌 횟수. 0이 되고 재암호화가 끝나면 하위호환 분기를 제거할 수 있다.
+     *
+     * <p>이 값이 계속 0보다 크면 <b>어딘가에 아직 평문이 남아 있다</b>는 뜻이다.
+     * 지표가 없으면 "언젠가 다 암호화됐겠지"로 끝나고 분기는 영원히 남는다.
+     */
+    private final Counter legacyPlaintextReads;
+
+    /** 이관 완료 선언 스위치. true면 평문을 통과시키지 않고 실패시킨다. */
+    private final boolean failOnLegacyPlaintext;
     private static final String TRANSFORMATION = "AES/GCM/NoPadding";
     private static final int IV_LENGTH = 12;       // GCM 권장 96비트
     private static final int TAG_LENGTH_BITS = 128;
@@ -59,7 +71,15 @@ public class EnvelopeFieldCipher implements FieldCipher {
     private final SecureRandom random = new SecureRandom();
 
     public EnvelopeFieldCipher(MasterKeyProvider masterKeys) {
+        this(masterKeys, new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), false);
+    }
+
+    public EnvelopeFieldCipher(MasterKeyProvider masterKeys,
+                               io.micrometer.core.instrument.MeterRegistry meterRegistry,
+                               boolean failOnLegacyPlaintext) {
         this.masterKeys = masterKeys;
+        this.legacyPlaintextReads = meterRegistry.counter("crypto.legacy.plaintext.reads");
+        this.failOnLegacyPlaintext = failOnLegacyPlaintext;
     }
 
     @Override
@@ -88,8 +108,20 @@ public class EnvelopeFieldCipher implements FieldCipher {
             return null;
         }
         // 레거시 평문 행 하위호환 — env: 프리픽스가 없으면 암호화 이전에 저장된 평문으로 보고 그대로 반환한다.
-        // 새로 저장되는 값은 항상 env:로 암호화되므로, 이 분기는 마이그레이션 이전 행을 읽을 때만 탄다.
+        //
+        // <이 분기는 끝이 있어야 한다.> 남겨두면 "암호화를 우회하는 형식"이 영구히 허용되고,
+        // 손상되거나 바뀐 값도 조용히 평문으로 받아들인다. 그래서 <셀 수 있게> 만들었다.
+        // 비밀번호 이관에 password.hash.legacy.count 게이지를 둔 것과 같은 이유다 —
+        // 끝낼 수 없는 이관이라면 최소한 <끝을 판정>할 수 있어야 한다.
+        //
+        // legacyPlaintextReads 가 0이 되고 재암호화 배치가 끝나면 이 분기를 제거한다.
         if (!ciphertext.startsWith(PREFIX)) {
+            legacyPlaintextReads.increment();
+            if (failOnLegacyPlaintext) {
+                // 이관 완료 선언 후에는 알 수 없는 형식을 조용히 통과시키지 않는다.
+                throw new IllegalStateException(
+                        "암호화 이전 평문으로 보이는 값입니다. 이관이 끝난 환경에서는 허용하지 않습니다.");
+            }
             return ciphertext;
         }
         Parsed p = parse(ciphertext);

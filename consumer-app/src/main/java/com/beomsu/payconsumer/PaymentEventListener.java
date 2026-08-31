@@ -35,9 +35,6 @@ public class PaymentEventListener {
     @KafkaListener(topics = "payment.confirmed")
     public void onConfirmed(ConsumerRecord<String, String> rec) {
         JsonNode json = parse(rec);
-        if (json == null) {
-            return;
-        }
         long total = confirmedCount.incrementAndGet();
         log.info("[정산알림] 결제 완료 수신 orderNo={} amount={} partition={} offset={} (누적 {}건)",
                 json.path("orderNo").asText(), json.path("amount").asLong(),
@@ -47,9 +44,6 @@ public class PaymentEventListener {
     @KafkaListener(topics = "payment.canceled")
     public void onCanceled(ConsumerRecord<String, String> rec) {
         JsonNode json = parse(rec);
-        if (json == null) {
-            return;
-        }
         long total = canceledCount.incrementAndGet();
         log.info("[정산알림] 결제 취소 수신 orderNo={} cancelAmount={} fullyCanceled={} partition={} offset={} (누적 {}건)",
                 json.path("orderNo").asText(), json.path("cancelAmount").asLong(),
@@ -58,16 +52,26 @@ public class PaymentEventListener {
     }
 
     /**
-     * 파싱 실패는 warn 로그 후 skip한다 — 포이즌 메시지 하나가 파티션 소비 전체를
-     * 멈추게 두지 않는다(예외를 던지면 컨테이너가 같은 오프셋을 무한 재시도한다).
+     * 파싱 실패는 <b>던진다</b>. {@link DeadLetterConfig}의 에러 핸들러가 재시도 후 DLT로 격리한다.
+     *
+     * <p>예전에는 여기서 warn 찍고 {@code null}을 반환해 skip했다. 파티션이 멈추는 걸 막으려던
+     * 것이었는데, 그러면 <b>그 이벤트가 영영 사라진다.</b> 오프셋까지 커밋되니 되돌릴 방법도 없다.
+     * "멈추지 않게 하는 것"과 "버리는 것"은 다른 일이다.
      */
     private JsonNode parse(ConsumerRecord<String, String> rec) {
         try {
             return objectMapper.readTree(rec.value());
         } catch (Exception e) {
-            log.warn("[정산알림] 파싱 실패 — skip. topic={} partition={} offset={} value={}",
-                    rec.topic(), rec.partition(), rec.offset(), rec.value(), e);
-            return null;
+            throw new PoisonMessageException(
+                    "페이로드를 JSON으로 읽지 못했습니다. topic=%s partition=%d offset=%d"
+                            .formatted(rec.topic(), rec.partition(), rec.offset()), e);
+        }
+    }
+
+    /** 재시도해도 같은 결과인 실패. 에러 핸들러가 DLT로 보낸다. */
+    static class PoisonMessageException extends RuntimeException {
+        PoisonMessageException(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 
