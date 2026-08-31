@@ -19,7 +19,7 @@ import java.time.LocalDate;
  * 건다(다른 배치 스케줄러들과 동일한 패턴). 그동안 {@code settle()}은 테스트에서만 호출되던 죽은 배치였다 —
  * 이 스케줄러가 주기 트리거를 붙여 살린다.
  *
- * <p>전일({@code LocalDate.now(UTC).minusDays(1)}) 정산을 집계한다 — 당일은 아직 거래가 진행 중이라
+ * <p>전일({@code LocalDate.now(SETTLEMENT_ZONE).minusDays(1)}, Asia/Seoul) 정산을 집계한다 — 당일은 아직 거래가 진행 중이라
  * 하루가 지난 뒤 마감한다. {@code settle()}은 그 날짜 정산이 이미 있으면 멱등하게 건너뛴다.
  */
 @Component
