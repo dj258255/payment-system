@@ -37,7 +37,7 @@ class SettlementItemTest {
     void confirmIsGuarded() {
         SettlementItem settled = newItem();
         settled.confirm(DATE);
-        settled.markSettled();
+        settled.markSettled(1L);
         settled.confirm(DATE);
         assertThat(settled.getStatus()).isEqualTo(SettlementItemStatus.SETTLED);
 
@@ -51,12 +51,12 @@ class SettlementItemTest {
     @DisplayName("markSettled: CONFIRMED에서만 SETTLED로 전이")
     void markSettledOnlyFromConfirmed() {
         SettlementItem fromPending = newItem();
-        fromPending.markSettled(); // PENDING_CONFIRMATION에서는 무시
+        fromPending.markSettled(1L); // PENDING_CONFIRMATION에서는 무시
         assertThat(fromPending.getStatus()).isEqualTo(SettlementItemStatus.PENDING_CONFIRMATION);
 
         SettlementItem confirmed = newItem();
         confirmed.confirm(DATE);
-        confirmed.markSettled();
+        confirmed.markSettled(1L);
         assertThat(confirmed.getStatus()).isEqualTo(SettlementItemStatus.SETTLED);
     }
 
@@ -74,7 +74,7 @@ class SettlementItemTest {
 
         SettlementItem settled = newItem();
         settled.confirm(DATE);
-        settled.markSettled();
+        settled.markSettled(1L);
         settled.cancel(); // SETTLED는 취소로 되돌리지 않는다
         assertThat(settled.getStatus()).isEqualTo(SettlementItemStatus.SETTLED);
     }

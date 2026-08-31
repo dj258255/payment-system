@@ -24,8 +24,8 @@ import java.util.Optional;
  * 배치는 <b>CONFIRMED만</b> 집계해 {@code SETTLED}로 넘긴다 — 구매확정 전 항목은 지급에서 빠진다(보류의 실현).
  *
  * <p><b>취소 반영</b>: 취소 이벤트를 구독해 정산액을 되돌린다. 전액취소는 항목을 CANCELED로 제외하고,
- * 부분취소는 금액을 차감한다. 단 이미 SETTLED(집계 완료)된 항목은 정산에서 되돌릴 수 없으므로 카운터로
- * 기록하고 운영이 별도 정산 조정으로 처리하게 남긴다(아래 {@link #reflectCancellation} 참고).
+ * 부분취소는 금액을 차감한다. 단 이미 SETTLED(집계 완료)된 항목은 그 정산을 고치지 않고
+ * {@link SettlementAdjustment}(회수 대기)로 남겨 <b>차기 정산에서 음수로 회수</b>한다.
  *
  * <p>서비스 루프로 집계하지만, 대용량은 Spring Batch로 확장한다
  * (chunk 단위 커밋 · cursor 기반 읽기 · 날짜/가맹점 partitioning).
@@ -49,6 +49,7 @@ public class SettlementService {
 
     private final SettlementItemRepository itemRepository;
     private final SettlementRepository settlementRepository;
+    private final SettlementAdjustmentRepository adjustmentRepository;
     private final MeterRegistry meterRegistry;
 
     /** 정산 수수료율(basis point). 270 bps = 2.7%. KRW는 소수점이 없으므로 정수 연산으로 확정. */
@@ -59,11 +60,13 @@ public class SettlementService {
 
     public SettlementService(SettlementItemRepository itemRepository,
                              SettlementRepository settlementRepository,
+                             SettlementAdjustmentRepository adjustmentRepository,
                              MeterRegistry meterRegistry,
                              @Value("${app.settlement.fee-bps:270}") long feeBps,
                              @Value("${app.settlement.payout-business-days:2}") int payoutDays) {
         this.itemRepository = itemRepository;
         this.settlementRepository = settlementRepository;
+        this.adjustmentRepository = adjustmentRepository;
         this.meterRegistry = meterRegistry;
         this.feeBps = feeBps;
         this.payoutDays = payoutDays;
@@ -119,15 +122,17 @@ public class SettlementService {
     /**
      * 결제 취소를 정산에 반영한다 — 전액취소는 제외(CANCELED), 부분취소는 금액 차감.
      *
-     * <p>SETTLED 항목의 한계(정직한 처리): 이미 그날 정산에 집계돼 지급 대상이 된 항목은 여기서 되돌릴 수
-     * 없다. 금액을 함부로 줄이면 이미 산출된 지급금과 어긋나므로, 항목은 건드리지 않고
-     * {@code settlement.postsettle.cancel} 카운터만 올린다. 운영이 이 지표로 사후 정산 조정(차기 정산에서
-     * 역분개 반영)을 수행한다. 원장(ledger)이 취소 역분개 이력을 이미 보유하므로 정산은 재구성 가능한 집계다.
+     * <p><b>SETTLED 항목</b>: 이미 그날 정산에 집계돼 지급 대상이 됐으므로 그 정산을 고치지 않는다.
+     * 대신 {@link SettlementAdjustment}를 회수 대기로 남기고 차기 정산이 음수로 반영한다.
+     * 예전에는 카운터만 올렸는데, 그러면 "몇 건 있었다"는 알아도 <b>어떤 주문을 얼마 조정할지</b>를
+     * 복구할 수 없었다. 원장이 취소 이력을 갖고 있지만 그건 근거지 <b>실행할 일</b>이 아니다.
      *
-     * <p>부분취소 멱등: 이벤트가 실은 <b>취소 후 잔액(절대값)</b>을 담고, 항목 금액을 그 잔액으로 세팅한다
-     * (델타 차감이 아님). 그래서 같은 취소가 at-least-once로 중복 배달돼도 같은 값이 되어 이중 차감되지
-     * 않는다 — 전액취소(CANCELED 가드)와 대칭적으로 멱등하다. 같은 주문 취소 이벤트는 orderNo 라우팅으로
-     * 파티션 순서가 보존되므로, 더 과거 취소가 뒤늦게 재배달되는 역전은 실질적으로 배제된다.
+     * <p><b>부분취소 멱등</b>: 이벤트가 <b>취소 후 잔액(절대값)</b>을 담고, 항목 금액을 그 잔액으로 세팅한다
+     * (델타 차감이 아님). 중복 배달돼도 같은 값이 되어 이중 차감되지 않는다.
+     *
+     * <p>다만 <b>절대값 세팅은 순서 역전에는 안전하지 않다</b>. 2차 취소가 먼저 소비되면 늦게 온 1차가
+     * 잔액을 되돌린다. 파티션 순서에 기대지 않고 {@code cancelSeq}로 직접 막는다
+     * ({@link SettlementItem#applySettleableBalance}).
      */
     @Transactional
     public void reflectCancellation(PaymentCanceledEvent event) {
@@ -138,10 +143,9 @@ public class SettlementService {
         SettlementItem item = found.get();
 
         if (item.getStatus() == SettlementItemStatus.SETTLED) {
-            // 이미 지급 대상으로 집계됨 → 정산에서 차감 불가. 운영이 별도 정산 조정 필요.
-            log.warn("정산 완료(SETTLED) 후 취소 수신 — 정산 차감 불가, 사후 조정 대상 paymentId={} orderNo={}",
-                    event.paymentId(), event.orderNo());
-            meterRegistry.counter("settlement.postsettle.cancel").increment();
+            // 이미 지급 대상으로 집계됐다. 과거 정산을 고치지 않고 <차기 정산에서 음수로 회수>한다.
+            // 카운터만 올리면 "몇 건 있었다"는 알지만 어떤 주문을 얼마 조정할지는 복구할 수 없다.
+            recordClawback(event, item);
             return;
         }
         if (item.getStatus() == SettlementItemStatus.CANCELED) {
@@ -191,10 +195,65 @@ public class SettlementService {
         long feeVat = fee / 10; // 수수료 부가세 10%(내림)
         LocalDate payoutDate = BusinessDays.plusBusinessDays(date, payoutDays);
 
+        // 회수 대기분을 먼저 반영한다 — 총액이 정해진 뒤에 수수료를 계산해야 맞다.
         Settlement settlement = settlementRepository.save(
                 Settlement.of(date, gross, fee, feeVat, items.size(), payoutDate));
-        items.forEach(SettlementItem::markSettled);
+        long adjustedGross = applyPendingAdjustments(gross, settlement);
+        if (adjustedGross != gross) {
+            long adjFee = calculateFee(adjustedGross);
+            settlement.reviseAmounts(adjustedGross, adjFee, adjFee / 10);
+            settlementRepository.saveAndFlush(settlement);
+        }
+        items.forEach(item -> item.markSettled(settlement.getId()));
         return settlement;
+    }
+
+    /**
+     * 정산된 뒤 온 취소를 회수 대기로 남긴다.
+     *
+     * <p>{@code (orderNo, cancelSeq)} 유니크가 중복 배달을 막는다. 조정을 만들지 못해도
+     * 취소 처리 자체를 실패시키지 않는다 — 다만 <b>조용히 넘기지는 않는다</b>.
+     */
+    private void recordClawback(PaymentCanceledEvent event, SettlementItem item) {
+        long recoverable = item.getAmount() - Math.max(0L, event.settleableBalance());
+        if (recoverable <= 0) {
+            return;   // 회수할 게 없다
+        }
+        if (adjustmentRepository.existsByOrderNoAndCancelSeq(event.orderNo(), event.cancelSeq())) {
+            return;   // 멱등
+        }
+        adjustmentRepository.save(SettlementAdjustment.pendingClawback(
+                event.orderNo(), event.paymentId(), item.getSettlementId(),
+                event.cancelSeq(), recoverable));
+        log.warn("정산 완료 후 취소 — 차기 정산 회수 대기 등록 orderNo={} 회수={}",
+                event.orderNo(), recoverable);
+        meterRegistry.counter("settlement.postsettle.cancel").increment();
+    }
+
+    /**
+     * 회수 대기분을 이번 정산 총액에서 뺀다.
+     *
+     * <p><b>총액을 넘는 회수는 자동으로 처리하지 않는다.</b> 음수 지급은 "돈을 돌려받는" 일이라
+     * 지급 파이프라인이 아니라 별도 청구 절차다. 조용히 0으로 깎으면 회수액이 증발한다.
+     * 그런 건 {@code REVIEW_REQUIRED}로 남겨 사람이 본다.
+     */
+    private long applyPendingAdjustments(long gross, Settlement settlement) {
+        List<SettlementAdjustment> pending =
+                adjustmentRepository.findByStatus(SettlementAdjustmentStatus.PENDING);
+        long adjusted = gross;
+        for (SettlementAdjustment a : pending) {
+            long next = adjusted + a.getAdjustmentAmount();   // adjustmentAmount는 음수
+            if (next < 0) {
+                a.requireReview();
+                meterRegistry.counter("settlement.adjustment.review_required").increment();
+                continue;
+            }
+            adjusted = next;
+            a.applyTo(settlement.getId(), settlement.getSettlementDate());
+            meterRegistry.counter("settlement.adjustment.applied").increment();
+        }
+        adjustmentRepository.saveAll(pending);
+        return adjusted;
     }
 
     /**

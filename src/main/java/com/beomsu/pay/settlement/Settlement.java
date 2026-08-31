@@ -67,6 +67,21 @@ public class Settlement {
     /** 지급 확정 시각(nullable) — 어드민이 지급을 확정한 순간. 미확정이면 null. */
     private Instant paidOutAt;
 
+    /**
+     * 회수 조정을 반영해 금액을 다시 쓴다. <b>생성 직후, 지급 전에만</b> 부른다.
+     *
+     * <p>이미 지급된 정산을 고치지 않는 게 이 설계의 요점이라, 여기서도 CREATED 밖에서는 막는다.
+     */
+    void reviseAmounts(long gross, long fee, long feeVat) {
+        if (this.status != SettlementStatus.CREATED) {
+            throw new IllegalStateException("지급 확정된 정산은 금액을 고칠 수 없습니다: " + this.status);
+        }
+        this.grossAmount = gross;
+        this.feeAmount = fee;
+        this.feeVatAmount = feeVat;
+        this.netAmount = gross - fee - feeVat;
+    }
+
     private Settlement(LocalDate settlementDate, long grossAmount, long feeAmount, long feeVatAmount,
                        int itemCount, LocalDate payoutDate) {
         this.settlementDate = settlementDate;

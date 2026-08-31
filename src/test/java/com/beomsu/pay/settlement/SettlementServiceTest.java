@@ -23,6 +23,7 @@ class SettlementServiceTest {
 
     private SettlementItemRepository itemRepository;
     private SettlementRepository settlementRepository;
+    private SettlementAdjustmentRepository adjustmentRepository;
     private MeterRegistry meterRegistry;
     private SettlementService service;
 
@@ -34,9 +35,11 @@ class SettlementServiceTest {
     void setUp() {
         itemRepository = mock(SettlementItemRepository.class);
         settlementRepository = mock(SettlementRepository.class);
+        adjustmentRepository = mock(SettlementAdjustmentRepository.class);
         meterRegistry = new SimpleMeterRegistry();
         // feeBps=270(2.7%), payoutDays=2 — application.yml 기본값과 동일하게 주입.
-        service = new SettlementService(itemRepository, settlementRepository, meterRegistry, 270L, 2);
+        service = new SettlementService(itemRepository, settlementRepository,
+                adjustmentRepository, meterRegistry, 270L, 2);
     }
 
     /** CONFIRMED 상태의 항목을 만든다(승인·구매확정이 같은 날 DATE인 경우 — confirmedDate=DATE). */
@@ -278,7 +281,7 @@ class SettlementServiceTest {
     @DisplayName("SETTLED 후 취소: 항목 미변경 + postsettle 카운터 증가(사후 조정 대상)")
     void reflectCancellationAfterSettledCountsOnly() {
         SettlementItem item = confirmedItem(100L, "order-1", 10_000);
-        item.markSettled(); // CONFIRMED → SETTLED
+        item.markSettled(1L); // CONFIRMED → SETTLED
         when(itemRepository.findByPaymentId(100L)).thenReturn(Optional.of(item));
         PaymentCanceledEvent event = new PaymentCanceledEvent("order-1", 100L, 1, 10_000, 0, true, java.time.Instant.now());
 

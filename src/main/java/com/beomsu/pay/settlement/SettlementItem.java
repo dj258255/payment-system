@@ -54,6 +54,14 @@ public class SettlementItem {
     @Column(nullable = false)
     private int lastCancelSeq = -1;
 
+    /**
+     * 이 항목이 들어간 정산. SETTLED 전에는 null.
+     *
+     * <p>정산된 뒤 취소가 오면 <b>어느 지급에서 잘못 나갔는지</b>를 알아야 회수 조정을 만들 수 있다.
+     */
+    @Column
+    private Long settlementId;
+
     private SettlementItem(long paymentId, String orderNo, long amount, LocalDate confirmedDate) {
         this.paymentId = paymentId;
         this.orderNo = orderNo;
@@ -87,9 +95,10 @@ public class SettlementItem {
      * 배치가 이 항목을 특정 날짜 정산에 집계 완료로 표시한다. CONFIRMED일 때만 SETTLED로 전이한다.
      * (배치는 CONFIRMED만 조회하므로 방어적 가드지만, 멱등·상태 불변식을 엔티티에 고정한다.)
      */
-    public void markSettled() {
+    public void markSettled(Long settlementId) {
         if (this.status == SettlementItemStatus.CONFIRMED) {
             this.status = SettlementItemStatus.SETTLED;
+            this.settlementId = settlementId;
         }
     }
 
