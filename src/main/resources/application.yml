@@ -187,6 +187,11 @@ app:
   # 멀티 PG 라우팅 — 기본 off(단일 PG). 켜면 RoutingPgClient가 pgDelegate가 되어 여러 PG를
   # 가중치 순으로 시도하고 장애 시 failover한다(TIMEOUT은 이중결제 방지로 failover 안 함).
   # PgRoutingConfig + FakePgClient의 @ConditionalOnProperty가 이 값으로 함께 토글된다.
+  #
+  # 켜면 POST /api/v1/payments/init 이 <결제창을 띄우기 전에> PG를 고른다. 차단기가 열린
+  # PG는 후보에서 빠진다. 승인 단계 failover 가 아니다 — 결제 키는 그 PG의 결제창에서
+  # 발급되므로 다른 곳에 보내면 성공률이 0이고, 진행 중 거래를 넘기면 이중결제가 난다.
+  # 고르는 시점을 앞으로 옮긴 것이고, 포트원 스마트 라우팅이 channelGroupId 로 하는 것과 같은 구조다.
   pg:
     routing:
       enabled: ${APP_PG_ROUTING_ENABLED:false}

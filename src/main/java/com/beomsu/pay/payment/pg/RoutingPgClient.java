@@ -190,7 +190,10 @@ public class RoutingPgClient implements PgClient {
         return new PgQueryResult(PgPaymentStatus.IN_PROGRESS, null);
     }
 
-    /** 관측/테스트용: 각 경로의 현재 서킷 상태. */
+    /**
+     * 각 경로와 현재 차단기 상태. 관측·테스트용이자, {@link PgSelector}가
+     * <b>결제창을 띄우기 전에</b> 아픈 경로를 빼고 고를 때 쓴다.
+     */
     public List<PgRoute> routes() {
         return routes;
     }

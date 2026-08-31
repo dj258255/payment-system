@@ -18,6 +18,9 @@ import java.security.Principal;
  *
  * <p>모든 승인 요청은 {@code Idempotency-Key} 헤더로 멱등 처리된다 — "따닥" 중복결제와
  * 타임아웃 후 재시도를 안전하게 만든다.
+ *
+ * <p>어느 PG로 갈지는 <b>결제창을 띄우기 전에</b> {@code PgSelectionController}가 정한다
+ * (payment 모듈 소유). 승인 단계에서는 PG를 넘길 수 없기 때문이다.
  */
 @RestController
 @RequestMapping("/api/v1/payments")
