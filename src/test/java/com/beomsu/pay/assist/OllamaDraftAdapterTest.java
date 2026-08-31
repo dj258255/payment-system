@@ -1,5 +1,8 @@
 package com.beomsu.pay.assist;
 
+import com.beomsu.pay.reconciliation.CauseSuggestion;
+import com.beomsu.pay.reconciliation.ResolveCause;
+
 import com.beomsu.pay.timeline.OrderTimeline;
 import com.beomsu.pay.timeline.TimelineEntry;
 import com.sun.net.httpserver.HttpServer;
@@ -27,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p><b>여기서 재는 것은 품질이 아니다.</b> 스텁이 돌려주는 문장은 내가 정한 것이므로
  * 모델이 잘 쓰는지와는 무관하다. 재는 것은 세 가지다 — 응답을 제대로 꺼내는가,
- * 지어낸 숫자가 {@link NumberGuard} 에 실제로 걸리는가, 죽었을 때 조용히 비는가.
+ * 지어낸 숫자가 {@link NumericProvenanceGuard} 에 실제로 걸리는가, 죽었을 때 조용히 비는가.
  */
 class OllamaDraftAdapterTest {
 
@@ -69,7 +72,8 @@ class OllamaDraftAdapterTest {
                                 .atZone(ZoneId.of("Asia/Seoul")).toInstant(),
                         TimelineEntry.Source.PAYMENT, "PAID", "결제 승인", 10_000L)),
                 List.of());
-        return FactPack.from(t, "FEE_CALCULATION_DIFF (DECISIVE) — 차액 270원");
+        return FactPack.from(t,
+                CauseSuggestion.decisive(ResolveCause.FEE_CALCULATION_DIFF, "FEE_CALCULATION_DIFF (DECISIVE) — 차액 270원", 270L));
     }
 
     private void modelReplies(String text) {
@@ -93,7 +97,7 @@ class OllamaDraftAdapterTest {
         FactPack facts = facts();
         String draft = adapter().draft(facts).orElseThrow();
 
-        assertThat(new NumberGuard().verify(draft, facts))
+        assertThat(new NumericProvenanceGuard().verify(draft, facts))
                 .as("어댑터는 모델 말을 그대로 옮긴다. 거르는 것은 검증기의 일이다")
                 .anySatisfy(m -> assertThat(m).contains("출처에 없는 금액").contains("3,500"));
     }

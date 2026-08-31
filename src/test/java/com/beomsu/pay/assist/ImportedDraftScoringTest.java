@@ -1,5 +1,8 @@
 package com.beomsu.pay.assist;
 
+import com.beomsu.pay.reconciliation.CauseSuggestion;
+import com.beomsu.pay.reconciliation.ResolveCause;
+
 import com.beomsu.pay.timeline.OrderTimeline;
 import com.beomsu.pay.timeline.TimelineEntry;
 import org.junit.jupiter.api.DisplayName;
@@ -25,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ImportedDraftScoringTest {
 
-    private final NumberGuard guard = new NumberGuard();
+    private final NumericProvenanceGuard guard = new NumericProvenanceGuard();
     private final CustomerGlossary glossary = new CustomerGlossary();
     private final DraftRubric rubric = new DraftRubric(guard, glossary);
 
@@ -35,10 +38,11 @@ class ImportedDraftScoringTest {
                         LocalDate.of(2026, 8, 30).atTime(14, 0)
                                 .atZone(ZoneId.of("Asia/Seoul")).toInstant(),
                         TimelineEntry.Source.RECONCILIATION, "MISMATCH",
-                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 9,730", 10_000L)),
+                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 9,730", 10_000L, java.util.List.of(10000L, 9730L),
+                        java.util.List.<java.time.LocalDate>of())),
                 List.of());
-        return FactPack.from(t,
-                "FEE_CALCULATION_DIFF (DECISIVE) — 차액 270원 = 내부 10,000원 x 270 bps");
+        return FactPack.from(t, CauseSuggestion.decisive(ResolveCause.FEE_CALCULATION_DIFF,
+                "차액 270원 = 내부 10,000원 x 270 bps", 270L, 10_000L));
     }
 
     @Test

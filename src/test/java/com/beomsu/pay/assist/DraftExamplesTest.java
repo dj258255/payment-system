@@ -1,5 +1,8 @@
 package com.beomsu.pay.assist;
 
+import com.beomsu.pay.reconciliation.CauseSuggestion;
+import com.beomsu.pay.reconciliation.ResolveCause;
+
 import com.beomsu.pay.timeline.OrderTimeline;
 import com.beomsu.pay.timeline.TimelineEntry;
 import org.junit.jupiter.api.DisplayName;
@@ -28,7 +31,33 @@ class DraftExamplesTest {
                                 .atZone(ZoneId.of("Asia/Seoul")).toInstant(),
                         TimelineEntry.Source.RECONCILIATION, "R", "대사", 10_000L)),
                 List.of());
-        return FactPack.from(t, causeHint);
+        return FactPack.from(t, suggestion(causeHint));
+    }
+
+    /**
+     * 테스트가 쓰는 힌트 문자열을 제안 객체로 되돌린다.
+     *
+     * <p>본문은 이제 제안을 <b>구조로</b> 받는다. 이 테스트는 "어떤 원인·확신이면 어떤 예시가
+     * 나오는가"를 보는 것이라, 문자열을 그대로 두고 여기서만 되돌려 준다.
+     */
+    private CauseSuggestion suggestion(String causeHint) {
+        if (causeHint == null) {
+            return null;
+        }
+        String[] head = causeHint.split(" — ", 2);
+        String evidence = head.length > 1 ? head[1] : "";
+        String name = head[0].replaceAll("\\s*\\(.*", "").trim();
+        var confidence = head[0].contains("(WEAK)") ? CauseSuggestion.Confidence.WEAK
+                : head[0].contains("(LIKELY)") ? CauseSuggestion.Confidence.LIKELY
+                : CauseSuggestion.Confidence.DECISIVE;
+        try {
+            return new CauseSuggestion(ResolveCause.valueOf(name), confidence, evidence,
+                    java.util.Set.of());
+        } catch (IllegalArgumentException e) {
+            // 원인 목록에 없는 이름 = 원인을 모른다는 뜻이다. 확신도 함께 내려야 맞다.
+            return new CauseSuggestion(ResolveCause.OTHER, CauseSuggestion.Confidence.WEAK,
+                    evidence, java.util.Set.of());
+        }
     }
 
     @Test

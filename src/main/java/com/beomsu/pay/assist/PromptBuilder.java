@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
  * 부하 테스트에서 어댑터 구현 차이가 측정에 섞이면 안 되는 것과 같은 이유다.
  *
  * <p><b>지시가 곧 방어선의 일부다.</b> 여기서 "주어진 사실 밖의 숫자를 쓰지 말라"고 못 박고,
- * {@link NumberGuard} 가 지켜졌는지 <b>기계로</b> 확인한다. 지시만 있고 검사가 없으면
+ * {@link NumericProvenanceGuard} 가 지켜졌는지 <b>기계로</b> 확인한다. 지시만 있고 검사가 없으면
  * 모델이 지킬 때만 지켜지고, 검사만 있고 지시가 없으면 반려율만 높아진다. 둘 다 필요하다.
  * Uber Genie 가 "주어진 sub-context 안에서만 답하고 출처를 인용하라"를 명시적으로
  * 지시하는 것과 같은 자리다.

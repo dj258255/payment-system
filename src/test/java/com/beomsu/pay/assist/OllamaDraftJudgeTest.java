@@ -1,5 +1,8 @@
 package com.beomsu.pay.assist;
 
+import com.beomsu.pay.reconciliation.CauseSuggestion;
+import com.beomsu.pay.reconciliation.ResolveCause;
+
 import com.beomsu.pay.timeline.OrderTimeline;
 import com.beomsu.pay.timeline.TimelineEntry;
 import com.sun.net.httpserver.HttpServer;
@@ -69,7 +72,8 @@ class OllamaDraftJudgeTest {
                         TimelineEntry.Source.RECONCILIATION, "EXT",
                         "대사 EXTERNAL_ONLY — 내부 없음 / 외부 100,000", 100_000L)),
                 List.of());
-        return FactPack.from(t, null);
+        return FactPack.from(t,
+                null);
     }
 
     private void judgeReplies(String json) {

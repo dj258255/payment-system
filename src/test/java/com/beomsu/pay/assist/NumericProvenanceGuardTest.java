@@ -10,15 +10,15 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@link NumberGuard} 단위 테스트.
+ * {@link NumericProvenanceGuard} 단위 테스트.
  *
  * <p><b>이 테스트가 모델보다 먼저 있어야 한다.</b> 모델 어댑터가 붙는 날 검사를
  * 새로 만들면, 그날 검사가 제대로 도는지 확인할 방법이 없다. 지어낸 값을 넣었을 때
  * 실제로 걸리는지를 지금 고정해 둔다.
  */
-class NumberGuardTest {
+class NumericProvenanceGuardTest {
 
-    private final NumberGuard guard = new NumberGuard();
+    private final NumericProvenanceGuard guard = new NumericProvenanceGuard();
 
     private FactPack facts() {
         return new FactPack("ORD-1",

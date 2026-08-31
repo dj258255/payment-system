@@ -98,10 +98,10 @@ public class DraftRubric {
     private static final int MIN_LEN = 40;
     private static final int MAX_LEN = 400;
 
-    private final NumberGuard numberGuard;
+    private final NumericProvenanceGuard numberGuard;
     private final CustomerGlossary glossary;
 
-    DraftRubric(NumberGuard numberGuard, CustomerGlossary glossary) {
+    DraftRubric(NumericProvenanceGuard numberGuard, CustomerGlossary glossary) {
         this.numberGuard = numberGuard;
         this.glossary = glossary;
     }

@@ -1,5 +1,8 @@
 package com.beomsu.pay.assist;
 
+import com.beomsu.pay.reconciliation.CauseSuggestion;
+import com.beomsu.pay.reconciliation.ResolveCause;
+
 import com.beomsu.pay.timeline.OrderTimeline;
 import com.beomsu.pay.timeline.TimelineEntry;
 import org.junit.jupiter.api.DisplayName;
@@ -76,7 +79,7 @@ class DraftEvalHarnessTest {
     }
 
     private Score evaluate(DraftPort port) {
-        NumberGuard guard = new NumberGuard();
+        NumericProvenanceGuard guard = new NumericProvenanceGuard();
         Map<String, FactPack> cases = goldens();
         int drafted = 0, grounded = 0;
         List<String> reasons = new java.util.ArrayList<>();
@@ -176,13 +179,16 @@ class DraftEvalHarnessTest {
                                 .atZone(java.time.ZoneId.of("Asia/Seoul")).toInstant(),
                         TimelineEntry.Source.PAYMENT, "PAID", "결제 승인", 10_000L)),
                 List.of());
-        String hint = "SUSPECTED_TAMPERING (WEAK) — 차액 8,888원이 수수료(270원)로도 "
-                + "취소로도 설명되지 않는다. 취소 이력이 없다";
+        // 규칙이 계산한 값을 <구조로> 들고 온다. 예전에는 이 문장을 정규식으로 파싱했다.
+        CauseSuggestion suggestion = new CauseSuggestion(ResolveCause.SUSPECTED_TAMPERING,
+                CauseSuggestion.Confidence.WEAK,
+                "차액 8,888원이 수수료(270원)로도 취소로도 설명되지 않는다. 취소 이력이 없다",
+                java.util.Set.of(8_888L, 270L));
 
-        FactPack facts = FactPack.from(timeline, hint);
+        FactPack facts = FactPack.from(timeline, suggestion);
         String draft = new TemplateDraftAdapter().draft(facts).orElseThrow();
 
-        assertThat(new NumberGuard().verify(draft, facts))
+        assertThat(new NumericProvenanceGuard().verify(draft, facts))
                 .as("분류기 근거의 숫자를 반려하면, 확신이 가장 높은 규칙과 "
                         + "초안이 가장 필요한 건에서 초안이 사라진다")
                 .isEmpty();
@@ -193,9 +199,10 @@ class DraftEvalHarnessTest {
     @DisplayName("근거에 없는 숫자는 여전히 걸린다 — 허용 범위를 넓힌 게 아니다")
     void stillCatchesInventionAfterWidening() {
         OrderTimeline timeline = new OrderTimeline("ORD-9", List.of(), List.of());
-        FactPack facts = FactPack.from(timeline, "차액 8,888원");
+        FactPack facts = FactPack.from(timeline, CauseSuggestion.decisive(
+                ResolveCause.FEE_CALCULATION_DIFF, "차액 8,888원", 8_888L));
 
-        assertThat(new NumberGuard().verify("확인 결과 1,234원이 차감되었습니다.", facts))
+        assertThat(new NumericProvenanceGuard().verify("확인 결과 1,234원이 차감되었습니다.", facts))
                 .anySatisfy(m -> assertThat(m).contains("출처에 없는 금액"));
     }
 
@@ -209,12 +216,14 @@ class DraftEvalHarnessTest {
                         java.time.LocalDate.of(2026, 8, 30).atTime(14, 0)
                                 .atZone(java.time.ZoneId.of("Asia/Seoul")).toInstant(),
                         TimelineEntry.Source.RECONCILIATION, "MISMATCH",
-                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 9,730", 10_000L)),
+                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 9,730", 10_000L, java.util.List.of(10000L, 9730L),
+                        java.util.List.<java.time.LocalDate>of())),
                 List.of());
-        FactPack facts = FactPack.from(timeline, null);
+        FactPack facts = FactPack.from(timeline,
+                null);
 
         assertThat(facts.amounts()).contains(10_000L, 9_730L);
-        assertThat(new NumberGuard().verify("정산 파일에는 9,730원으로 기록돼 있습니다.", facts))
+        assertThat(new NumericProvenanceGuard().verify("정산 파일에는 9,730원으로 기록돼 있습니다.", facts))
                 .isEmpty();
     }
 
@@ -228,14 +237,16 @@ class DraftEvalHarnessTest {
                         java.time.LocalDate.of(2026, 8, 30).atTime(14, 0)
                                 .atZone(java.time.ZoneId.of("Asia/Seoul")).toInstant(),
                         TimelineEntry.Source.ESCROW, "HELD",
-                        "에스크로 보류 — 자동해제 예정 2026-09-06T11:06:29Z")),
+                        "에스크로 보류 — 자동해제 예정 2026-09-06T11:06:29Z", 10_000L,
+                        java.time.LocalDate.of(2026, 9, 6))),
                 List.of());
-        FactPack facts = FactPack.from(timeline, null);
+        FactPack facts = FactPack.from(timeline,
+                null);
 
         assertThat(facts.dates())
                 .contains(java.time.LocalDate.of(2026, 8, 30), java.time.LocalDate.of(2026, 9, 6));
-        assertThat(new NumberGuard().verify("2026-09-06에 자동 해제될 예정입니다.", facts)).isEmpty();
-        assertThat(new NumberGuard().verify("2027-01-01에 해제됩니다.", facts))
+        assertThat(new NumericProvenanceGuard().verify("2026-09-06에 자동 해제될 예정입니다.", facts)).isEmpty();
+        assertThat(new NumericProvenanceGuard().verify("2027-01-01에 해제됩니다.", facts))
                 .as("사실에 없는 날짜는 여전히 걸려야 한다")
                 .isNotEmpty();
     }

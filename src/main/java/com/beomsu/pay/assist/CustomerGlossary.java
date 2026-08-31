@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * <p><b>왜 필요한가</b>: 실측에서 모델이 이렇게 썼다.
  * <blockquote>대사 <b>AMOUNT_MISMATCH</b>로 인해 … 주문 상태 <b>PAID</b> 확인 중입니다</blockquote>
  * 숫자는 전부 맞았다. 그런데 고객에게 보낼 문장에 시스템 enum 이 그대로 들어 있다.
- * {@link NumberGuard} 는 이걸 못 잡는다 — 사실이 틀린 게 아니기 때문이다.
+ * {@link NumericProvenanceGuard} 는 이걸 못 잡는다 — 사실이 틀린 게 아니기 때문이다.
  *
  * <p><b>지시와 검사를 둘 다 둔다.</b> 지시만 있고 검사가 없으면 모델이 지킬 때만 지켜지고,
  * 검사만 있고 지시가 없으면 반려율만 오른다. 숫자에 대해 이미 그렇게 하고 있고,

@@ -1,5 +1,8 @@
 package com.beomsu.pay.assist;
 
+import com.beomsu.pay.reconciliation.CauseSuggestion;
+import com.beomsu.pay.reconciliation.ResolveCause;
+
 import com.beomsu.pay.timeline.OrderTimeline;
 import com.beomsu.pay.timeline.TimelineEntry;
 import com.sun.net.httpserver.HttpServer;
@@ -75,7 +78,8 @@ class AnthropicDraftAdapterTest {
                                 .atZone(ZoneId.of("Asia/Seoul")).toInstant(),
                         TimelineEntry.Source.PAYMENT, "PAID", "결제 승인", 10_000L)),
                 List.of());
-        return FactPack.from(t, "FEE_CALCULATION_DIFF (DECISIVE) — 차액 270원");
+        return FactPack.from(t,
+                CauseSuggestion.decisive(ResolveCause.FEE_CALCULATION_DIFF, "FEE_CALCULATION_DIFF (DECISIVE) — 차액 270원", 270L));
     }
 
     private void replies(String text) {

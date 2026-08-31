@@ -43,8 +43,10 @@ class DomainContributors {
         return contributor(Source.ESCROW, orderNo -> facts.findByOrderNo(orderNo)
                 .map(e -> {
                     var entries = new java.util.ArrayList<TimelineEntry>();
+                    // 요약이 <사건 시각이 아닌> 날짜를 말한다. at() 만 모으면 이 날짜가 빠진다.
                     entries.add(of(e.heldAt(), Source.ESCROW, "ESCROW_HELD",
-                            "에스크로 보류 — 자동해제 예정 %s".formatted(e.autoReleaseAt()), e.amount()));
+                            "에스크로 보류 — 자동해제 예정 %s".formatted(e.autoReleaseAt()), e.amount(),
+                            e.autoReleaseAt().atZone(java.time.ZoneId.of("Asia/Seoul")).toLocalDate()));
                     // 해제됐으면 그 시점도 찍는다. 아직이면 보류 한 줄만 — 없는 사건을 만들지 않는다.
                     if (e.resolvedAt() != null) {
                         entries.add(of(e.resolvedAt(), Source.ESCROW, "ESCROW_" + e.status(),
@@ -101,13 +103,19 @@ class DomainContributors {
     TimelineContributor reconContributor(ReconTimelineFacts facts) {
         return contributor(Source.RECONCILIATION, orderNo -> facts.findByOrderNo(orderNo).stream()
                 .<TimelineEntry>mapMulti((r, sink) -> {
+                    // 요약이 금액을 <둘> 말한다. 문장만 내면 읽는 쪽이 정규식으로 다시 뽑아야 하고,
+                    // 문구를 고칠 때 그 파싱이 조용히 깨진다. 그래서 값을 함께 낸다.
+                    var reconFigures = java.util.stream.Stream
+                            .of(r.internalAmount(), r.externalAmount())
+                            .filter(java.util.Objects::nonNull).map(Math::abs).distinct().toList();
                     sink.accept(new TimelineEntry(r.reconciledAt(), Source.RECONCILIATION,
                             "RECON_" + r.result(),
                             "대사 %s (거래일 %s) — 내부 %s / 외부 %s".formatted(
                                     r.result(), r.tradeDate(),
                                     r.internalAmount() == null ? "없음" : "%,d".formatted(r.internalAmount()),
                                     r.externalAmount() == null ? "없음" : "%,d".formatted(r.externalAmount())),
-                            r.internalAmount()));
+                            r.internalAmount(), reconFigures,
+                            r.tradeDate() == null ? java.util.List.of() : java.util.List.of(r.tradeDate())));
                     if (r.resolvedAt() != null) {
                         sink.accept(of(r.resolvedAt(), Source.RECONCILIATION, "RECON_RESOLVED",
                                 "대사 수기 확정 — %s (%s)".formatted(r.resolveCause(), r.resolvedBy())));

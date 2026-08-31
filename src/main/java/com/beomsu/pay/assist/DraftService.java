@@ -29,7 +29,7 @@ public class DraftService {
     private final ReconciliationAdminService reconciliationAdmin;
     private final DraftPort draftPort;
     private final PromptBuilder prompts;
-    private final NumberGuard numberGuard;
+    private final NumericProvenanceGuard numberGuard;
     private final CustomerGlossary glossary;
     private final DraftRubric rubric;
     /** 심판은 선택이다 — 켜지 않으면 없다. 켜면 호출이 한 번 더 는다. */
@@ -206,7 +206,7 @@ public class DraftService {
      * 규칙 분류기의 최상위 제안을 한 줄로. 실패해도 초안은 만든다 —
      * 원인 힌트는 있으면 좋은 것이지 없으면 못 만드는 것이 아니다.
      */
-    private String causeHint(Long reconResultId) {
+    private CauseSuggestion causeHint(Long reconResultId) {
         if (reconResultId == null) {
             return null;
         }
@@ -215,8 +215,7 @@ public class DraftService {
             if (suggestions.isEmpty()) {
                 return null;
             }
-            CauseSuggestion top = suggestions.get(0);
-            return "%s (%s) — %s".formatted(top.cause(), top.confidence(), top.evidence());
+            return suggestions.get(0);
         } catch (RuntimeException e) {
             log.warn("원인 제안 조회 실패 reconResultId={}", reconResultId, e);
             return null;

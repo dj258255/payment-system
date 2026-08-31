@@ -12,7 +12,7 @@ import java.util.List;
  * @param orderNo   대상 주문
  * @param text      초안 본문. 검증에 실패했으면 null
  * @param source    어느 구현이 만들었나 ({@link DraftPort#name()})
- * @param verified  {@link NumberGuard}를 통과했나
+ * @param verified  {@link NumericProvenanceGuard}를 통과했나
  * @param rejected  출처에서 확인되지 않은 값들. 비어 있지 않으면 초안을 쓰지 않는다
  * @param complete  근거 타임라인이 완전했나. false면 초안도 불완전하다
  * @param jargon    초안에 남은 내부 용어들. <b>버리지 않고 표시한다</b> —

@@ -1,5 +1,8 @@
 package com.beomsu.pay.assist;
 
+import com.beomsu.pay.reconciliation.CauseSuggestion;
+import com.beomsu.pay.reconciliation.ResolveCause;
+
 import com.beomsu.pay.timeline.OrderTimeline;
 import com.beomsu.pay.timeline.TimelineEntry;
 import org.junit.jupiter.api.DisplayName;
@@ -21,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class DraftRevisionTest {
 
-    private final NumberGuard guard = new NumberGuard();
+    private final NumericProvenanceGuard guard = new NumericProvenanceGuard();
     private final CustomerGlossary glossary = new CustomerGlossary();
     private final DraftRubric rubric = new DraftRubric(guard, glossary);
 
@@ -32,7 +35,8 @@ class DraftRevisionTest {
                                 .atZone(ZoneId.of("Asia/Seoul")).toInstant(),
                         TimelineEntry.Source.PAYMENT, "PAID", "결제 승인", 10_000L)),
                 List.of());
-        return FactPack.from(t, "FEE_CALCULATION_DIFF (DECISIVE) — 차액 270원");
+        return FactPack.from(t,
+                CauseSuggestion.decisive(ResolveCause.FEE_CALCULATION_DIFF, "FEE_CALCULATION_DIFF (DECISIVE) — 차액 270원", 270L));
     }
 
     /** 고객 영향이 빠진 초안 — 실측에서 90%가 이 상태였다. */

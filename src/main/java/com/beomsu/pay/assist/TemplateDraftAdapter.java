@@ -16,7 +16,7 @@ import java.util.Optional;
  * "그래서 얼마나 나아졌나"를 잴 상대가 필요하다. 기준선 없이 모델을 넣으면
  * 좋아 보이는 것과 좋아진 것을 구분할 수 없다.
  *
- * <p><b>둘, 폴백</b>. 모델이 죽거나 {@link NumberGuard}에 걸려 초안이 없을 때
+ * <p><b>둘, 폴백</b>. 모델이 죽거나 {@link NumericProvenanceGuard}에 걸려 초안이 없을 때
  * 상담원이 빈 화면을 보면 안 된다. 사실 나열만으로도 처음부터 조사하는 것보다는 낫다.
  *
  * <p>{@code app.assist.draft-provider=template}(기본)일 때 활성화된다.

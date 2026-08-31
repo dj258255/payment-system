@@ -20,12 +20,12 @@
  *           ↓
  *      DraftPort                      ← 구현체가 템플릿이든 모델이든 여기서 갈린다
  *           ↓
- *      NumberGuard                    ← 초안의 모든 숫자가 FactPack에 있는지 대조
+ *      NumericProvenanceGuard                    ← 초안의 모든 숫자가 FactPack에 있는지 대조
  *           ↓
  *      상담원이 검토·수정 후 발송      ← 초안은 고객에게 직접 나가지 않는다
  * </pre>
  *
- * <p><b>{@code NumberGuard}가 이 모듈의 요점이다.</b> 모델은 "매출이 23% 증가해 42억"처럼
+ * <p><b>{@code NumericProvenanceGuard}가 이 모듈의 요점이다.</b> 모델은 "매출이 23% 증가해 42억"처럼
  * 근거 있는 문장과 구별되지 않는 숫자를 만들어낸다. 그래서 출처 시스템에 없는 숫자가
  * 나오면 <b>초안을 버린다</b>. 프로덕션에서 쓰이는 방식이고(출처에 없는 값은 flag 또는 reject),
  * Uber Genie도 같은 계열이다 — 주어진 sub-context 안에서만 답하고 출처 URL을 함께 내게 강제한다.

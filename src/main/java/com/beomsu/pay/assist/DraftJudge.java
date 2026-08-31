@@ -10,7 +10,7 @@ import java.util.Optional;
  * <blockquote>
  * 저희 내부 기록에 해당 주문이 없습니다 … <b>청구 금액은 100,000원으로 그대로 유지됩니다.</b>
  * </blockquote>
- * 100,000원은 외부 기록에 있으니 {@link NumberGuard} 를 통과하고, 영향 표현이 있으니
+ * 100,000원은 외부 기록에 있으니 {@link NumericProvenanceGuard} 를 통과하고, 영향 표현이 있으니
  * {@link DraftRubric} 도 통과한다. <b>기록조차 없는 건에 청구가 멀쩡하다고 단언</b>하는데
  * 코드로는 잡을 수 없다 — 숫자가 아니라 <b>주장</b>의 문제다.
  *

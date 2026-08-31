@@ -1,5 +1,8 @@
 package com.beomsu.pay.assist;
 
+import com.beomsu.pay.reconciliation.CauseSuggestion;
+import com.beomsu.pay.reconciliation.ResolveCause;
+
 import com.beomsu.pay.timeline.OrderTimeline;
 import com.beomsu.pay.timeline.TimelineEntry;
 import org.junit.jupiter.api.DisplayName;
@@ -19,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class DraftRubricTest {
 
-    private final DraftRubric rubric = new DraftRubric(new NumberGuard(), new CustomerGlossary());
+    private final DraftRubric rubric = new DraftRubric(new NumericProvenanceGuard(), new CustomerGlossary());
 
     private FactPack facts() {
         OrderTimeline t = new OrderTimeline("ORD-1",
@@ -27,10 +30,13 @@ class DraftRubricTest {
                         LocalDate.of(2026, 8, 30).atTime(14, 0)
                                 .atZone(ZoneId.of("Asia/Seoul")).toInstant(),
                         TimelineEntry.Source.RECONCILIATION, "MISMATCH",
-                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 1,112", 10_000L)),
+                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 1,112", 10_000L, java.util.List.of(10000L, 1112L),
+                        java.util.List.<java.time.LocalDate>of())),
                 List.of());
-        return FactPack.from(t,
-                "SUSPECTED_TAMPERING (WEAK) — 차액 8,888원이 수수료(270원)로도 설명되지 않는다");
+        return FactPack.from(t, new CauseSuggestion(ResolveCause.SUSPECTED_TAMPERING,
+                CauseSuggestion.Confidence.WEAK,
+                "차액 8,888원이 수수료(270원)로도 설명되지 않는다",
+                java.util.Set.of(8_888L, 270L)));
     }
 
 
@@ -41,10 +47,11 @@ class DraftRubricTest {
                         LocalDate.of(2026, 8, 30).atTime(14, 0)
                                 .atZone(ZoneId.of("Asia/Seoul")).toInstant(),
                         TimelineEntry.Source.RECONCILIATION, "MISMATCH",
-                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 1,112", 10_000L)),
+                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 1,112", 10_000L, java.util.List.of(10000L, 1112L),
+                        java.util.List.<java.time.LocalDate>of())),
                 List.of());
-        return FactPack.from(t,
-                "FEE_CALCULATION_DIFF (DECISIVE) — 차액 8,888원이 수수료(270원)로 확정");
+        return FactPack.from(t, CauseSuggestion.decisive(ResolveCause.FEE_CALCULATION_DIFF,
+                "차액 8,888원이 수수료(270원)로 확정", 8_888L, 270L));
     }
 
     @Test
@@ -90,7 +97,8 @@ class DraftRubricTest {
                                 .atZone(ZoneId.of("Asia/Seoul")).toInstant(),
                         TimelineEntry.Source.RECONCILIATION, "EXT", "외부에만 존재", 50_000L)),
                 List.of());
-        FactPack f = FactPack.from(t, "INTERNAL_RECORD_LOST (LIKELY) — 외부에만 존재");
+        FactPack f = FactPack.from(t,
+                CauseSuggestion.decisive(ResolveCause.FEE_CALCULATION_DIFF, "INTERNAL_RECORD_LOST (LIKELY) — 외부에만 존재"));
 
         String draft = "문의하신 결제 건을 저희 기록에서 찾지 못해 확인 중입니다. "
                 + "카드사 승인 내역을 보내주시면 확인이 빨라집니다. 확인되면 처리해 드리겠습니다.";
@@ -170,10 +178,12 @@ class DraftRubricTest {
                         LocalDate.of(2026, 8, 30).atTime(14, 0)
                                 .atZone(ZoneId.of("Asia/Seoul")).toInstant(),
                         TimelineEntry.Source.RECONCILIATION, "MISMATCH",
-                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 9,730", 10_000L)),
+                        "대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 9,730", 10_000L, java.util.List.of(10000L, 9730L),
+                        java.util.List.<java.time.LocalDate>of())),
                 List.of());
-        FactPack decisive = FactPack.from(t,
-                "FEE_CALCULATION_DIFF (DECISIVE) — 차액 270원 = 내부 10,000원 x 270 bps");
+        FactPack decisive = FactPack.from(t, CauseSuggestion.decisive(
+                ResolveCause.FEE_CALCULATION_DIFF,
+                "차액 270원 = 내부 10,000원 x 270 bps", 270L, 10_000L));
 
         String noImpact = "2026-08-30 결제 10,000원이 정상 확인됩니다. "
                 + "차액 270원은 결제 수수료입니다. 확인이 끝나는 대로 안내드리겠습니다.";

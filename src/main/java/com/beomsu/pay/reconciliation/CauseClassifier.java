@@ -86,7 +86,8 @@ public class CauseClassifier {
         if (explainedByFee) {
             out.add(CauseSuggestion.decisive(ResolveCause.FEE_CALCULATION_DIFF,
                     "차액 %,d원 = 내부 %,d원 × %d bps (기대 수수료 %,d원)"
-                            .formatted(diff, internal, feeBps, expectedFee)));
+                            .formatted(diff, internal, feeBps, expectedFee),
+                    diff, internal, expectedFee));
         }
 
         // ② 부분취소: 취소된 금액과 차액이 같은지 본다. balance로 결정적으로 계산된다.
@@ -98,7 +99,8 @@ public class CauseClassifier {
             if (explainedByCancel) {
                 out.add(CauseSuggestion.decisive(ResolveCause.PARTIAL_CANCEL_NOT_REFLECTED,
                         "취소 %d건으로 %,d원이 취소됐고 차액과 정확히 일치. PG 파일이 취소 전 금액을 실었다"
-                                .formatted(p.cancelCount(), p.canceledAmount())));
+                                .formatted(p.cancelCount(), p.canceledAmount()),
+                        p.canceledAmount()));
             }
         });
 
@@ -110,10 +112,15 @@ public class CauseClassifier {
                             ? "취소 이력이 없다"
                             : "취소 %,d원이 있지만 차액과 다르다".formatted(p.canceledAmount()))
                     .orElse("결제 기록을 찾지 못했다");
+            java.util.Set<Long> figures = new java.util.LinkedHashSet<>(
+                    java.util.List.of(Math.abs(diff), Math.abs(expectedFee)));
+            state.filter(p -> p.cancelCount() > 0)
+                    .ifPresent(p -> figures.add(Math.abs(p.canceledAmount())));
             out.add(new CauseSuggestion(ResolveCause.SUSPECTED_TAMPERING,
                     CauseSuggestion.Confidence.WEAK,
                     "차액 %,d원이 수수료(%,d원)로도 취소로도 설명되지 않는다. %s"
-                            .formatted(diff, expectedFee, cancelNote)));
+                            .formatted(diff, expectedFee, cancelNote),
+                    figures));
         }
     }
 
