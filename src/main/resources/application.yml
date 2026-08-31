@@ -157,6 +157,10 @@ app:
       api-key: ${APP_ASSIST_ANTHROPIC_API_KEY:}
       model: ${APP_ASSIST_ANTHROPIC_MODEL:claude-sonnet-5}
   crypto:
+    # 평문 하위호환을 끝내는 스위치. 재암호화가 끝나 crypto.legacy.plaintext.reads 가
+    # 0이 된 뒤 true 로 켠다. 그러면 남아 있던 평문이 조용히 통과하지 않고 실패한다.
+    # 지표와 스위치가 같이 있어야 "언젠가 다 됐겠지"로 끝나지 않는다.
+    fail-on-legacy-plaintext: ${APP_CRYPTO_FAIL_ON_LEGACY_PLAINTEXT:false}
     key: ${APP_CRYPTO_KEY:devlocalkey_0123456789abcdef0123}   # (단일 키·AesGcmFieldCipher용) AES-256=32바이트, 운영은 KMS/env
     # 필드 암호화 방식: envelope(기본, DEK/KEK) | simple(단일 키 AesGcm).
     # envelope은 데이터를 매번 새 DEK로 암호화하고 그 DEK를 KEK(마스터키)로 감싸(wrap) 함께 저장한다.

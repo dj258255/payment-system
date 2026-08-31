@@ -70,12 +70,26 @@ public class EnvelopeFieldCipher implements FieldCipher {
     private final MasterKeyProvider masterKeys;
     private final SecureRandom random = new SecureRandom();
 
+    /**
+     * 테스트용 간편 생성자. 지표는 버려지고 평문은 통과시킨다.
+     *
+     * <p><b>스프링은 이걸 쓰지 않는다.</b> 생성자가 둘이면 스프링이 어느 쪽인지 못 정해
+     * 기본 생성자를 찾다가 실패한다. 그래서 아래 생성자에 {@code @Autowired}를 달아
+     * 주입 대상을 하나로 못 박았다.
+     */
     public EnvelopeFieldCipher(MasterKeyProvider masterKeys) {
         this(masterKeys, new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), false);
     }
 
+    /**
+     * @param failOnLegacyPlaintext 이관 완료 선언 스위치. 재암호화가 끝나 평문 읽기 지표가
+     *                              0이 된 뒤 켜면, 남아 있던 평문이 조용히 통과하지 않고 실패한다
+     */
+    @org.springframework.beans.factory.annotation.Autowired
     public EnvelopeFieldCipher(MasterKeyProvider masterKeys,
                                io.micrometer.core.instrument.MeterRegistry meterRegistry,
+                               @org.springframework.beans.factory.annotation.Value(
+                                       "${app.crypto.fail-on-legacy-plaintext:false}")
                                boolean failOnLegacyPlaintext) {
         this.masterKeys = masterKeys;
         this.legacyPlaintextReads = meterRegistry.counter("crypto.legacy.plaintext.reads");

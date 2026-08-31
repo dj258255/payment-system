@@ -1,5 +1,7 @@
 package com.beomsu.pay.persistence;
 
+import probe.flush.Thing;
+
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.GeneratedValue;
@@ -107,17 +109,6 @@ class ReadOnlyFlushSemanticsTest {
         return jdbc.queryForObject("select name from thing where id = ?", String.class, id);
     }
 
-    @Entity(name = "thing")
-    static class Thing {
-        @Id
-        @GeneratedValue(strategy = GenerationType.IDENTITY)
-        Long id;
-        String name;
-
-        public void setName(String name) {
-            this.name = name;
-        }
-    }
 
     @Service
     static class Probe {
@@ -178,7 +169,7 @@ class ReadOnlyFlushSemanticsTest {
 
     @Configuration
     @EnableAutoConfiguration
-    @EntityScan(basePackageClasses = ReadOnlyFlushSemanticsTest.Thing.class)
+    @EntityScan(basePackageClasses = probe.flush.Thing.class)
     static class TestApp {
         @org.springframework.context.annotation.Bean
         Probe probe() {
