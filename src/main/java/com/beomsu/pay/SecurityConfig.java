@@ -198,13 +198,18 @@ public class SecurityConfig {
      *
      * <p><b>대가</b>: 메모리 하드는 <b>서버 메모리도</b> 쓴다. 로그인 1건마다 19MiB를 잡으므로 동시
      * 로그인 100건이면 순간 약 1.9GB다. 즉 이 교체는 {@code /auth/login}의 <b>DoS 표면을 오히려 키운다.</b>
-     * {@link RateLimitFilter}가 그 경로를 IP 기준으로 막고 있는 것이 그래서 더 중요해졌다.
+     * {@link RateLimitFilter}가 그 경로를 IP 기준으로 막는 것만으로는 <b>부족하다</b>. 그건
+     * 단위 시간당 시작하는 요청 수를 묶을 뿐이고, 메모리는 <b>같은 순간에 실행 중인 해시 수</b>에
+     * 비례한다. 고정 윈도우라 초당 상한이 있어도 매초 초입에 겹칠 수 있다. 그래서
+     * {@link HashConcurrencyLimiter}로 동시 실행 수를 따로 묶는다.
      *
      * <p><b>주의</b>: 알고리즘을 바꿔도 로그인 1회 해싱이 남는 사실은 그대로다. 비밀번호를 실제로
      * 대조하는 자리라 없앨 수 없다. JWT가 없앤 것은 <b>요청마다</b> 하던 재검증이지 해싱 자체가 아니다.
      */
     @Bean
-    PasswordEncoder passwordEncoder() {
+    PasswordEncoder passwordEncoder(
+            @org.springframework.beans.factory.annotation.Value(
+                    "${app.auth.hash-concurrency:8}") int hashConcurrency) {
         String encodingId = "argon2";
         // OWASP 최소 권고: 메모리 19MiB(=19456KB), iterations 2, parallelism 1.
         PasswordEncoder argon2 = new Argon2PasswordEncoder(16, 32, 1, 19456, 2);
@@ -214,6 +219,9 @@ public class SecurityConfig {
                 encodingId, Map.of(encodingId, argon2, "bcrypt", bcrypt));
         // 접두사가 아예 없는 레거시 해시(가장 오래된 것)도 계속 검증한다.
         delegating.setDefaultPasswordEncoderForMatches(bcrypt);
-        return delegating;
+
+        // 유입 제어(RPS)는 <시작하는 요청 수>를 묶고, 이 제한은 <동시에 잡히는 메모리>를 묶는다.
+        // 둘은 다른 자원이라 유입 제어만으로는 순간 메모리 상한이 보장되지 않는다.
+        return new HashConcurrencyLimiter(delegating, hashConcurrency);
     }
 }
