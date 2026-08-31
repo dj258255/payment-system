@@ -15,6 +15,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -263,12 +264,18 @@ class ReconciliationServiceTest {
     }
 
     @Test
-    @DisplayName("승인 스냅샷이 없는 결제의 취소는 조용히 넘어간다 — 대사 대상이 아니다")
-    void cancellationWithoutSnapshotIsIgnored() {
+    @DisplayName("승인 스냅샷이 아직 없으면 취소를 버리지 않고 예외로 재배달에 맡긴다")
+    void cancellationBeforeSnapshotIsRetriedNotDropped() {
         when(internalRecords.findByOrderNo("ord-x")).thenReturn(Optional.empty());
 
-        service.reflectCancellation(new PaymentCanceledEvent(
-                "ord-x", 1L, 1, 3_000, 7_000, false, Instant.now()));
+        PaymentCanceledEvent event = new PaymentCanceledEvent(
+                "ord-x", 1L, 1, 3_000, 7_000, false, Instant.now());
+
+        // 취소는 승인된 결제에만 발행된다. 스냅샷이 없다는 건 순서 역전이지 "대상 아님"이 아니다.
+        // 조용히 넘어가면 그 취소가 영영 사라진다.
+        assertThatThrownBy(() -> service.reflectCancellation(event))
+                .isInstanceOf(ReconciliationException.class)
+                .hasMessageContaining("승인 스냅샷");
 
         verify(internalRecords, never()).save(org.mockito.ArgumentMatchers.any());
     }

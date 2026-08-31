@@ -70,13 +70,19 @@ public class ReconciliationService {
      * 그날 대사에서 그 환불 행을 {@code EXTERNAL_ONLY}로 잡아 예외 큐를 오염시킨다.
      * 별도 행으로 쌓으면 양쪽이 같은 날짜에서 만난다.
      *
-     * <p>기록이 없으면(대사 대상이 아닌 결제 등) 조용히 넘어간다.
-     * 중복 소비는 {@code (orderNo, seq)} 유니크가 막는다.
+     * <p><b>승인 스냅샷이 없으면 버리지 않고 예외를 던진다.</b> 취소는 승인된 결제에만 발행되므로
+     * 스냅샷이 없다는 건 "대사 대상이 아니다"가 아니라 <b>순서 역전</b>이다. 두 리스너가 같은
+     * 이벤트 레지스트리 위에 있어, 재발행이나 재시도가 끼면 취소가 승인보다 먼저 처리될 수 있다.
+     * 그때 조용히 넘어가면 <b>그 취소가 영영 사라진다</b>. 예외를 던져 미완료로 남기면
+     * 아웃박스가 다시 배달하고, 그때는 스냅샷이 있다.
+     *
+     * <p>중복 소비는 {@code (orderNo, seq)} 유니크가 막는다.
      */
     @Transactional
     public void reflectCancellation(PaymentCanceledEvent event) {
         if (internalRecords.findByOrderNo(event.orderNo()).isEmpty()) {
-            return;   // 승인 스냅샷이 없는 결제 — 대사 대상이 아니다
+            throw new ReconciliationException("RECON_SNAPSHOT_NOT_READY",
+                    "승인 스냅샷이 아직 없어 취소를 반영할 수 없습니다. 재배달 대기: " + event.orderNo());
         }
         if (internalRecords.existsByOrderNoAndSeq(event.orderNo(), event.cancelSeq())) {
             return;   // 멱등: 같은 취소가 이미 쌓였다
