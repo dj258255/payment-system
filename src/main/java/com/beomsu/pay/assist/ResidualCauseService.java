@@ -35,7 +35,14 @@ import java.util.Optional;
  * <p><b>6. {@code resolve}는 하지 않는다.</b> 이 서비스는 후보를 돌려줄 뿐이고, 확정은
  * 사람이 화면에서 한다. 자동 확정은 그 유형의 실측 오류율이 쌓인 뒤에 따로 결정할 문제다.
  *
- * <p>기본값은 꺼짐이다. {@code app.assist.residual.enabled=true}일 때만 모델을 부른다.
+ * <p><b>스위치는 {@code app.assist.residual-provider} 하나다.</b> 기본값 {@code template}은
+ * 항상 기권하므로 켜 두어도 아무 일이 일어나지 않는다. 상담 초안이 {@code draft-provider}
+ * 하나로 같은 일을 한다. 스위치를 둘 두면 어느 쪽이 껐는지 헷갈리고, 켰다고 생각한 채
+ * 안 도는 상태가 생긴다.
+ *
+ * <p><b>{@code ollama}로 바꾸면 즉시 산다.</b> 다만 화면 응답에 모델 왕복이 붙는다 —
+ * 실측으로 qwen3:8b 가 2~8초, 14b 가 4~17초였다. 그래서 이 창구를 대사 어드민과
+ * 분리해 뒀다. 화면은 규칙 제안을 먼저 그리고 이 후보는 나중에 채우면 된다.
  */
 @Service
 @RequiredArgsConstructor
@@ -52,9 +59,6 @@ public class ResidualCauseService {
     private final Optional<ResidualCausePort> port;
     private final MeterRegistry registry;
 
-    @Value("${app.assist.residual.enabled:false}")
-    private boolean enabled;
-
     /** 가드 4 — 이 값 미만이면 기권. */
     @Value("${app.assist.residual.min-confidence:70}")
     private int minConfidence;
@@ -67,7 +71,7 @@ public class ResidualCauseService {
      */
     public Optional<ResidualSuggestion> suggest(String orderNo, Long reconResultId,
                                                 List<CauseSuggestion> rules) {
-        if (!enabled || port.isEmpty()) {
+        if (port.isEmpty()) {
             return Optional.empty();
         }
         if (rules != null && !rules.isEmpty()) {

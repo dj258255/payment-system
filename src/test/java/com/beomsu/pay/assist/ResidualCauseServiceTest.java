@@ -53,7 +53,6 @@ class ResidualCauseServiceTest {
 
         service = new ResidualCauseService(draftService, new NumericProvenanceGuard(),
                 Optional.of(port), registry);
-        ReflectionTestUtils.setField(service, "enabled", true);
         ReflectionTestUtils.setField(service, "minConfidence", 70);
     }
 
@@ -146,11 +145,22 @@ class ResidualCauseServiceTest {
     }
 
     @Test
-    @DisplayName("꺼져 있으면 사실 조회조차 하지 않는다")
-    void disabledByDefault() {
-        ReflectionTestUtils.setField(service, "enabled", false);
+    @DisplayName("포트가 없으면 사실 조회조차 하지 않는다")
+    void noPortMeansNoWork() {
+        var noPort = new ResidualCauseService(draftService, new NumericProvenanceGuard(),
+                Optional.empty(), registry);
 
-        assertThat(service.suggest("ORD-1", 1L, List.of())).isEmpty();
+        assertThat(noPort.suggest("ORD-1", 1L, List.of())).isEmpty();
         verify(draftService, never()).factsFor(anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("템플릿 구현은 항상 기권한다 — 이것이 기본값이 곧 꺼짐인 이유다")
+    void templateAlwaysAbstains() {
+        var withTemplate = new ResidualCauseService(draftService, new NumericProvenanceGuard(),
+                Optional.of(new TemplateResidualAdapter()), registry);
+        ReflectionTestUtils.setField(withTemplate, "minConfidence", 70);
+
+        assertThat(withTemplate.suggest("ORD-1", 1L, List.of())).isEmpty();
     }
 }

@@ -137,10 +137,10 @@ app:
       base-url: ${APP_ASSIST_OLLAMA_BASE_URL:http://localhost:11434}
       model: ${APP_ASSIST_OLLAMA_MODEL:qwen3:8b}
     # 규칙 분류기가 <아무 후보도 못 낸> 건에만 모델이 원인을 제안한다(14 문서).
-    # 제안까지만 한다 — resolve 는 사람이 한다. 기본 꺼짐.
+    # 제안까지만 한다 — resolve 는 사람이 한다.
+    # 스위치는 이것 하나다. template 은 항상 기권하므로 기본값이 곧 꺼짐이다.
     residual-provider: ${APP_ASSIST_RESIDUAL_PROVIDER:template}
     residual:
-      enabled: ${APP_ASSIST_RESIDUAL_ENABLED:false}
       # 이 값 미만이면 기권한다. 규칙이 못 가른 건은 어려운 건이라,
       # 아무거나 고르면 확인하는 사람의 일이 오히려 는다.
       min-confidence: ${APP_ASSIST_RESIDUAL_MIN_CONFIDENCE:70}
