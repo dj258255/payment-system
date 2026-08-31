@@ -136,6 +136,16 @@ app:
     ollama:
       base-url: ${APP_ASSIST_OLLAMA_BASE_URL:http://localhost:11434}
       model: ${APP_ASSIST_OLLAMA_MODEL:qwen3:8b}
+    # 규칙 분류기가 <아무 후보도 못 낸> 건에만 모델이 원인을 제안한다(14 문서).
+    # 제안까지만 한다 — resolve 는 사람이 한다. 기본 꺼짐.
+    residual-provider: ${APP_ASSIST_RESIDUAL_PROVIDER:template}
+    residual:
+      enabled: ${APP_ASSIST_RESIDUAL_ENABLED:false}
+      # 이 값 미만이면 기권한다. 규칙이 못 가른 건은 어려운 건이라,
+      # 아무거나 고르면 확인하는 사람의 일이 오히려 는다.
+      min-confidence: ${APP_ASSIST_RESIDUAL_MIN_CONFIDENCE:70}
+    # 제안을 화면에 안 띄우고 기록만 해 사람의 확정과 대조한다(Ramp 섀도 모드).
+    residual-shadow-enabled: ${APP_ASSIST_RESIDUAL_SHADOW_ENABLED:false}
     # 초안이 <근거 없이 단정>하는지 다른 계열 모델에게 묻는다(ADR-014).
     # 기본 꺼짐 — 호출이 한 번 더 늘어난다. 켤 때는 초안 모델과 다른 계열이어야 한다.
     judge:
