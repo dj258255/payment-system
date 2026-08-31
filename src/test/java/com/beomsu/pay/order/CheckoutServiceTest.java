@@ -419,14 +419,34 @@ class CheckoutServiceTest {
     }
 
     @Test
-    @DisplayName("클라이언트가 가격을 조작할 방법이 없다 — OrderLine에는 가격 필드 자체가 없다")
-    void clientCannotSupplyPrice() {
-        when(productRepository.findById(999L)).thenReturn(Optional.empty());
+    @DisplayName("서버 가격 10만원 주문에 1원 승인을 요청하면 거절되고 PG를 부르지 않는다")
+    void tamperedApprovalAmountIsRejectedBeforePg() {
+        // 서버 카탈로그 가격으로 주문이 만들어진다 — 클라이언트는 상품과 수량만 보낸다.
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(productRepository.findById(100L)).thenReturn(Optional.of(Product.of(100L, "상품A", 100_000)));
+        CreateOrderResult created = service.createOrder(1L, List.of(new OrderLine(100L, 1)));
+        assertThat(created.totalAmount()).isEqualTo(100_000);
 
-        assertThatThrownBy(() -> service.createOrder(1L, List.of(new OrderLine(999L, 1))))
+        Order order = Order.create(1L, List.of(OrderItem.of(100L, "상품A", 100_000, 1)));
+        when(orderRepository.findByOrderNo(order.getOrderNo())).thenReturn(Optional.of(order));
+
+        // 1원으로 승인을 요청한다.
+        assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.of(1), 0, 0, 1L))
                 .isInstanceOf(OrderException.class)
-                .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("PRODUCT_NOT_FOUND"));
-        verify(orderRepository, never()).save(any(Order.class));
+                .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
+
+        // 이 테스트의 요점 — 거절이 <PG를 부르기 전에> 일어난다.
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
+    }
+
+    @Test
+    @DisplayName("가격 필드는 서버 입력 모델에 아예 없다 — 클라이언트 가격이 처리 경로에 못 들어온다")
+    void clientPriceCannotEnterTheServerModel() {
+        // OrderLine 은 (productId, quantity) 뿐이다. 클라이언트가 JSON 에 unitPrice 를 넣어도
+        // 바인딩될 자리가 없어 처리 경로에 들어오지 못한다.
+        assertThat(OrderLine.class.getRecordComponents())
+                .extracting(java.lang.reflect.RecordComponent::getName)
+                .containsExactlyInAnyOrder("productId", "quantity");
     }
 
     // --- 대기열 게이트(옵트인): 게이트 상품은 입장권 없이 주문할 수 없다 ---
