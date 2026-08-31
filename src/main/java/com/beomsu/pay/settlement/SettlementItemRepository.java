@@ -19,4 +19,16 @@ interface SettlementItemRepository extends JpaRepository<SettlementItem, Long> {
 
     /** 배치 집계 대상: 특정 날짜의 특정 상태(CONFIRMED) 항목들. */
     List<SettlementItem> findByStatusAndConfirmedDate(SettlementItemStatus status, LocalDate confirmedDate);
+
+    /**
+     * 배치 집계 대상: <b>그 날짜까지의 미정산 재고 전부</b>.
+     *
+     * <p>날짜가 정확히 일치하는 것만 모으면, 그 날짜 정산이 이미 만들어진 뒤에 늦게 도착한
+     * 구매확정 이벤트가 <b>영영 집계되지 않는다</b>. 그 날짜 정산은 멱등하게 skip되고
+     * 다음 날 배치는 다른 날짜만 보기 때문이다. 승인일 기준으로 집계하던 버그와 같은 실패 모드다.
+     *
+     * <p>그래서 <b>{@code <=}</b> 로 본다. 늦게 확정된 항목은 다음 실행이 쓸어 담는다.
+     */
+    List<SettlementItem> findByStatusAndConfirmedDateLessThanEqual(
+            SettlementItemStatus status, LocalDate confirmedDate);
 }

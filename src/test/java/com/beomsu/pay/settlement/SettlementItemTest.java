@@ -80,18 +80,34 @@ class SettlementItemTest {
     }
 
     @Test
-    @DisplayName("applySettleableBalance: 금액을 잔액(절대값)으로 세팅 — 같은 값 재적용은 멱등, 음수는 0으로")
+    @DisplayName("applySettleableBalance: 금액을 잔액(절대값)으로 세팅 — 같은 취소 재배달은 멱등")
     void applySettleableBalanceSetsAbsolute() {
         SettlementItem item = newItem(); // amount 10,000
-        item.applySettleableBalance(7_000);
+        item.applySettleableBalance(0, 7_000);
         assertThat(item.getAmount()).isEqualTo(7_000);
 
-        // 멱등: 같은 잔액을 다시 적용해도 그대로(델타 차감이 아님)
-        item.applySettleableBalance(7_000);
+        // 멱등: 같은 취소가 다시 와도 그대로(델타 차감이 아님)
+        item.applySettleableBalance(0, 7_000);
         assertThat(item.getAmount()).isEqualTo(7_000);
 
         // 방어: 음수 잔액은 0으로 바닥 처리
-        item.applySettleableBalance(-1);
+        item.applySettleableBalance(1, -1);
         assertThat(item.getAmount()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("순서가 역전돼 도착한 옛 취소는 잔액을 되돌리지 못한다")
+    void olderCancellationDoesNotRaiseBalanceBack() {
+        SettlementItem item = newItem(); // amount 10,000
+
+        // 2차 취소가 먼저 소비됐다 — 잔액 4,000
+        item.applySettleableBalance(1, 4_000);
+        assertThat(item.getAmount()).isEqualTo(4_000);
+
+        // 늦게 도착한 1차 취소(잔액 7,000). 절대값 세팅만 있으면 4,000이 7,000으로 <되돌아간다>.
+        item.applySettleableBalance(0, 7_000);
+        assertThat(item.getAmount())
+                .as("절대값 세팅은 중복에는 멱등이지만 순서 역전에는 안전하지 않다")
+                .isEqualTo(4_000);
     }
 }

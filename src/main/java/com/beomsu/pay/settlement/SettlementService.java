@@ -152,7 +152,7 @@ public class SettlementService {
             item.cancel(); // PENDING_CONFIRMATION/CONFIRMED → CANCELED (멱등: CANCELED 가드)
         } else {
             // 델타 차감이 아니라 취소 후 잔액(절대값)으로 세팅 → 재배달돼도 이중 차감 없음(멱등).
-            item.applySettleableBalance(event.settleableBalance());
+            item.applySettleableBalance(event.cancelSeq(), event.settleableBalance());
         }
         itemRepository.saveAndFlush(item);
     }
@@ -175,8 +175,10 @@ public class SettlementService {
             return null; // 멱등: 이미 그 날짜 정산이 존재
         }
 
-        List<SettlementItem> items =
-                itemRepository.findByStatusAndConfirmedDate(SettlementItemStatus.CONFIRMED, date);
+        // 그 날짜 <이하>의 미정산 재고를 전부 본다. 날짜가 정확히 맞는 것만 모으면,
+        // 그 날짜 정산이 만들어진 뒤 늦게 확정된 항목이 영영 집계되지 않는다.
+        List<SettlementItem> items = itemRepository
+                .findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, date);
         if (items.isEmpty()) {
             return null; // 집계할 대상 없음 → 빈 정산을 만들지 않는다
         }

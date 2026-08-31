@@ -118,7 +118,7 @@ class SettlementServiceTest {
 
         // 릴리스일 배치가 이 항목을 집계 대상으로 조회한다(승인일이 아니라).
         when(settlementRepository.existsBySettlementDate(releaseDate)).thenReturn(false);
-        when(itemRepository.findByStatusAndConfirmedDate(SettlementItemStatus.CONFIRMED, releaseDate))
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, releaseDate))
                 .thenReturn(List.of(item));
         when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -147,7 +147,7 @@ class SettlementServiceTest {
         when(settlementRepository.existsBySettlementDate(DATE)).thenReturn(false);
         SettlementItem item1 = confirmedItem(1L, "order-1", 40_000);
         SettlementItem item2 = confirmedItem(2L, "order-2", 60_000);
-        when(itemRepository.findByStatusAndConfirmedDate(SettlementItemStatus.CONFIRMED, DATE))
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
                 .thenReturn(List.of(item1, item2));
         when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -177,7 +177,7 @@ class SettlementServiceTest {
     void settleFeeModelExactValues() {
         when(settlementRepository.existsBySettlementDate(DATE)).thenReturn(false);
         SettlementItem item = confirmedItem(1L, "order-1", 100_000);
-        when(itemRepository.findByStatusAndConfirmedDate(SettlementItemStatus.CONFIRMED, DATE))
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
                 .thenReturn(List.of(item));
         when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -194,16 +194,16 @@ class SettlementServiceTest {
     void settleQueriesOnlyConfirmed() {
         when(settlementRepository.existsBySettlementDate(DATE)).thenReturn(false);
         SettlementItem confirmed = confirmedItem(1L, "order-1", 10_000);
-        when(itemRepository.findByStatusAndConfirmedDate(SettlementItemStatus.CONFIRMED, DATE))
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
                 .thenReturn(List.of(confirmed));
         when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.settle(DATE);
 
         // 배치는 CONFIRMED 상태만 조회 대상으로 삼는다(보류 실현)
-        verify(itemRepository).findByStatusAndConfirmedDate(SettlementItemStatus.CONFIRMED, DATE);
+        verify(itemRepository).findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE);
         verify(itemRepository, never())
-                .findByStatusAndConfirmedDate(eq(SettlementItemStatus.PENDING_CONFIRMATION), any());
+                .findByStatusAndConfirmedDateLessThanEqual(eq(SettlementItemStatus.PENDING_CONFIRMATION), any());
     }
 
     @Test
@@ -214,7 +214,7 @@ class SettlementServiceTest {
         Settlement settlement = service.settle(DATE);
 
         assertThat(settlement).isNull();
-        verify(itemRepository, never()).findByStatusAndConfirmedDate(any(), any());
+        verify(itemRepository, never()).findByStatusAndConfirmedDateLessThanEqual(any(), any());
         verify(settlementRepository, never()).save(any());
     }
 
@@ -222,7 +222,7 @@ class SettlementServiceTest {
     @DisplayName("집계 대상 CONFIRMED 항목이 없으면 빈 정산을 만들지 않는다")
     void noItemsProducesNoSettlement() {
         when(settlementRepository.existsBySettlementDate(DATE)).thenReturn(false);
-        when(itemRepository.findByStatusAndConfirmedDate(SettlementItemStatus.CONFIRMED, DATE))
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
                 .thenReturn(List.of());
 
         Settlement settlement = service.settle(DATE);

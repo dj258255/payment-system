@@ -50,6 +50,10 @@ public class SettlementItem {
     @Column(nullable = false, length = 20)
     private SettlementItemStatus status;
 
+    /** 마지막으로 반영한 취소 순번. 순서가 역전돼 도착한 옛 취소를 막는다. */
+    @Column(nullable = false)
+    private int lastCancelSeq = -1;
+
     private SettlementItem(long paymentId, String orderNo, long amount, LocalDate confirmedDate) {
         this.paymentId = paymentId;
         this.orderNo = orderNo;
@@ -110,7 +114,21 @@ public class SettlementItem {
      * 같은 파티션에서 순서 보존되므로, 더 과거 취소가 뒤늦게 재배달되는 역전은 실질적으로 배제된다.)
      * SETTLED 항목엔 호출하지 않는다(서비스에서 분기).
      */
-    public void applySettleableBalance(long settleableBalance) {
+    /**
+     * 취소 후 <b>잔액을 그대로 세팅</b>한다. 델타를 빼면 재배달 때 두 배로 깎인다.
+     *
+     * <p><b>절대값 세팅은 중복에는 멱등이지만 순서 역전에는 안전하지 않다.</b>
+     * 1차 취소 후 잔액 7,000, 2차 후 4,000인데 2차가 먼저 소비되면
+     * 늦게 온 1차가 4,000을 다시 7,000으로 <b>되돌린다.</b> 그래서 취소 순번을 함께 본다.
+     *
+     * <p>순번은 결제 도메인이 이미 부여하고 있던 값이다. 정산이 자기 번호를 새로 매기면
+     * 같은 취소인지 판단할 근거가 사라진다.
+     */
+    public void applySettleableBalance(int cancelSeq, long settleableBalance) {
+        if (cancelSeq <= lastCancelSeq) {
+            return;   // 이미 반영했거나, 더 오래된 취소가 늦게 도착했다
+        }
+        this.lastCancelSeq = cancelSeq;
         this.amount = Math.max(0L, settleableBalance);
     }
 }
