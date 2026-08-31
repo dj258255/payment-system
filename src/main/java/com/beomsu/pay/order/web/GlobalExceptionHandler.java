@@ -39,7 +39,7 @@ public class GlobalExceptionHandler {
                  "INSUFFICIENT_BALANCE", "LIMIT_EXCEEDED", "WALLET_CONCURRENCY",
                  "IDEMPOTENT_REQUEST_PROCESSING", "EMAIL_ALREADY_EXISTS",
                  // 순서 위반은 오류가 아니라 설계된 거절이다(ADR-014 블라인드 리뷰)
-                 "REVIEW_OUT_OF_ORDER" -> HttpStatus.CONFLICT; // 409
+                 "REVIEW_OUT_OF_ORDER", "PAYMENT_ALREADY_SETTLED" -> HttpStatus.CONFLICT; // 409
             case "IDEMPOTENCY_KEY_REUSED" -> HttpStatus.UNPROCESSABLE_ENTITY;                // 422
             // 대기열 게이트: 요청 자체는 유효하나 지금은 받아줄 수 없다(줄 서면 됨) → 403(권한 문제)이
             // 아니라 429가 의미에 맞다. 클라이언트는 enter → status 폴링 후 재시도하면 된다.

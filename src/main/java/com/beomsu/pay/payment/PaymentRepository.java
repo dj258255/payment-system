@@ -28,4 +28,7 @@ interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     /** 조회용: 주문의 최신 결제 시도 1건. 재시도로 여러 건이 있어도 현재 상태를 대표한다. */
     Optional<Payment> findFirstByOrderNoOrderByRequestedAtDesc(String orderNo);
+
+    /** 그 주문에 결제가 <아예> 있었는지. "이미 취소됨"과 "없음"을 가르는 데 쓴다. */
+    boolean existsByOrderNo(String orderNo);
 }

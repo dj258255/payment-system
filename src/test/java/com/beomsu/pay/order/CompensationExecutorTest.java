@@ -55,8 +55,22 @@ class CompensationExecutorTest {
     }
 
     @Test
-    @DisplayName("PAYMENT_NOT_FOUND: 이미 취소/없음 → 멱등 DONE(무한 재시도 방지) + already 계측")
-    void attemptPaymentNotFoundIsIdempotentDone() {
+    @DisplayName("PAYMENT_ALREADY_SETTLED: 결제는 있는데 취소 불가 상태 → 이미 보상됨으로 DONE")
+    void attemptAlreadySettledIsIdempotentDone() {
+        CompensationTask task = pendingTask();
+        when(repository.findById(1L)).thenReturn(Optional.of(task));
+        doThrow(new PaymentException("PAYMENT_ALREADY_SETTLED", "이미 취소됐거나 취소할 수 없는 상태입니다: ord-1"))
+                .when(paymentService).cancelByOrderNo(anyString(), any(Money.class), anyString());
+
+        executor.attempt(1L);
+
+        assertThat(task.getStatus()).isEqualTo(CompensationStatus.DONE);
+        assertThat(counter("compensation.processed", "already")).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("PAYMENT_NOT_FOUND: 결제가 아예 없다 → 확정하지 않고 운영자에게 넘긴다")
+    void attemptPaymentNotFoundIsEscalatedNotCompleted() {
         CompensationTask task = pendingTask();
         when(repository.findById(1L)).thenReturn(Optional.of(task));
         doThrow(new PaymentException("PAYMENT_NOT_FOUND", "취소할 결제를 찾을 수 없습니다: ord-1"))
@@ -64,8 +78,10 @@ class CompensationExecutorTest {
 
         executor.attempt(1L);
 
-        assertThat(task.getStatus()).isEqualTo(CompensationStatus.DONE);
-        assertThat(counter("compensation.processed", "already")).isEqualTo(1.0);
+        // 보상 태스크가 있다는 건 승인이 났다는 뜻이다. "없다"를 "이미 했다"로 읽으면 보상이 사라진다.
+        assertThat(task.getStatus()).isEqualTo(CompensationStatus.FAILED);
+        assertThat(counter("compensation.processed", "not_found")).isEqualTo(1.0);
+        assertThat(meterRegistry.counter("compensation.exhausted").count()).isEqualTo(1.0);
     }
 
     @Test

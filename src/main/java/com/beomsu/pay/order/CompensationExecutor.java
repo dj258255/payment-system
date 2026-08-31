@@ -31,9 +31,10 @@ public class CompensationExecutor {
     /**
      * 태스크 1건 실행. 이미 PENDING이 아니면(멱등) 아무 것도 하지 않는다.
      *
-     * <p>망취소 성공 → DONE. 취소할 결제가 없음(PAYMENT_NOT_FOUND: 이미 취소됐거나 없음) → 이미 보상된
-     * 것으로 간주해 DONE(무한 재시도 방지). 그 외 예외는 그대로 던져 이 트랜잭션을 롤백시키고, 호출자가
-     * 별도 트랜잭션으로 실패를 기록한다.
+     * <p>망취소 성공 → DONE. <b>이미 취소된 결제</b>(PAYMENT_ALREADY_SETTLED) → 보상 완료로 DONE.
+     * <b>결제가 아예 없음</b>(PAYMENT_NOT_FOUND) → 확정하지 않고 운영자에게 넘긴다 —
+     * 보상 태스크가 있다는 건 승인이 났다는 뜻이라 앞뒤가 안 맞고, "없다"를 "이미 했다"로 읽으면
+     * 그 보상이 사라진다. 그 외 예외는 그대로 던져 롤백시키고 호출자가 별도 트랜잭션으로 실패를 기록한다.
      */
     @Transactional
     public void attempt(Long taskId) {
@@ -52,10 +53,17 @@ public class CompensationExecutor {
                 task.markNotRetryable(e.getMessage());
                 meterRegistry.counter("compensation.processed", "outcome", "not_retryable").increment();
                 meterRegistry.counter("compensation.exhausted").increment();
-            } else if ("PAYMENT_NOT_FOUND".equals(e.code())) {
-                // 취소할 결제가 없다 = 이미 취소됐거나 애초에 없다 → 보상 완료로 간주(무한 재시도 방지).
+            } else if ("PAYMENT_ALREADY_SETTLED".equals(e.code())) {
+                // 결제는 있는데 취소 가능 상태가 아니다 = 이미 취소됐다 → 보상 완료.
                 task.markDone();
                 meterRegistry.counter("compensation.processed", "outcome", "already").increment();
+            } else if ("PAYMENT_NOT_FOUND".equals(e.code())) {
+                // 결제가 <아예 없다>. 보상 태스크가 있다는 건 승인이 났다는 뜻이므로 앞뒤가 안 맞는다.
+                // 잘못된 주문번호일 수도, 전파 지연일 수도 있다. "없다"를 "이미 했다"로 읽으면
+                // 그 보상이 조용히 사라진다. 확정하지 않고 운영자에게 넘긴다.
+                task.markNotRetryable("취소할 결제를 찾을 수 없음 — 승인 기록과 대조 필요: " + e.getMessage());
+                meterRegistry.counter("compensation.processed", "outcome", "not_found").increment();
+                meterRegistry.counter("compensation.exhausted").increment();
             } else {
                 throw e; // 그 외 결제 예외는 재시도 대상 — 트랜잭션 롤백
             }

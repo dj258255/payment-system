@@ -58,11 +58,28 @@ class PaymentCancelTx {
     @Transactional(readOnly = true)
     public CancelTarget resolveByOrderNo(String orderNo, Money cancelAmount) {
         Payment payment = paymentRepository.findFirstByOrderNoAndStatusIn(orderNo, CANCELABLE)
-                .orElseThrow(() -> new PaymentException("PAYMENT_NOT_FOUND",
-                        "취소할 결제를 찾을 수 없습니다: " + orderNo));
+                .orElseThrow(() -> notCancelable(orderNo));
         payment.validateCancelable(cancelAmount);
         return new CancelTarget(payment.getPaymentKey(), payment.getCancelCount() + 1,
                 payment.getPgProvider());
+    }
+
+    /**
+     * 취소 가능한 결제가 없을 때, <b>이미 취소된 것</b>과 <b>아예 없는 것</b>을 나눈다.
+     *
+     * <p>보상 실행기가 이 둘을 같은 코드로 받으면 "없다 = 이미 보상됐다"로 읽는다.
+     * 그런데 없는 이유는 여럿이다 — 잘못된 주문번호, 승인된 적 없음, 전파 지연.
+     * <b>확정할 수 없는 것을 완료로 확정하면 보상이 조용히 사라진다.</b>
+     */
+    private PaymentException notCancelable(String orderNo) {
+        boolean everExisted = paymentRepository.existsByOrderNo(orderNo);
+        if (everExisted) {
+            // 결제는 있는데 취소 가능 상태가 아니다 = 이미 취소됐거나 종결됐다.
+            return new PaymentException("PAYMENT_ALREADY_SETTLED",
+                    "이미 취소됐거나 취소할 수 없는 상태입니다: " + orderNo);
+        }
+        return new PaymentException("PAYMENT_NOT_FOUND",
+                "취소할 결제를 찾을 수 없습니다: " + orderNo);
     }
 
     /** Phase 1 — 결제 식별자로 취소 대상을 확정한다. */
