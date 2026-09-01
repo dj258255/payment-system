@@ -649,7 +649,7 @@ async function loadSuggestions(){
     // 억지로 하나 고르지 않는다. 못 가른다는 것도 정보다.
     box.textContent='규칙이 가르지 못했습니다 — 직접 조사해 사유를 남기세요.';
     box.style.color='var(--sub)';
-    loadResidual(id, false);      // 규칙이 못 가른 자리 — 여기가 모델이 서는 곳이다
+    await loadResidual(id, false);   // 규칙이 못 가른 자리 — 여기가 모델이 서는 곳이다
     return;
   }
   // DOM API로 만든다. 문자열로 onclick을 조립하면 안 된다 —
@@ -671,7 +671,8 @@ async function loadSuggestions(){
     box.appendChild(row);
   });
   // 결정적 후보가 없으면 모델에게도 물어본다. 있으면 부르지 않는다(가드 1).
-  loadResidual(id, decisive);
+  // 모델 왕복은 수 초 걸린다. 규칙 제안은 이미 그려져 있으므로 사람은 기다리지 않는다.
+  await loadResidual(id, decisive);
 }
 // ── 잔여 원인 후보 (모델) ──
 // 규칙이 <결정적> 후보를 못 냈을 때만 부른다. 창구가 assist 모듈에 따로 있어
@@ -682,11 +683,16 @@ async function loadSuggestions(){
 async function loadResidual(reconId, rulesDecided){
   const orderNo=$('rcOrder') ? $('rcOrder').value.trim() : '';
   if(!orderNo){return}
+  const box=$('rcSug');
+  const wait=document.createElement('div');
+  wait.style.cssText='margin:8px 0 4px;padding:6px 9px;color:var(--sub);font-size:12px';
+  wait.textContent='모델에게 묻는 중…';
+  box.appendChild(wait);
   const q='?reconResultId='+encodeURIComponent(reconId)+'&rulesDecided='+(rulesDecided?'true':'false');
   const r=await api('GET','/api/v1/admin/orders/'+encodeURIComponent(orderNo)+'/residual-cause'+q);
+  wait.remove();
   if(!r.ok||!r.data||!r.data.suggested){return}
   const d=r.data;
-  const box=$('rcSug');
   const row=document.createElement('div');
   row.style.cssText='margin:8px 0 4px;padding:6px 9px;border-left:3px dashed #7C3AED;background:#F5F3FF';
   const tag=document.createElement('b');
