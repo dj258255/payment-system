@@ -127,6 +127,21 @@ class ResidualCauseServiceTest {
     }
 
     @Test
+    @DisplayName("가드 6 — 사실이 불완전하면 모델을 아예 부르지 않는다")
+    void skipsWhenFactsIncomplete() {
+        // 프롬프트에 "불완전합니다"를 적어 줘도 모델이 무시하고 단정하는 것을
+        // 홀드아웃에서 확인했다. 기권을 부탁하는 대신 부를 수 없게 막는다.
+        FactPack incomplete = new FactPack("ORD-1", List.of("결제 승인 100,000원"),
+                Set.of(100_000L), Set.of(LocalDate.of(2026, 8, 30)), null, false);
+        when(draftService.factsFor(anyString(), anyLong())).thenReturn(incomplete);
+
+        assertThat(service.suggest("ORD-1", 1L, List.of())).isEmpty();
+
+        verify(port, never()).suggest(any());
+        assertThat(counted("incomplete_facts")).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("모델이 스스로 기권하면 그대로 기권으로 집계한다")
     void recordsModelAbstention() {
         when(port.suggest(any())).thenReturn(Optional.empty());

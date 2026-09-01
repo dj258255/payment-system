@@ -32,7 +32,19 @@ import java.util.Optional;
  * <p><b>5. 근거 문장의 숫자는 {@link NumericProvenanceGuard}로 대조한다.</b> 상담 초안과
  * 같은 계약이다. 코드가 낸 값이 아닌 금액·날짜가 하나라도 있으면 제안을 통째로 버린다.
  *
- * <p><b>6. {@code resolve}는 하지 않는다.</b> 이 서비스는 후보를 돌려줄 뿐이고, 확정은
+ * <p><b>6. 사실이 불완전하면 아예 부르지 않는다.</b> 타임라인 조회가 한 곳이라도 실패하면
+ * 그 사실 묶음으로는 원인을 가릴 수 없다. 프롬프트에 "불완전합니다"라고 적어 줘도
+ * <b>세 모델 모두 그걸 무시하고 단정하는 것을 홀드아웃 15건에서 확인했다.</b>
+ * 이 가드를 넣자 qwen3:14b 는 4건 중 4건을 기권했고(전 15/15), 8b 와 llama 도
+ * 단정이 2건·3건에서 각각 1건으로 줄었다. <b>모델도 프롬프트도 안 바꿨다. 코드가 막았다.</b>
+ *
+ * <p>이게 이 분야의 표준이기도 하다. 프롬프트로 시키는 기권은 맥락이 부족할 때 실패한다는
+ * 것이 보고돼 있고("Prompt-Based Abstention Fails Under Misleading Context"),
+ * 가드레일 설계에서도 <b>프롬프트는 행동에 영향을 줄 뿐 강제 가능한 통제 경계를 만들지
+ * 못한다</b>고 본다. 모델 가중치는 드리프트하거나 파인튜닝으로 덮이지만 코드의 조건문은
+ * 그렇지 않다. 그래서 LLM 호출 <b>전에</b> 도는 결정적 검사를 둔다.
+ *
+ * <p><b>7. {@code resolve}는 하지 않는다.</b> 이 서비스는 후보를 돌려줄 뿐이고, 확정은
  * 사람이 화면에서 한다. 자동 확정은 그 유형의 실측 오류율이 쌓인 뒤에 따로 결정할 문제다.
  *
  * <p><b>스위치는 {@code app.assist.residual-provider} 하나다.</b> 기본값 {@code template}은
@@ -82,6 +94,11 @@ public class ResidualCauseService {
         FactPack facts = draftService.factsFor(orderNo, reconResultId);
         if (facts.facts().isEmpty()) {
             count("no_facts");
+            return Optional.empty();
+        }
+        if (!facts.complete()) {                // 가드 6
+            count("incomplete_facts");
+            log.info("[residual] 사실이 불완전해 모델을 부르지 않음 order={}", orderNo);
             return Optional.empty();
         }
 
