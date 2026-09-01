@@ -25,6 +25,8 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
@@ -50,6 +52,9 @@ class ResidualCauseAdminControllerTest {
 
     @MockitoBean
     ResidualCauseService service;
+
+    @MockitoBean
+    com.beomsu.pay.assist.ResidualSuggestionLog suggestionLog;
 
     @MockitoBean
     JwtDecoder jwtDecoder;
@@ -97,6 +102,19 @@ class ResidualCauseAdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.suggested").value(false))
                 .andExpect(jsonPath("$.cause").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("후보를 냈든 감췄든 기록은 항상 남는다 — 나중에 확정과 맞춰 본다")
+    void alwaysRecordsForLaterComparison() throws Exception {
+        when(service.suggest(anyString(), anyLong(), any())).thenReturn(Optional.of(
+                new ResidualSuggestion(ResolveCause.PG_FILE_DELAY, "다음 파일에 있습니다.", 85, Set.of())));
+
+        mockMvc.perform(get("/api/v1/admin/orders/ORD-1/residual-cause?reconResultId=7").with(admin()))
+                .andExpect(status().isOk());
+
+        // 화면에 줬는지와 무관하게 기록은 남는다. 감춘 건이 비교군이 되기 때문이다.
+        verify(suggestionLog).record(eq(7L), eq(ResolveCause.PG_FILE_DELAY), anyBoolean());
     }
 
     @Test

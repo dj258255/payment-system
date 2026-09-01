@@ -141,6 +141,10 @@ app:
     # 스위치는 이것 하나다. template 은 항상 기권하므로 기본값이 곧 꺼짐이다.
     residual-provider: ${APP_ASSIST_RESIDUAL_PROVIDER:template}
     residual:
+      # 후보를 만들되 화면에 안 주는 비율. 비교군을 만들기 위해서다.
+      # 제안을 보여준 건만 모으면 "제안 덕분"과 "원래 그랬을 것"을 가를 수 없다.
+      # 0 이면 비교군이 없어 채택률만 남고, 그 숫자는 앵커링에 오염돼 있다.
+      blind-percent: ${APP_ASSIST_RESIDUAL_BLIND_PERCENT:20}
       # 이 값 미만이면 기권한다. 규칙이 못 가른 건은 어려운 건이라,
       # 아무거나 고르면 확인하는 사람의 일이 오히려 는다.
       min-confidence: ${APP_ASSIST_RESIDUAL_MIN_CONFIDENCE:70}

@@ -2,6 +2,8 @@ package com.beomsu.pay.assist.web;
 
 import com.beomsu.pay.assist.ResidualCauseService;
 import com.beomsu.pay.assist.ResidualSuggestion;
+import com.beomsu.pay.assist.ResidualSuggestionLog;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 규칙이 못 가른 건의 원인 후보를 화면에 준다.
@@ -32,9 +35,21 @@ import java.util.Optional;
 class ResidualCauseAdminController {
 
     private final ResidualCauseService service;
+    private final ResidualSuggestionLog suggestions;
 
-    ResidualCauseAdminController(ResidualCauseService service) {
+    /**
+     * 이 비율만큼은 후보를 만들되 <b>화면에 안 준다</b>. 비교군을 만들기 위해서다.
+     *
+     * <p>제안을 보여준 건만 모으면 "제안 덕분에 빨라졌다"와 "원래 그 정도였다"를 가를 수
+     * 없다. 전부 감추면 기능이 죽고, 전부 보여주면 비교군이 없다. 기본 20%로 둔다.
+     */
+    private final int blindPercent;
+
+    ResidualCauseAdminController(ResidualCauseService service, ResidualSuggestionLog suggestions,
+                                 @Value("${app.assist.residual.blind-percent:20}") int blindPercent) {
         this.service = service;
+        this.suggestions = suggestions;
+        this.blindPercent = blindPercent;
     }
 
     /**
@@ -54,8 +69,16 @@ class ResidualCauseAdminController {
                 orderNo, reconResultId,
                 rulesDecided ? List.of(RULES_DECIDED_MARKER) : List.of());
 
-        return s.map(v -> new ResidualView(true, v.cause().name(), v.rationale(), v.confidence()))
-                .orElseGet(() -> new ResidualView(false, null, null, 0));
+        // blind 표본은 후보를 만들어 <기록만> 하고 화면에는 안 준다.
+        // 확정 시각과 맞춰 보면 제안이 실제로 일을 줄였는지가 여기서 갈린다.
+        boolean shown = ThreadLocalRandom.current().nextInt(100) >= blindPercent;
+        suggestions.record(reconResultId, s.map(ResidualSuggestion::cause).orElse(null), shown);
+
+        if (s.isEmpty() || !shown) {
+            return new ResidualView(false, null, null, 0);
+        }
+        ResidualSuggestion v = s.get();
+        return new ResidualView(true, v.cause().name(), v.rationale(), v.confidence());
     }
 
     /**
