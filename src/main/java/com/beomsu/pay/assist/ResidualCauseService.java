@@ -16,8 +16,17 @@ import java.util.Optional;
 /**
  * 규칙 분류기가 못 가른 건에만 모델을 붙인다. 여섯 개의 가드를 순서대로 건다.
  *
- * <p><b>1. 규칙이 아무것도 못 냈을 때만 부른다.</b> 원인 아홉 종 가운데 여섯은 산수와
- * 조회로 결정된다. 이미 답이 있는 것을 모델에게 추측시키면 나아지는 게 없고 틀릴 자리만 는다.
+ * <p><b>1. 규칙이 <i>결정적</i> 후보를 못 냈을 때만 부른다.</b> 원인 아홉 종 가운데 여섯은
+ * 산수와 조회로 결정되고, 그건 모델에게 추측시킬 이유가 없다.
+ *
+ * <p>처음에는 "후보가 하나라도 있으면 안 부른다"로 뒀는데, 엔진으로 표본을 만들어 보니
+ * <b>그 문이 거의 닫혀 있었다.</b> 금액 불일치는 수수료도 취소도 아닐 때 배제법으로
+ * {@code SUSPECTED_TAMPERING}을 WEAK 로 내는데, 그 근거 문구가 "수수료로도 취소로도
+ * <b>설명되지 않는다</b>"이다. 위변조 판정이 아니라 <b>"모르겠다"</b>는 뜻이고,
+ * 사람이 다시 봐야 하는 자리가 바로 거기다.
+ *
+ * <p>그래서 기준을 {@link CauseSuggestion.Confidence#DECISIVE} 유무로 바꿨다. 결정적 후보가
+ * 있으면 부르지 않고, WEAK·LIKELY 뿐이면 부른다. 산수가 답한 것은 여전히 모델에게 안 넘긴다.
  *
  * <p><b>2. 출력은 {@link ResolveCause} 안의 값만 받는다.</b> Ramp가 거래 재분류
  * 에이전트에 건 후처리 가드레일과 같다. 목록 밖의 값을 고르면 그 응답을 버린다.
@@ -44,7 +53,10 @@ import java.util.Optional;
  * 못한다</b>고 본다. 모델 가중치는 드리프트하거나 파인튜닝으로 덮이지만 코드의 조건문은
  * 그렇지 않다. 그래서 LLM 호출 <b>전에</b> 도는 결정적 검사를 둔다.
  *
- * <p><b>7. {@code resolve}는 하지 않는다.</b> 이 서비스는 후보를 돌려줄 뿐이고, 확정은
+ * <p><b>7. 실측으로 켤 만한 유형만 받는다.</b> 전체 정확도가 아니라 유형별로 정한다.
+ * 지금 켜진 것은 {@code INTERNAL_RECORD_LOST} 하나다.
+ *
+ * <p><b>8. {@code resolve}는 하지 않는다.</b> 이 서비스는 후보를 돌려줄 뿐이고, 확정은
  * 사람이 화면에서 한다. 자동 확정은 그 유형의 실측 오류율이 쌓인 뒤에 따로 결정할 문제다.
  *
  * <p><b>스위치는 {@code app.assist.residual-provider} 하나다.</b> 기본값 {@code template}은
@@ -66,6 +78,25 @@ public class ResidualCauseService {
     static final EnumSet<ResolveCause> FORBIDDEN =
             EnumSet.of(ResolveCause.SUSPECTED_TAMPERING, ResolveCause.OTHER);
 
+    /**
+     * 가드 7 — <b>실측으로 켤 만한 유형만 받는다.</b>
+     *
+     * <p>엔진이 만든 272건에서 유형별로 갈라 재니 결과가 확연히 달랐다. 세 모델
+     * (qwen3 8B·14B, llama3.1 8B) 모두에서 {@code INTERNAL_RECORD_LOST}는 60건 중 60건을
+     * 맞혔고, {@code PARTIAL_CANCEL_NOT_REFLECTED}는 60건 중 0건이었다. 뒤는 셋 다
+     * 차액만 보면 수수료라고 답한다.
+     *
+     * <p>그래서 전체 정확도(25~40%)로 켜고 끄기를 정하지 않고 <b>유형별로 정한다.</b>
+     * Monzo·Revolut 도 잔액 조회와 단순 분쟁만 봇에 맡기고 복잡한 건은 사람에게 넘긴다.
+     * Klarna 는 반대로 범위를 넓게 잡았다가 되돌렸다 — 복잡한 분쟁에서 모델이
+     * <b>확신에 찬 틀린 답</b>을 냈기 때문이다.
+     *
+     * <p>이 목록은 실측 결과이므로 <b>모델이나 프롬프트를 바꾸면 다시 재야 한다.</b>
+     * 늘리려면 그 유형의 실측 정확도가 먼저 있어야 한다.
+     */
+    static final EnumSet<ResolveCause> ENABLED =
+            EnumSet.of(ResolveCause.INTERNAL_RECORD_LOST);
+
     private final DraftService draftService;
     private final NumericProvenanceGuard numberGuard;
     private final Optional<ResidualCausePort> port;
@@ -86,8 +117,10 @@ public class ResidualCauseService {
         if (port.isEmpty()) {
             return Optional.empty();
         }
-        if (rules != null && !rules.isEmpty()) {
-            count("skipped_rules_decided");     // 가드 1
+        boolean decided = rules != null && rules.stream()
+                .anyMatch(r -> r.confidence() == CauseSuggestion.Confidence.DECISIVE);
+        if (decided) {                          // 가드 1
+            count("skipped_rules_decided");
             return Optional.empty();
         }
 
@@ -120,6 +153,11 @@ public class ResidualCauseService {
         if (s.cause() == null || FORBIDDEN.contains(s.cause())) {   // 가드 2·3
             count("forbidden_cause");
             log.info("[residual] 금지된 원인 제안을 버림 order={} cause={}", orderNo, s.cause());
+            return Optional.empty();
+        }
+        if (!ENABLED.contains(s.cause())) {                          // 가드 7
+            count("type_not_enabled");
+            log.info("[residual] 아직 켜지 않은 유형이라 버림 order={} cause={}", orderNo, s.cause());
             return Optional.empty();
         }
         if (s.confidence() < minConfidence) {                       // 가드 4

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
@@ -51,7 +52,11 @@ class ResidualCorpusGenerator {
         var resultRepo = mock(ReconciliationResultRepository.class);
         var facts = mock(PaymentTimelineFacts.class);
         when(facts.findByOrderNo(anyString())).thenReturn(List.of());
-        when(facts.findState(anyString())).thenReturn(Optional.empty());
+        // 결제 상태는 케이스마다 심는다. 비워 두면 <결제 기록 없는 대사 기록>이라는
+        // 없는 세계가 된다 — InternalRecord 는 결제 이벤트에서 만들어진다.
+        Map<String, PaymentTimelineFacts.PaymentState> states = new HashMap<>();
+        when(facts.findState(anyString())).thenAnswer(
+                inv -> Optional.ofNullable(states.get(inv.getArgument(0, String.class))));
         when(resultRepo.findByOrderNoOrderByIdAsc(anyString())).thenReturn(List.of());
 
         var service = new ReconciliationService(internalRepo, resultRepo);
@@ -74,6 +79,7 @@ class ResidualCorpusGenerator {
                     List<ExternalRecord> external = new ArrayList<>();
                     List<InternalRecord> internal = new ArrayList<>();
                     String expected = seed(orderNo, amount, kind, variant, internal, external);
+                    states.put(orderNo, stateFor(orderNo, amount, kind, variant));
 
                     when(internalRepo.findByTradeDate(D)).thenReturn(internal);
                     List<ReconciliationResult> out = service.reconcile(D, external);
@@ -88,9 +94,16 @@ class ResidualCorpusGenerator {
                         row.put("result", r.getResult().name());
                         row.put("internal", r.getInternalAmount());
                         row.put("external", r.getExternalAmount());
+                        boolean decided = rules.stream()
+                                .anyMatch(x -> x.confidence() == CauseSuggestion.Confidence.DECISIVE);
                         row.put("ruleCount", rules.size());
-                        // 규칙이 답한 건은 이 기능의 대상이 아니다
-                        (rules.isEmpty() ? corpus : ruleAnswered).add(row);
+                        row.put("decided", decided);
+                        row.put("weakOnly", !rules.isEmpty() && !decided);
+                        if (!rules.isEmpty()) {
+                            row.put("ruleTop", rules.getLast().cause().name());
+                        }
+                        // 결정적 후보가 있으면 이 기능의 대상이 아니다
+                        (decided ? ruleAnswered : corpus).add(row);
                     }
                 }
             }
@@ -105,6 +118,20 @@ class ResidualCorpusGenerator {
         Map<String, Long> byKind = new TreeMap<>();
         for (var r : corpus) byKind.merge((String) r.get("kind"), 1L, Long::sum);
         byKind.forEach((k, v) -> System.out.printf("    %-16s %d%n", k, v));
+    }
+
+    /** 그 주문의 결제 상태. 대사 기록이 있으면 결제도 있다. */
+    private PaymentTimelineFacts.PaymentState stateFor(String orderNo, long amount,
+                                                       String kind, int variant) {
+        Instant at = D.atTime(3 + variant, 0).toInstant(java.time.ZoneOffset.UTC);
+        long canceled = switch (kind) {
+            case "partial_small" -> amount / 10;
+            case "partial_large" -> amount / 2;
+            default -> 0;
+        };
+        int cancelCount = canceled > 0 ? 1 : 0;
+        return new PaymentTimelineFacts.PaymentState(
+                amount, amount - canceled, cancelCount, "DONE", at);
     }
 
     /** 조건 하나를 심고, 사람이라면 무엇을 골랐을지를 돌려준다. */

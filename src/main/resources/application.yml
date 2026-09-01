@@ -136,10 +136,14 @@ app:
     ollama:
       base-url: ${APP_ASSIST_OLLAMA_BASE_URL:http://localhost:11434}
       model: ${APP_ASSIST_OLLAMA_MODEL:qwen3:8b}
-    # 규칙 분류기가 <아무 후보도 못 낸> 건에만 모델이 원인을 제안한다(14 문서).
+    # 규칙 분류기가 <결정적 후보를 못 낸> 건에만 모델이 원인을 제안한다(14 문서).
     # 제안까지만 한다 — resolve 는 사람이 한다.
-    # 스위치는 이것 하나다. template 은 항상 기권하므로 기본값이 곧 꺼짐이다.
-    residual-provider: ${APP_ASSIST_RESIDUAL_PROVIDER:template}
+    #
+    # 켜는 범위는 유형별로 정한다(가드 7). 엔진이 만든 272건에서 유형별로 재니
+    # INTERNAL_RECORD_LOST 는 세 모델 모두 100%, PARTIAL_CANCEL_NOT_REFLECTED 는
+    # 셋 다 0%였다. 그래서 지금 켜진 것은 앞의 하나뿐이고 나머지는 사람에게 간다.
+    # 전체 잔여의 14%를 덮는다. Monzo·Revolut 도 범위를 좁게 잡는다.
+    residual-provider: ${APP_ASSIST_RESIDUAL_PROVIDER:ollama}
     residual:
       # 후보를 만들되 화면에 안 주는 비율. 비교군을 만들기 위해서다.
       # 제안을 보여준 건만 모으면 "제안 덕분"과 "원래 그랬을 것"을 가를 수 없다.

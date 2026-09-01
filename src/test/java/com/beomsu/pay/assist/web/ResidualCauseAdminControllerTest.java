@@ -80,13 +80,13 @@ class ResidualCauseAdminControllerTest {
     @DisplayName("후보가 있으면 원인과 근거를 함께 준다")
     void returnsSuggestion() throws Exception {
         when(service.suggest(anyString(), anyLong(), any())).thenReturn(Optional.of(
-                new ResidualSuggestion(ResolveCause.PG_FILE_DELAY,
-                        "다음 거래일 파일에 같은 주문번호가 있습니다.", 85, Set.of())));
+                new ResidualSuggestion(ResolveCause.INTERNAL_RECORD_LOST,
+                        "내부에 이 주문의 기록이 없습니다.", 85, Set.of())));
 
         mockMvc.perform(get("/api/v1/admin/orders/ORD-1/residual-cause?reconResultId=1").with(admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.suggested").value(true))
-                .andExpect(jsonPath("$.cause").value("PG_FILE_DELAY"))
+                .andExpect(jsonPath("$.cause").value("INTERNAL_RECORD_LOST"))
                 .andExpect(jsonPath("$.confidence").value(85))
                 // 어디서 온 값인지 항상 실어 준다. 규칙 제안과 화면에서 같아 보이면
                 // 사람이 둘을 같은 무게로 읽는다.
@@ -108,13 +108,13 @@ class ResidualCauseAdminControllerTest {
     @DisplayName("후보를 냈든 감췄든 기록은 항상 남는다 — 나중에 확정과 맞춰 본다")
     void alwaysRecordsForLaterComparison() throws Exception {
         when(service.suggest(anyString(), anyLong(), any())).thenReturn(Optional.of(
-                new ResidualSuggestion(ResolveCause.PG_FILE_DELAY, "다음 파일에 있습니다.", 85, Set.of())));
+                new ResidualSuggestion(ResolveCause.INTERNAL_RECORD_LOST, "내부 기록이 없습니다.", 85, Set.of())));
 
         mockMvc.perform(get("/api/v1/admin/orders/ORD-1/residual-cause?reconResultId=7").with(admin()))
                 .andExpect(status().isOk());
 
         // 화면에 줬는지와 무관하게 기록은 남는다. 감춘 건이 비교군이 되기 때문이다.
-        verify(suggestionLog).record(eq(7L), eq(ResolveCause.PG_FILE_DELAY), anyBoolean());
+        verify(suggestionLog).record(eq(7L), eq(ResolveCause.INTERNAL_RECORD_LOST), anyBoolean());
     }
 
     @Test

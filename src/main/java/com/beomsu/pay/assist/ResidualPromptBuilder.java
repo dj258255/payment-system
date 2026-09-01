@@ -38,33 +38,51 @@ public class ResidualPromptBuilder {
     /** 가드 3에 걸리는 값은 목록에서 아예 뺀다. 보여주면 고른다. */
     static String allowedCauses() {
         return Arrays.stream(ResolveCause.values())
-                .filter(c -> !ResidualCauseService.FORBIDDEN.contains(c))
+                .filter(ResidualCauseService.ENABLED::contains)
                 .map(Enum::name)
                 .collect(Collectors.joining(", "));
     }
 
+    /**
+     * 고를 수 있는 값과 그 뜻. <b>켜진 유형만 보여준다.</b>
+     *
+     * <p>코드에서 버릴 값을 프롬프트에 나열하면 모델이 그걸 고르고, 고른 응답은 통째로
+     * 버려진다. 그러면 커버리지가 조용히 떨어진다. 지시와 강제를 같은 목록으로 맞춘다.
+     */
     static String causeMenu() {
         return Arrays.stream(ResolveCause.values())
-                .filter(c -> !ResidualCauseService.FORBIDDEN.contains(c))
+                .filter(ResidualCauseService.ENABLED::contains)
                 .map(c -> "   - " + c.name() + ": "
                         + MEANING.getOrDefault(c, "(정의 없음 — 프롬프트에 뜻을 채워야 한다)"))
                 .collect(Collectors.joining("\n"));
     }
 
+    /**
+     * <b>하나만 판정하게 시킨다.</b>
+     *
+     * <p>처음에는 목록만 하나로 줄였는데 오히려 나빠졌다. 45건 중 38건에 그 하나를 찍었다.
+     * <b>모델은 "고를 게 하나뿐"을 "그러니 그걸 골라라"로 읽는다.</b> 그래서 판정 기준과
+     * "그 밖은 전부 기권"을 명시했더니 세 모델 모두 91~100%가 됐다.
+     */
     String system() {
         return """
                 당신은 결제 대사 불일치의 원인을 고르는 보조자입니다.
-                규칙 엔진이 이미 시도했고 아무 후보도 내지 못한 건만 당신에게 옵니다.
+                규칙 엔진이 이미 시도했고 결정적 후보를 내지 못한 건만 당신에게 옵니다.
 
-                지켜야 할 것:
-                1. 아래 목록 안의 값만 고릅니다. 각 값의 뜻은 이렇습니다.
+                당신이 판정할 수 있는 것은 <단 하나>입니다.
+
                 %s
-                   TIMEZONE_BOUNDARY 와 PG_FILE_DELAY 는 방향으로 가릅니다.
-                   전날 파일이면 경계, 다음날 파일이면 지연입니다.
-                2. 주어진 사실에 없는 금액·날짜를 쓰지 않습니다. 지어낸 숫자가 하나라도 있으면
-                   답 전체가 버려집니다.
-                3. 근거가 약하면 고르지 말고 ABSTAIN 을 냅니다.
-                   틀린 후보는 확인하는 사람의 일을 늘립니다. 기권이 낫습니다.
+
+                이 조건에 <정확히> 맞을 때만 그 값을 냅니다. 판정 기준은 이렇습니다.
+
+                  - 사실에 "내부에 이 주문의 기록이 없음"이 있어야 합니다
+                  - 내부 기록 금액이 아예 없어야 합니다
+                  - 내부 기록 금액이 <있으면> 이 원인이 아닙니다. 반드시 ABSTAIN 입니다
+
+                그 밖의 모든 경우는 ABSTAIN 입니다. 금액이 안 맞는 것, 파일에 없는 것,
+                같은 거래가 여러 행인 것은 <전부> 당신이 판정할 수 없는 것이므로 ABSTAIN 입니다.
+
+                틀린 후보는 확인하는 사람의 일을 늘립니다. 애매하면 무조건 기권합니다.
 
                 응답은 아래 형식의 한 줄씩입니다. 다른 말을 덧붙이지 않습니다.
 

@@ -67,7 +67,7 @@ class ResidualCauseServiceTest {
     }
 
     @Test
-    @DisplayName("가드 1 — 규칙이 후보를 냈으면 모델을 아예 부르지 않는다")
+    @DisplayName("가드 1 — 규칙이 결정적 후보를 냈으면 모델을 아예 부르지 않는다")
     void skipsWhenRulesDecided() {
         List<CauseSuggestion> rules =
                 List.of(CauseSuggestion.decisive(ResolveCause.FEE_CALCULATION_DIFF, "차액이 수수료와 일치", 270L));
@@ -76,6 +76,20 @@ class ResidualCauseServiceTest {
 
         verify(port, never()).suggest(any());
         assertThat(counted("skipped_rules_decided")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("가드 1 — 배제법으로 낸 WEAK 뿐이면 부른다. 그건 '모르겠다'는 뜻이다")
+    void callsWhenOnlyWeakSuggestions() {
+        // 금액 불일치가 수수료도 취소도 아닐 때 규칙은 SUSPECTED_TAMPERING 을 WEAK 로 낸다.
+        // 근거 문구가 "설명되지 않는다"이므로 위변조 판정이 아니라 미상이다.
+        List<CauseSuggestion> weakOnly = List.of(new CauseSuggestion(
+                ResolveCause.SUSPECTED_TAMPERING, CauseSuggestion.Confidence.WEAK,
+                "차액이 수수료로도 취소로도 설명되지 않는다", Set.of(7_000L)));
+        modelSays(ResolveCause.INTERNAL_RECORD_LOST, 90, "내부 기록이 없습니다");
+
+        assertThat(service.suggest("ORD-1", 1L, weakOnly)).isPresent();
+        assertThat(counted("skipped_rules_decided")).isZero();
     }
 
     @Test
@@ -99,7 +113,7 @@ class ResidualCauseServiceTest {
     @Test
     @DisplayName("가드 4 — 신뢰도가 임계 미만이면 기권으로 처리한다")
     void abstainsBelowThreshold() {
-        modelSays(ResolveCause.PG_FILE_DELAY, 69, "파일이 늦게 온 것 같습니다");
+        modelSays(ResolveCause.INTERNAL_RECORD_LOST, 69, "내부에 기록이 없습니다");
 
         assertThat(service.suggest("ORD-1", 1L, List.of())).isEmpty();
         assertThat(counted("below_threshold")).isEqualTo(1);
@@ -108,7 +122,7 @@ class ResidualCauseServiceTest {
     @Test
     @DisplayName("가드 5 — 근거에 출처 없는 금액이 있으면 제안을 통째로 버린다")
     void rejectsUnsourcedFigures() {
-        modelSays(ResolveCause.PARTIAL_CANCEL_NOT_REFLECTED, 90, "차액 8,888원이 부분취소로 보입니다");
+        modelSays(ResolveCause.INTERNAL_RECORD_LOST, 90, "차액 8,888원이 확인됩니다");
 
         assertThat(service.suggest("ORD-1", 1L, List.of())).isEmpty();
         assertThat(counted("unsourced_figures")).isEqualTo(1);
@@ -117,12 +131,12 @@ class ResidualCauseServiceTest {
     @Test
     @DisplayName("가드 5 — 사실에 있는 금액만 쓰면 통과한다")
     void acceptsSourcedFigures() {
-        modelSays(ResolveCause.PARTIAL_CANCEL_NOT_REFLECTED, 90, "차액 3,000원이 부분취소로 보입니다");
+        modelSays(ResolveCause.INTERNAL_RECORD_LOST, 90, "차액 3,000원이 확인되고 내부 기록이 없습니다");
 
         Optional<ResidualSuggestion> out = service.suggest("ORD-1", 1L, List.of());
 
         assertThat(out).isPresent();
-        assertThat(out.get().cause()).isEqualTo(ResolveCause.PARTIAL_CANCEL_NOT_REFLECTED);
+        assertThat(out.get().cause()).isEqualTo(ResolveCause.INTERNAL_RECORD_LOST);
         assertThat(counted("suggested")).isEqualTo(1);
     }
 
@@ -139,6 +153,17 @@ class ResidualCauseServiceTest {
 
         verify(port, never()).suggest(any());
         assertThat(counted("incomplete_facts")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("가드 7 — 아직 켜지 않은 유형은 버린다")
+    void rejectsTypeNotEnabled() {
+        // 엔진이 만든 272건에서 유형별로 재니 PARTIAL_CANCEL_NOT_REFLECTED 는 세 모델
+        // 모두 60건 중 0건이었다. 전체 정확도가 아니라 유형별로 켜고 끈다.
+        modelSays(ResolveCause.PARTIAL_CANCEL_NOT_REFLECTED, 95, "부분취소로 보입니다");
+
+        assertThat(service.suggest("ORD-1", 1L, List.of())).isEmpty();
+        assertThat(counted("type_not_enabled")).isEqualTo(1);
     }
 
     @Test

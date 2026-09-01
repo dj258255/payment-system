@@ -25,7 +25,8 @@ class ResidualPromptBuilderTest {
         String allowed = ResidualPromptBuilder.allowedCauses();
 
         assertThat(allowed).doesNotContain("SUSPECTED_TAMPERING", "OTHER");
-        assertThat(allowed).contains("PG_FILE_DELAY", "TIMEZONE_BOUNDARY", "DUPLICATE_RECORD");
+        // 켜진 유형만 보여준다. 버릴 값을 나열하면 모델이 그걸 고르고 응답이 통째로 버려진다.
+        assertThat(allowed).isEqualTo("INTERNAL_RECORD_LOST");
     }
 
     @Test
@@ -42,12 +43,12 @@ class ResidualPromptBuilderTest {
     }
 
     @Test
-    @DisplayName("경계와 지연을 가르는 방향을 알려준다")
-    void explainsDirection() {
-        // 두 모델이 같은 자리에서 틀렸다. 둘 다 "다른 날짜 파일에 있다"라서
-        // 방향을 안 알려주면 구별이 안 된다.
+    @DisplayName("그 밖은 전부 기권하라고 못 박는다")
+    void demandsAbstentionForEverythingElse() {
+        // 목록만 하나로 줄였더니 45건 중 38건에 그 하나를 찍었다.
+        // 모델은 "고를 게 하나뿐"을 "그러니 그걸 골라라"로 읽는다.
         String system = new ResidualPromptBuilder().system();
-        assertThat(system).contains("전날", "다음날");
+        assertThat(system).contains("그 밖의 모든 경우는 ABSTAIN", "반드시 ABSTAIN");
     }
 
     @Test
