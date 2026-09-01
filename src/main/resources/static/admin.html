@@ -213,6 +213,9 @@
       <div class="sub">수기 확정 — <b>사유가 필수</b>입니다. 조사 결과를 남겨야 같은 패턴이 다시 왔을 때 처음부터 조사하지 않습니다.</div>
       <div class="row">
         <input id="rcId" placeholder="대사 결과 ID" style="width:140px">
+        <!-- 잔여 후보는 주문 단위 사실(타임라인)이 필요하다. 규칙 제안은 대사 결과만으로 되지만
+             모델에게는 "이 주문에 무슨 일이 있었나"를 넘겨야 한다. -->
+        <input id="rcOrder" placeholder="주문번호(모델 후보용)" style="width:170px">
         <button onclick="loadSuggestions()" style="background:#6B7280">원인 후보</button>
         <select id="rcCause">
           <option value="PARTIAL_CANCEL_NOT_REFLECTED">부분취소 미반영</option>
@@ -641,10 +644,12 @@ async function loadSuggestions(){
   if(!r.ok){box.style.display='none';return}
   const list=r.data||[];
   box.style.display='block';
+  const decisive=list.some(x=>x.confidence==='DECISIVE');
   if(!list.length){
     // 억지로 하나 고르지 않는다. 못 가른다는 것도 정보다.
     box.textContent='규칙이 가르지 못했습니다 — 직접 조사해 사유를 남기세요.';
     box.style.color='var(--sub)';
+    loadResidual(id, false);      // 규칙이 못 가른 자리 — 여기가 모델이 서는 곳이다
     return;
   }
   // DOM API로 만든다. 문자열로 onclick을 조립하면 안 된다 —
@@ -665,6 +670,38 @@ async function loadSuggestions(){
     row.append(lvl,document.createTextNode(' '),link,document.createElement('br'),why);
     box.appendChild(row);
   });
+  // 결정적 후보가 없으면 모델에게도 물어본다. 있으면 부르지 않는다(가드 1).
+  loadResidual(id, decisive);
+}
+// ── 잔여 원인 후보 (모델) ──
+// 규칙이 <결정적> 후보를 못 냈을 때만 부른다. 창구가 assist 모듈에 따로 있어
+// 화면이 두 번 부른다 — 대사 모듈이 assist 를 부르면 순환이 되기 때문이다.
+//
+// 규칙 제안과 <같아 보이면 안 된다>. 사람이 둘을 같은 무게로 읽으면
+// 가드를 일곱 개 걸어둔 의미가 화면에서 사라진다. 그래서 배경과 라벨을 다르게 준다.
+async function loadResidual(reconId, rulesDecided){
+  const orderNo=$('rcOrder') ? $('rcOrder').value.trim() : '';
+  if(!orderNo){return}
+  const q='?reconResultId='+encodeURIComponent(reconId)+'&rulesDecided='+(rulesDecided?'true':'false');
+  const r=await api('GET','/api/v1/admin/orders/'+encodeURIComponent(orderNo)+'/residual-cause'+q);
+  if(!r.ok||!r.data||!r.data.suggested){return}
+  const d=r.data;
+  const box=$('rcSug');
+  const row=document.createElement('div');
+  row.style.cssText='margin:8px 0 4px;padding:6px 9px;border-left:3px dashed #7C3AED;background:#F5F3FF';
+  const tag=document.createElement('b');
+  tag.style.color='#7C3AED';
+  tag.textContent='모델 제안 · 확신 '+d.confidence;   // 어디서 왔는지 항상 밝힌다
+  const link=document.createElement('a');
+  link.href='#'; link.style.fontWeight='600'; link.textContent=d.cause;
+  link.addEventListener('click',e=>{e.preventDefault();pickCause(d.cause);});
+  const why=document.createElement('span');
+  why.style.color='var(--sub)'; why.textContent=d.rationale;
+  const note=document.createElement('div');
+  note.style.cssText='color:var(--sub);font-size:11px;margin-top:3px';
+  note.textContent='규칙이 가르지 못해 모델에게 물었습니다. 근거를 직접 확인하고 확정하세요.';
+  row.append(tag,document.createTextNode(' '),link,document.createElement('br'),why,note);
+  box.appendChild(row);
 }
 // 후보를 고르면 드롭다운만 채운다. 확정은 사람이 버튼을 눌러야 일어난다.
 function pickCause(cause){

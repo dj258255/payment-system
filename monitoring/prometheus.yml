@@ -7,6 +7,12 @@ global:
 rule_files:
   - "alert-rules.yml"
 
+# 알림이 갈 곳. 규칙만 있고 받는 데가 없으면 아무도 모른다.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['host.docker.internal:9093']
+
 scrape_configs:
   - job_name: 'pay'
     metrics_path: '/actuator/prometheus'

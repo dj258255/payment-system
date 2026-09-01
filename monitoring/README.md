@@ -55,3 +55,25 @@ prometheus는 `host.docker.internal:8080`을 스크레이프하므로 앱은 호
 | ReconPendingBacklog | 대사 PENDING > 0 (15m 지속) | warning |
 
 > 성공률 알림은 트래픽이 없으면 분모가 0(0/0=NaN)이라 발화하지 않는다. 유휴 시 오탐이 없다.
+
+
+## 알림이 실제로 가는 곳
+
+규칙만 있고 받는 데가 없으면 아무도 모른다. `UnknownPaymentAging` 이 울려도
+그래프에 빨간 줄이 그어질 뿐이다. **관측은 누가 보느냐까지가 설계다.**
+
+`alertmanager.yml` 이 그 자리를 채운다.
+
+```
+export SLACK_WEBHOOK_URL='https://hooks.slack.com/services/...'
+alertmanager --config.file=monitoring/alertmanager.yml
+```
+
+두 가지를 나눴다.
+
+- **채널을 둘로 가른다.** `severity=critical` 은 별도 채널로 간다. 같은 채널에 섞으면
+  "옛 해시가 남아 있다"와 "미확정 결제가 10분째"가 같은 무게로 보인다
+- **재알림을 30분(critical 은 10분)에 한 번으로 묶는다.** 미확정이 쌓이는 상황은 몇 초마다
+  재알림해도 대응이 빨라지지 않고, 채널이 시끄러우면 사람이 알림 자체를 끈다
+
+웹훅 URL 은 코드에 두지 않고 환경변수로 넣는다.
