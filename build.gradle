@@ -115,6 +115,13 @@ tasks.register('chaosTest', Test) {
     shouldRunAfter('test')
 }
 
+// 평가용 케이스 생성기. -Dcorpus.generate=true 일 때만 돈다.
+// Gradle 은 명령행 -D 를 테스트 JVM 에 자동으로 넘기지 않는다.
+tasks.named('test') {
+    systemProperty 'corpus.generate', System.getProperty('corpus.generate', 'false')
+    systemProperty 'corpus.out', System.getProperty('corpus.out', "$projectDir/build/corpus")
+}
+
 tasks.register('integrationTest', Test) {
     description = '실 MySQL(Testcontainers)로 승인/취소가 DB에 확정되는지 검증 — Docker 필요, CI에서 실행'
     group = 'verification'
