@@ -54,11 +54,14 @@ class CheckoutServiceTest {
         service = serviceWithGate(List.of());
     }
 
+    private CheckoutRecoveryService recoveryService;
+
     private CheckoutService serviceWithGate(List<Long> gateProductIds) {
+        recoveryService = mock(CheckoutRecoveryService.class);
         CheckoutTx checkoutTx = new CheckoutTx(paymentService, orderRepository,
                 stockDeductionService, pointService, walletService, compensationService);
-        return new CheckoutService(paymentService, checkoutTx, orderRepository,
-                productRepository, queueService, gateProductIds, GATE_EVENT);
+        return new CheckoutService(paymentService, checkoutTx, recoveryService,
+                orderRepository, productRepository, queueService, gateProductIds, GATE_EVENT);
     }
 
     private Order orderOf(long productId, int quantity) {
@@ -503,5 +506,54 @@ class CheckoutServiceTest {
 
         verifyNoInteractions(queueService);
         verify(orderRepository).save(any(Order.class));
+    }
+
+    // ── 미확정 결제가 있을 때 다른 수단으로 재시도 (이슈 #2) ──
+
+    @Test
+    @DisplayName("미확정 결제가 남아 있으면 재시도 전에 PG 조회로 먼저 해소한다")
+    void resolvesPendingAttemptBeforeRetry() {
+        Order order = orderOf(100L, 2);
+        order.startPayment();                       // 카드 A 시도 → PAYMENT_IN_PROGRESS
+        // 카드 A 가 타임아웃으로 미확정인 상태에서 고객이 카드 B 로 다시 누른다.
+
+        try {
+            service.confirm(order.getOrderNo(), "pk_B", Money.krw(20_000), 0, 0, 1L);
+        } catch (RuntimeException ignored) {
+            // 해소가 mock 이라 주문 상태가 안 바뀌고, 이어지는 reserve 가 불법 전이로 막는다.
+            // 이 테스트가 보는 것은 <b>막히기 전에 해소를 시도했는가</b>다.
+        }
+
+        verify(recoveryService).resolveNow(order);
+    }
+
+    @Test
+    @DisplayName("결제 대기 중인 주문은 해소를 시도하지 않는다 — 미확정이 없다")
+    void doesNotResolveWhenNothingPending() {
+        Order order = orderOf(100L, 2);              // PENDING_PAYMENT 그대로
+
+        try {
+            service.confirm(order.getOrderNo(), "pk_A", Money.krw(20_000), 0, 0, 1L);
+        } catch (RuntimeException ignored) {
+            // 이 테스트가 보는 것은 해소를 <b>시도하지 않았는가</b>뿐이다. 이후 승인 경로는 다른 테스트가 본다.
+        }
+
+        verify(recoveryService, never()).resolveNow(any());
+    }
+
+    @Test
+    @DisplayName("해소가 실패해도 이중결제로 가지 않는다 — 주문이 막힌 채 배치로 넘어간다")
+    void resolveFailureFallsBackToBatch() {
+        Order order = orderOf(100L, 2);
+        order.startPayment();
+        doThrow(new RuntimeException("PG 조회 실패")).when(recoveryService).resolveNow(order);
+
+        // 해소 실패를 삼키고 진행하지만, 주문이 PAYMENT_IN_PROGRESS 라 reserve 가 막는다.
+        assertThatThrownBy(() ->
+                service.confirm(order.getOrderNo(), "pk_B", Money.krw(20_000), 0, 0, 1L))
+                .isInstanceOf(RuntimeException.class);
+
+        // PG 승인까지 가지 않았다 — 이중결제 없음.
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any());
     }
 }

@@ -51,19 +51,7 @@ public class CheckoutRecoveryService {
         int recovered = 0;
         for (Order order : stuck) {
             try {
-                // 카드 결제를 PG 조회로 확정(없으면 전액 포인트 → empty).
-                Optional<StuckPaymentInfo> info = paymentService.resolveStuckPayment(order.getOrderNo());
-                long cardAmount = info.map(StuckPaymentInfo::amount).orElse(0L);
-                // 월렛 예약분은 append-only 월렛 원장(orderNo 키)에서 역산한다 — 원 요청의 결제수단 분할이
-                // 주문에 저장돼 있지 않으므로, 커밋된 USE 이력이 진실의 원천이다.
-                long walletAmount = walletService.reservedAmountForOrder(order.getOrderNo());
-                // 포인트분은 금액 검증 불변식(카드+포인트+월렛=총액)에서 도출한다.
-                long pointAmount = order.getTotalAmount() - cardAmount - walletAmount;
-                ApprovalOutcome outcome = info.map(StuckPaymentInfo::outcome).orElse(null);
-                Long paymentId = info.map(StuckPaymentInfo::paymentId).orElse(null);
-
-                checkoutTx.settle(order.getOrderNo(), paymentId, Money.krw(cardAmount),
-                        pointAmount, walletAmount, outcome);
+                resolveNow(order);
                 recovered++;
             } catch (Exception e) {
                 // 한 건 실패가 배치를 멈추지 않게 격리 — 다음 주기에 재시도.
@@ -74,5 +62,30 @@ public class CheckoutRecoveryService {
             log.info("멈춘 체크아웃 복구 완료 recovered={}", recovered);
         }
         return recovered;
+    }
+
+    /**
+     * 미확정 체크아웃 한 건을 <b>지금</b> 해소한다. PG 조회로 확정하고 그 결과를 주문에 반영한다.
+     *
+     * <p>배치가 스캔해서 부르고, <b>고객이 다른 수단으로 재시도할 때도 부른다</b>. 고객은 이미 화면
+     * 앞에 있는데 배치 주기를 기다리게 할 이유가 없다. 조회 한 번이면 승인이었는지 아닌지 갈린다.
+     *
+     * <p>이 메서드를 안 부르고 재시도를 허용하면, 앞 결제가 실제로 승인돼 있었을 때 <b>이중결제</b>가
+     * 된다. 멱등키는 이걸 못 막는다 — 카드를 바꾼 재시도는 다른 요청이라 새 키를 받는다.
+     */
+    public void resolveNow(Order order) {
+        // 카드 결제를 PG 조회로 확정(없으면 전액 포인트 → empty).
+        Optional<StuckPaymentInfo> info = paymentService.resolveStuckPayment(order.getOrderNo());
+        long cardAmount = info.map(StuckPaymentInfo::amount).orElse(0L);
+        // 월렛 예약분은 append-only 월렛 원장(orderNo 키)에서 역산한다 — 원 요청의 결제수단 분할이
+        // 주문에 저장돼 있지 않으므로, 커밋된 USE 이력이 진실의 원천이다.
+        long walletAmount = walletService.reservedAmountForOrder(order.getOrderNo());
+        // 포인트분은 금액 검증 불변식(카드+포인트+월렛=총액)에서 도출한다.
+        long pointAmount = order.getTotalAmount() - cardAmount - walletAmount;
+        ApprovalOutcome outcome = info.map(StuckPaymentInfo::outcome).orElse(null);
+        Long paymentId = info.map(StuckPaymentInfo::paymentId).orElse(null);
+
+        checkoutTx.settle(order.getOrderNo(), paymentId, Money.krw(cardAmount),
+                pointAmount, walletAmount, outcome);
     }
 }

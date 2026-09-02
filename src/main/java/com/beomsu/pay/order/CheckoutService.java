@@ -24,8 +24,12 @@ import java.util.List;
 @Service
 public class CheckoutService {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(CheckoutService.class);
+
     private final PaymentService paymentService;
     private final CheckoutTx checkoutTx;
+    private final CheckoutRecoveryService recoveryService;
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final QueueService queueService;
@@ -34,6 +38,7 @@ public class CheckoutService {
 
     public CheckoutService(PaymentService paymentService,
                            CheckoutTx checkoutTx,
+                           CheckoutRecoveryService recoveryService,
                            OrderRepository orderRepository,
                            ProductRepository productRepository,
                            QueueService queueService,
@@ -41,6 +46,7 @@ public class CheckoutService {
                            @Value("${app.queue.gate.event-id:drop}") String gateEventId) {
         this.paymentService = paymentService;
         this.checkoutTx = checkoutTx;
+        this.recoveryService = recoveryService;
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.queueService = queueService;
@@ -103,6 +109,14 @@ public class CheckoutService {
             throw new OrderException("INVALID_REQUEST", "결제 금액은 음수일 수 없습니다.");
         }
 
+        // Phase 0 (tx 밖) — 미확정 해소: 이 주문에 아직 확정 안 된 결제가 있으면 <b>여기서</b> PG에 물어
+        // 확정한다. 고객이 카드 A 타임아웃 뒤 카드 B로 다시 누르는 상황이다. 배치를 기다리면 60초인데
+        // 고객은 이미 화면 앞에 있다.
+        //
+        // 이걸 안 하고 재시도를 받으면, 앞 결제가 실제로 승인돼 있었을 때 <b>이중결제</b>가 된다.
+        // 멱등키는 못 막는다 — 카드를 바꾼 재시도는 다른 요청이라 새 키를 받는다(이슈 #2).
+        resolvePendingAttempt(orderNo);
+
         // Phase 1 (tx) — 예약: 검증·주문 상태 전이(이중지불 잠금)·포인트/월렛 선점·결제 IN_PROGRESS 적재.
         // 커밋 후 DB 커넥션을 반납한다.
         CheckoutTx.Reservation reservation =
@@ -116,5 +130,29 @@ public class CheckoutService {
 
         // Phase 3 (tx) — 확정/보상: PG 결과를 결제·주문에 반영하고 재고 차감/보상까지 마친다.
         return checkoutTx.settle(orderNo, reservation.paymentId(), cardAmount, pointAmount, walletAmount, outcome);
+    }
+
+    /**
+     * 이 주문에 확정 안 된 결제가 남아 있으면 지금 해소한다.
+     *
+     * <p>주문이 {@code PAYMENT_IN_PROGRESS}면 앞 시도가 미확정으로 멈춘 것이다. PG 조회로 확정하면
+     * 둘 중 하나가 된다. 승인이었으면 주문이 {@code PAID}가 되어 아래 {@code reserve}가 불법 전이로
+     * 막고(정상 — 이미 결제됐다), 승인이 아니었으면 {@code PENDING_PAYMENT}로 돌아와 재시도가 열린다.
+     *
+     * <p>조회에 실패해도 재시도를 막지 않는다. 그러면 주문이 {@code PAYMENT_IN_PROGRESS}에 남아
+     * {@code reserve}가 막고, 복구 배치가 다음 주기에 다시 시도한다 — 즉 <b>고치기 전 동작</b>으로
+     * 떨어질 뿐 이중결제로 가지 않는다.
+     */
+    private void resolvePendingAttempt(String orderNo) {
+        orderRepository.findByOrderNo(orderNo)
+                .filter(o -> o.getStatus() == OrderStatus.PAYMENT_IN_PROGRESS)
+                .ifPresent(order -> {
+                    try {
+                        recoveryService.resolveNow(order);
+                    } catch (Exception e) {
+                        // 삼키는 이유는 위 javadoc 참고 — 실패하면 배치가 맡는다.
+                        log.warn("재시도 시점 미확정 해소 실패 orderNo={} : {}", orderNo, e.getMessage());
+                    }
+                });
     }
 }
