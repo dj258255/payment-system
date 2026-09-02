@@ -1,4 +1,4 @@
-package com.beomsu.pay.notification;
+package com.beomsu.pay.notification.consumption;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -16,7 +16,9 @@ import java.time.Instant;
 @Table(name = "dead_letters")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-class DeadLetter {
+// 같은 모듈의 다른 패키지가 참조하므로 public 이다. 모듈 밖 접근은 ModularityTests 의
+// allowedDependencies 가 막는다.
+public class DeadLetter {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -59,12 +61,12 @@ class DeadLetter {
         this.createdAt = Instant.now();
     }
 
-    static DeadLetter of(String eventType, String eventKey, String orderNo, Long paymentId,
+    public static DeadLetter of(String eventType, String eventKey, String orderNo, Long paymentId,
                          long amount, String failReason) {
         return new DeadLetter(eventType, eventKey, orderNo, paymentId, amount, failReason);
     }
 
-    void incrementRetry() {
+    public void incrementRetry() {
         this.retryCount++;
     }
 }

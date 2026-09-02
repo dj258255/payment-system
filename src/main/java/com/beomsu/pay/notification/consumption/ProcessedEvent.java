@@ -1,4 +1,4 @@
-package com.beomsu.pay.notification;
+package com.beomsu.pay.notification.consumption;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -18,7 +18,9 @@ import java.time.Instant;
         uniqueConstraints = @UniqueConstraint(name = "uk_processed", columnNames = {"eventKey", "consumer"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-class ProcessedEvent {
+// 같은 모듈의 다른 패키지가 참조하므로 public 이다. 모듈 밖 접근은 ModularityTests 의
+// allowedDependencies 가 막는다.
+public class ProcessedEvent {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -39,7 +41,7 @@ class ProcessedEvent {
         this.processedAt = Instant.now();
     }
 
-    static ProcessedEvent of(String eventKey, String consumer) {
+    public static ProcessedEvent of(String eventKey, String consumer) {
         return new ProcessedEvent(eventKey, consumer);
     }
 }

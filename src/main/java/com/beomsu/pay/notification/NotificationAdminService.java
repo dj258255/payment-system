@@ -1,5 +1,10 @@
 package com.beomsu.pay.notification;
 
+import com.beomsu.pay.notification.consumption.ProcessedEventRepository;
+import com.beomsu.pay.notification.consumption.ProcessedEvent;
+import com.beomsu.pay.notification.consumption.DeadLetterView;
+import com.beomsu.pay.notification.consumption.DeadLetterRepository;
+import com.beomsu.pay.notification.consumption.DeadLetter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;

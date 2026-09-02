@@ -1,6 +1,7 @@
 package com.beomsu.pay.notification.web;
 
-import com.beomsu.pay.notification.DeadLetterView;
+import com.beomsu.pay.notification.consumption.DeadLetterView;
+import com.beomsu.pay.notification.consumption.DeadLetterView;
 import com.beomsu.pay.notification.NotificationAdminService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;

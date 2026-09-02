@@ -1,5 +1,9 @@
 package com.beomsu.pay.notification;
 
+import com.beomsu.pay.notification.consumption.DeadLetter;
+import com.beomsu.pay.notification.consumption.DeadLetterRepository;
+import com.beomsu.pay.notification.consumption.ProcessedEvent;
+import com.beomsu.pay.notification.consumption.ProcessedEventRepository;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

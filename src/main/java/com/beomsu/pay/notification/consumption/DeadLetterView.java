@@ -1,4 +1,4 @@
-package com.beomsu.pay.notification;
+package com.beomsu.pay.notification.consumption;
 
 import java.time.Instant;
 
