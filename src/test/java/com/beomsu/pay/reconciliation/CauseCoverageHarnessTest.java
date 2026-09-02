@@ -8,7 +8,6 @@ import com.beomsu.pay.payment.PaymentTimelineFacts.PaymentState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;

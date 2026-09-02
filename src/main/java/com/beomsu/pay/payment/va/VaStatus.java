@@ -1,6 +1,5 @@
 package com.beomsu.pay.payment.va;
 
-import com.beomsu.pay.payment.PaymentStatus;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Map;

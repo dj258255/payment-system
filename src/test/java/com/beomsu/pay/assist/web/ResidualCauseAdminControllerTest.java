@@ -1,7 +1,7 @@
 package com.beomsu.pay.assist.web;
 
 import com.beomsu.pay.MetricsTestConfig;
-import com.beomsu.pay.RateLimiter;
+import com.beomsu.pay.ratelimit.RateLimiter;
 import com.beomsu.pay.SecurityConfig;
 import com.beomsu.pay.assist.residual.ResidualCauseService;
 import com.beomsu.pay.assist.residual.ResidualSuggestion;

@@ -1,5 +1,6 @@
-package com.beomsu.pay;
+package com.beomsu.pay.shared.outbox;
 
+import com.beomsu.pay.shared.outbox.OutboxCleanupScheduler;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.modulith.events.CompletedEventPublications;

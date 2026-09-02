@@ -1,6 +1,5 @@
 package com.beomsu.pay.order.recovery;
 
-import com.beomsu.pay.order.SchedulingConfig;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;

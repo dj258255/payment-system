@@ -1,4 +1,4 @@
-package com.beomsu.pay;
+package com.beomsu.pay.auth;
 
 import com.beomsu.pay.shared.DomainException;
 

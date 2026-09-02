@@ -1,4 +1,4 @@
-package com.beomsu.pay;
+package com.beomsu.pay.auth;
 
 /**
  * 토큰 갱신/폐기 흐름에서의 인증 실패 — {@link AuthController}에서 401로 매핑된다.

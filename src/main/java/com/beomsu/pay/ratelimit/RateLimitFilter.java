@@ -1,4 +1,4 @@
-package com.beomsu.pay;
+package com.beomsu.pay.ratelimit;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;

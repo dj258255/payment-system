@@ -1,6 +1,5 @@
 package com.beomsu.pay.payment.recovery;
 
-import com.beomsu.pay.order.compensation.CompensationScheduler;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

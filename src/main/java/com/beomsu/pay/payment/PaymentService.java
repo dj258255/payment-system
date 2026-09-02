@@ -1,7 +1,6 @@
 package com.beomsu.pay.payment;
 
 import com.beomsu.pay.payment.StuckPaymentInfo;
-import com.beomsu.pay.payment.recovery.PaymentRecoveryService;
 import com.beomsu.pay.payment.pg.PgApproveCommand;
 import com.beomsu.pay.payment.pg.PgApproveResult;
 import com.beomsu.pay.payment.pg.PgCancelCommand;

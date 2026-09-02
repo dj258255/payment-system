@@ -1,4 +1,4 @@
-package com.beomsu.pay;
+package com.beomsu.pay.auth;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

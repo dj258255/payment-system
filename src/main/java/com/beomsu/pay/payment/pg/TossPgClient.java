@@ -1,6 +1,5 @@
 package com.beomsu.pay.payment.pg;
 
-import com.beomsu.pay.payment.Payment;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;

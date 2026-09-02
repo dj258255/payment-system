@@ -1,4 +1,4 @@
-package com.beomsu.pay;
+package com.beomsu.pay.auth;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;

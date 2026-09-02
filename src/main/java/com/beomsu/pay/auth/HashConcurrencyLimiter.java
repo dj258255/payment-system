@@ -1,5 +1,6 @@
-package com.beomsu.pay;
+package com.beomsu.pay.auth;
 
+import com.beomsu.pay.ratelimit.RateLimitFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,7 +27,8 @@ import java.util.function.Supplier;
  * <p><b>{@code upgradeEncoding}은 통과시킨다.</b> 저장된 해시의 접두사만 보는 문자열 검사라
  * 메모리를 쓰지 않는다. 이걸 막으면 점진 이관만 조용히 멈춘다.
  */
-class HashConcurrencyLimiter implements PasswordEncoder {
+// SecurityConfig(앱 루트)가 조립하므로 public 이다. 모듈 밖 접근은 ModularityTests 가 막는다.
+public class HashConcurrencyLimiter implements PasswordEncoder {
 
     private static final Logger log = LoggerFactory.getLogger(HashConcurrencyLimiter.class);
 
@@ -34,7 +36,7 @@ class HashConcurrencyLimiter implements PasswordEncoder {
     private final Semaphore permits;
     private final LongAdder rejected = new LongAdder();
 
-    HashConcurrencyLimiter(PasswordEncoder delegate, int maxConcurrent) {
+    public HashConcurrencyLimiter(PasswordEncoder delegate, int maxConcurrent) {
         this.delegate = delegate;
         this.permits = new Semaphore(maxConcurrent);
         log.info("비밀번호 해싱 동시 실행 상한 {}건 (해시당 약 {}MB)",

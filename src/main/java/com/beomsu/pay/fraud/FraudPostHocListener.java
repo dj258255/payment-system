@@ -5,7 +5,7 @@ import com.beomsu.pay.fraud.review.FraudReview;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import com.beomsu.pay.payment.PaymentService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.modulith.ApplicationModuleListener;
+import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
 
 /**

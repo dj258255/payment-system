@@ -1,6 +1,5 @@
 package com.beomsu.pay.payment.va;
 
-import com.beomsu.pay.payment.recovery.PaymentSchedulingConfig;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;

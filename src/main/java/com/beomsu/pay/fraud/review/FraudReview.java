@@ -1,7 +1,6 @@
 package com.beomsu.pay.fraud.review;
 
 import com.beomsu.pay.fraud.FraudResult;
-import com.beomsu.pay.fraud.FraudPostHocListener;
 import com.beomsu.pay.fraud.FraudException;
 import com.beomsu.pay.fraud.FdsDecision;
 import jakarta.persistence.*;

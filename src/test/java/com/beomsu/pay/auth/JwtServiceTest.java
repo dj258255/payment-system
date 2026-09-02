@@ -1,5 +1,8 @@
-package com.beomsu.pay;
+package com.beomsu.pay.auth;
 
+import com.beomsu.pay.auth.TokenStore;
+import com.beomsu.pay.auth.JwtService;
+import com.beomsu.pay.auth.JwtConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;

@@ -1,7 +1,6 @@
 package com.beomsu.pay.subscription.dunning;
 
 import com.beomsu.pay.subscription.SubscriptionService;
-import com.beomsu.pay.subscription.SubscriptionSchedulingConfig;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

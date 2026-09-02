@@ -1,5 +1,6 @@
-package com.beomsu.pay;
+package com.beomsu.pay.auth;
 
+import com.beomsu.pay.auth.TokenStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

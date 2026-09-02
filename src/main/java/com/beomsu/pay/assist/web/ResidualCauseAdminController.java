@@ -1,7 +1,5 @@
 package com.beomsu.pay.assist.web;
 
-import com.beomsu.pay.reconciliation.ResolveCause;
-import com.beomsu.pay.reconciliation.CauseSuggestion;
 import com.beomsu.pay.assist.residual.ResidualSuggestionLog;
 import com.beomsu.pay.assist.residual.ResidualSuggestion;
 import com.beomsu.pay.assist.residual.ResidualCauseService;

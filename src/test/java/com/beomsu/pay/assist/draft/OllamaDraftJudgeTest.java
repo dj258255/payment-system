@@ -1,7 +1,5 @@
 package com.beomsu.pay.assist.draft;
 
-import com.beomsu.pay.reconciliation.CauseSuggestion;
-import com.beomsu.pay.reconciliation.ResolveCause;
 
 import com.beomsu.pay.timeline.OrderTimeline;
 import com.beomsu.pay.timeline.TimelineEntry;

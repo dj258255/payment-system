@@ -1,5 +1,6 @@
-package com.beomsu.pay;
+package com.beomsu.pay.ratelimit;
 
+import com.beomsu.pay.ratelimit.RateLimiter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

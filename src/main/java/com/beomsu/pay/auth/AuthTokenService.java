@@ -1,4 +1,4 @@
-package com.beomsu.pay;
+package com.beomsu.pay.auth;
 
 import org.springframework.stereotype.Service;
 

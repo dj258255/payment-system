@@ -1,6 +1,5 @@
 package com.beomsu.pay.fraud.review;
 
-import com.beomsu.pay.fraud.FraudBlacklistReloader;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;

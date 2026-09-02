@@ -1,4 +1,4 @@
-package com.beomsu.pay;
+package com.beomsu.pay.shared.outbox;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

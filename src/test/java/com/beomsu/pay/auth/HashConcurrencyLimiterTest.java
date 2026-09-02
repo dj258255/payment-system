@@ -1,5 +1,7 @@
-package com.beomsu.pay;
+package com.beomsu.pay.auth;
 
+import com.beomsu.pay.auth.HashConcurrencyLimiter;
+import com.beomsu.pay.auth.HashCapacityExceededException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;

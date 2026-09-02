@@ -1,7 +1,7 @@
 package com.beomsu.pay.payment.web;
 
 import com.beomsu.pay.MetricsTestConfig;
-import com.beomsu.pay.RateLimiter;
+import com.beomsu.pay.ratelimit.RateLimiter;
 import com.beomsu.pay.SecurityConfig;
 import com.beomsu.pay.member.MemberRepository;
 import com.beomsu.pay.payment.pg.PgSelector;
@@ -15,7 +15,6 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.Mockito.when;

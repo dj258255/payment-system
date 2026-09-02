@@ -1,6 +1,5 @@
 package com.beomsu.pay.order;
 
-import com.beomsu.pay.order.catalog.Product;
 
 /**
  * 주문 생성 요청의 한 줄(항목).

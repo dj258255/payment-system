@@ -1,4 +1,4 @@
-package com.beomsu.pay;
+package com.beomsu.pay.auth;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

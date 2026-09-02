@@ -1,6 +1,5 @@
 package com.beomsu.pay.settlement;
 
-import com.beomsu.pay.escrow.EscrowReleasedEvent;
 import com.beomsu.pay.payment.PaymentCanceledEvent;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import io.micrometer.core.instrument.MeterRegistry;

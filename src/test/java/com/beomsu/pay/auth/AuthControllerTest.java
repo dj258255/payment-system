@@ -1,14 +1,16 @@
-package com.beomsu.pay;
+package com.beomsu.pay.auth;
 
+import com.beomsu.pay.MetricsTestConfig;
+import com.beomsu.pay.SecurityConfig;
+import com.beomsu.pay.ratelimit.RateLimiter;
+import com.beomsu.pay.auth.AuthTokenService;
+import com.beomsu.pay.auth.AuthException;
+import com.beomsu.pay.auth.AuthController;
 import com.beomsu.pay.member.MemberRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.authentication.AuthenticationManager;
