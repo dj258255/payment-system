@@ -31,6 +31,8 @@
 | 404 | `PAYMENT_NOT_FOUND` / `ORDER_NOT_FOUND` | 대상 없음 |
 | 409 | `IDEMPOTENT_REQUEST_PROCESSING` | 같은 멱등키의 이전 요청이 아직 처리 중 → **클라이언트는 잠시 후 같은 키로 재시도** |
 | 409 | `INVALID_STATE_TRANSITION` | 상태머신 위반 (예: CANCELED 건 승인 시도) |
+| 409 | `ORDER_ALREADY_PAID` | 앞선 시도가 실제로는 승인돼 있었다 → **재시도하지 말고 주문 내역을 확인** |
+| 409 | `PAYMENT_RESULT_PENDING` | 앞선 결제의 결과를 아직 모른다 → **잠시 후 재시도**. 여기서 새 승인을 내보내면 이중결제가 된다 |
 | 409 | `STOCK_CONCURRENCY` / `WALLET_CONCURRENCY` | 재고·잔액 경합(조건부 UPDATE 실패) → 재시도 안내 |
 | 422 | `IDEMPOTENCY_KEY_REUSED` | 같은 멱등키 + **다른 요청 본문** (토스페이먼츠와 동일 시맨틱) |
 

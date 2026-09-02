@@ -81,6 +81,27 @@
 `com.beomsu.pay` 바로 아래 각 패키지가 하나의 애플리케이션 모듈이다. 모듈 간 통신은 직접 호출이 아니라
 **도메인 이벤트**로 하고, 그 경계를 테스트(`ModularityTests`)가 강제한다. 규칙 위반 시 빌드가 깨진다.
 
+**모듈 안은 다시 둘로 나뉜다.** Spring Modulith 는 모듈의 base package 를 API 패키지로 보고, 하위 패키지를
+내부로 본다. 그래서 `<모듈>/` 바로 아래에는 **다른 모듈이 쓰는 것만** 두고, 나머지는 `<모듈>/internal/` 로
+내린다. 루트를 열면 그 모듈이 밖에 무엇을 약속하는지가 그대로 읽힌다(ADR-018).
+
+```
+payment/                   ← 밖에 내주는 10개
+├── PaymentConfirmedEvent      다른 모듈 11곳이 구독
+├── PaymentService             10곳
+├── PaymentCanceledEvent       8곳
+├── …
+├── internal/              ← 안에서만 쓰는 11개 (Payment · PaymentRepository · PaymentHistory …)
+├── pg/ va/ webhook/       ← 외부 경계 어댑터
+├── forcecancel/ recovery/ ← 관심사별
+└── web/                   ← 컨트롤러
+```
+
+`internal` 안의 타입이 `public` 인 경우가 있다. 같은 모듈의 API 가 참조하기 때문인데, Modulith 문서도
+"내부 패키지에 있어도 `public` 이면 컴파일러는 막지 못한다"고 짚는다. 그 자리는 `allowedDependencies` 가
+막고, 선언 위에 그 사유를 적어 뒀다. `PayApplication` 과 `SecurityConfig` 만 루트에 남는데,
+`SecurityConfig` 는 `auth`·`ratelimit`·`member` 를 가로질러 조립하는 앱 껍데기라 어느 모듈에도 안 속한다.
+
 ![pay 아키텍처: 유입/인증 → 결제 코어(체크아웃 사가·PG 어댑터) → Outbox 이벤트 → 구독자(원장·에스크로·정산·대사·분쟁·FDS) → 인프라](docs/images/architecture.svg)
 
 ```
@@ -237,7 +258,8 @@ BENCH_INFRA=external BENCH_DB_PORT=3307 BENCH_ALLOW_DB_RESET=1 ./gradlew bench -
   [ADR-014 상담 초안 포트](docs/adr/ADR-014-cs-draft-port-and-number-guard.md) ·
   [ADR-015 구독 청구 앵커](docs/adr/ADR-015-subscription-billing-anchor.md) ·
   [ADR-016 금액과 통화](docs/adr/ADR-016-money-with-currency.md) ·
-  [ADR-017 애그리거트 경계](docs/adr/ADR-017-aggregate-boundaries.md)
+  [ADR-017 애그리거트 경계](docs/adr/ADR-017-aggregate-boundaries.md) ·
+  [ADR-018 모듈 내부 패키지](docs/adr/ADR-018-module-internal-packages.md)
 
 실측 기록: [13 상담 초안 실측](docs/13-상담초안-실측.md) — 실데이터와 실제 로컬 모델(Qwen3 8B)을 붙여
   검증기 결함 3건을 찾아 고친 과정. 오반려 50%→0%, 모델 초안 통과율 58%→100%,
