@@ -432,7 +432,7 @@ append-only 이력 테이블에 남겨 감사·복구의 진실 원천으로 삼
   `type` = CHARGE/USE/**RESTORE**/REFUND, `order_no` — 주문 단위 멱등/역산용). USE−RESTORE−REFUND = 활성 예약.
 - **포인트**: `point_accounts`(user_id PK, balance, @Version) + `point_histories`(append-only:
   `type` = USE/RESTORE/REFUND/**EARN**/**EARN_REVERSAL**, `order_no`). 적립·회수를 이력으로 감사.
-- **구독**: `billing_keys`(암호화 저장 + 블라인드 인덱스), `subscriptions`(상태머신 + @Version), `dunning_attempts`.
+- **구독**: `billing_keys`(암호화 저장 + 블라인드 인덱스), `subscriptions`(상태머신 + @Version + `anchor_day` — 원래 청구하기로 한 일자. 다음 청구일을 직전 청구일에서 더하면 말일 없는 달에서 당겨진 날이 영영 안 돌아와 1/31→2/28→3/28로 손실이 누적된다. 앵커에서 매달 클램프해야 3/31로 복귀한다), `dunning_attempts`.
 - **분쟁/차지백**: `disputes`(`chargeback_id` 유니크 — 웹훅 멱등키 / `order_no`·`payment_id` / `status` 상태머신 /
   `respond_by_deadline`·`evidence_memo`·`resolved_at` / **@Version** 동시 확정 레이스 차단). 패소 시 원장에
   `(txType=DISPUTE_LOST, sourceType=DISPUTE, sourceId=disputeId)` 유니크로 멱등 역분개.

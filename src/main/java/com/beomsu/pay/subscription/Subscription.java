@@ -55,23 +55,35 @@ public class Subscription {
     @Column(nullable = false)
     private LocalDate nextBillingDate;
 
+    /**
+     * 원래 청구하기로 한 일자(1~31). 그 달에 그 날이 없으면 말일로 클램프한다.
+     *
+     * <p><b>왜 따로 두는가</b>: 다음 청구일을 직전 청구일에서 더하면, 2월에 한 번 당겨진 날이
+     * 영영 돌아오지 않는다(1/31 → 2/28 → 3/28). 앵커를 들고 매달 다시 계산해야
+     * 1/31 → 2/28 → 3/31 이 된다. {@link BillingCycle} 참고.
+     */
+    @Column(nullable = false)
+    private int anchorDay;
+
     @Version
     private long version;
 
     private Subscription(long userId, String billingKey, long planAmount,
-                         LocalDate currentPeriodStart, LocalDate nextBillingDate) {
+                         LocalDate currentPeriodStart, LocalDate nextBillingDate, int anchorDay) {
         this.userId = userId;
         this.billingKey = billingKey;
         this.planAmount = planAmount;
         this.status = SubscriptionStatus.ACTIVE;
         this.currentPeriodStart = currentPeriodStart;
         this.nextBillingDate = nextBillingDate;
+        this.anchorDay = anchorDay;
     }
 
-    /** 구독 개시 — ACTIVE로 생성한다. */
+    /** 구독 개시 — ACTIVE로 생성한다. 앵커는 시작일의 일자다. */
     public static Subscription create(long userId, String billingKey, long planAmount,
                                       LocalDate currentPeriodStart, LocalDate nextBillingDate) {
-        return new Subscription(userId, billingKey, planAmount, currentPeriodStart, nextBillingDate);
+        return new Subscription(userId, billingKey, planAmount, currentPeriodStart, nextBillingDate,
+                BillingCycle.anchorOf(currentPeriodStart));
     }
 
     /**

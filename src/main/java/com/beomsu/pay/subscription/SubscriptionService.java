@@ -54,7 +54,7 @@ public class SubscriptionService {
         String billingKeyIndex = blindIndexer.index(billingKey);
         billingKeyRepository.save(BillingKey.of(billingKey, billingKeyIndex, customerKey, userId));
 
-        LocalDate nextBillingDate = startDate.plusMonths(BILLING_PERIOD_MONTHS);
+        LocalDate nextBillingDate = BillingCycle.next(startDate, BillingCycle.anchorOf(startDate), BILLING_PERIOD_MONTHS);
         Subscription subscription = Subscription.create(userId, billingKey, planAmount, startDate, nextBillingDate);
         return subscriptionRepository.save(subscription);
     }
@@ -154,7 +154,9 @@ public class SubscriptionService {
         if (subscription.getStatus() == SubscriptionStatus.IN_GRACE_PERIOD) {
             subscription.recover();
         }
-        LocalDate nextBillingDate = subscription.getNextBillingDate().plusMonths(BILLING_PERIOD_MONTHS);
+        // 직전 청구일이 아니라 <앵커>에서 계산한다. 직전 값에서 더하면 2월에 당겨진 날이 영영 돌아오지 않는다.
+        LocalDate nextBillingDate = BillingCycle.next(
+                subscription.getNextBillingDate(), subscription.getAnchorDay(), BILLING_PERIOD_MONTHS);
         subscription.renew(nextBillingDate);
 
         int attemptNo = priorSoftDeclines(subscription) + 1;
