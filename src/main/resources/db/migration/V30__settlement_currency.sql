@@ -8,7 +8,7 @@
 -- 지금 이 시스템은 KRW 만 만든다. 기존 행은 전부 KRW 다.
 
 ALTER TABLE settlements
-    ADD COLUMN currency CHAR(3) NOT NULL DEFAULT 'KRW' COMMENT 'ISO 4217 통화 코드. 정산은 통화별로 따로 만든다';
+    ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'KRW' COMMENT 'ISO 4217 통화 코드. 정산은 통화별로 따로 만든다';
 
 ALTER TABLE settlements DROP INDEX uk_settlement_date;
 

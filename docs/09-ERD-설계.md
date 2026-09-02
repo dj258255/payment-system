@@ -334,7 +334,7 @@ CREATE TABLE settlements (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     merchant_id     BIGINT       NOT NULL,
     settlement_date DATE         NOT NULL,             -- 정산 기준일
-    currency        CHAR(3)      NOT NULL,             -- ISO 4217. 정산은 통화별로 따로 만든다
+    currency        VARCHAR(3)   NOT NULL,             -- ISO 4217. 정산은 통화별로 따로 만든다
     gross_amount    BIGINT       NOT NULL,             -- 거래 총액(해당 통화의 최소 단위)
     fee_amount      BIGINT       NOT NULL,             -- 수수료 합
     net_amount      BIGINT       NOT NULL,             -- 지급액 (gross - fee) — 불변식 검증 대상
