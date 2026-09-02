@@ -236,7 +236,8 @@ BENCH_INFRA=external BENCH_DB_PORT=3307 BENCH_ALLOW_DB_RESET=1 ./gradlew bench -
   [ADR-013 취소를 별도 행으로](docs/adr/ADR-013-cancellation-as-separate-recon-row.md) ·
   [ADR-014 상담 초안 포트](docs/adr/ADR-014-cs-draft-port-and-number-guard.md) ·
   [ADR-015 구독 청구 앵커](docs/adr/ADR-015-subscription-billing-anchor.md) ·
-  [ADR-016 금액과 통화](docs/adr/ADR-016-money-with-currency.md)
+  [ADR-016 금액과 통화](docs/adr/ADR-016-money-with-currency.md) ·
+  [ADR-017 애그리거트 경계](docs/adr/ADR-017-aggregate-boundaries.md)
 
 실측 기록: [13 상담 초안 실측](docs/13-상담초안-실측.md) — 실데이터와 실제 로컬 모델(Qwen3 8B)을 붙여
   검증기 결함 3건을 찾아 고친 과정. 오반려 50%→0%, 모델 초안 통과율 58%→100%,
