@@ -2,11 +2,7 @@ package com.beomsu.pay.persistence;
 
 import probe.flush.Thing;
 
-import jakarta.persistence.Entity;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
 import jakarta.persistence.PersistenceContext;
 import org.hibernate.FlushMode;
 import org.hibernate.Session;

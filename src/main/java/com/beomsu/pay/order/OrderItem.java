@@ -52,7 +52,7 @@ public class OrderItem {
         this.quantity = quantity;
     }
 
-    static OrderItem of(long productId, String productName, long unitPrice, int quantity) {
+    public static OrderItem of(long productId, String productName, long unitPrice, int quantity) {
         return new OrderItem(productId, productName, unitPrice, quantity);
     }
 

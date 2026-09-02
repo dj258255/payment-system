@@ -1,5 +1,6 @@
 package com.beomsu.pay.order;
 
+import com.beomsu.pay.order.catalog.StockDeductionService;
 import com.beomsu.pay.payment.PaymentService;
 import com.beomsu.pay.point.PointService;
 import com.beomsu.pay.shared.Money;
@@ -59,7 +60,7 @@ class CancelServiceTest {
 
         // 포인트 먼저(6,000) 환불하고, 나머지 14,000을 카드에서 취소한다.
         verify(pointService).refund(1L, 6_000, order.getOrderNo());
-        verify(paymentService).cancelByOrderNo(order.getOrderNo(), Money.of(14_000), "고객변심");
+        verify(paymentService).cancelByOrderNo(order.getOrderNo(), Money.krw(14_000), "고객변심");
         verify(stockDeductionService).restore(100L, 2); // 전액취소 재고 복원
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELED);
         // 전액취소 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
@@ -81,7 +82,7 @@ class CancelServiceTest {
 
         // 카드 14,000 + 월렛 6,000 = 20,000 전액취소. 월렛 몫이 반드시 환불돼야 한다.
         verify(walletService).refund(1L, 6_000, order.getOrderNo());
-        verify(paymentService).cancelByOrderNo(order.getOrderNo(), Money.of(14_000), "고객변심");
+        verify(paymentService).cancelByOrderNo(order.getOrderNo(), Money.krw(14_000), "고객변심");
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELED);
         assertThat(result.fullyCanceled()).isTrue();
         assertThat(result.refundedWallet()).isEqualTo(6_000);

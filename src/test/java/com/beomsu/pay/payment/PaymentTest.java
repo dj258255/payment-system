@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PaymentTest {
 
     private Payment approvedPayment() {
-        Payment p = Payment.initiate("order-1", Money.of(10_000));
+        Payment p = Payment.initiate("order-1", Money.krw(10_000));
         p.startApproval("pk-1");
         p.approve("CARD");
         return p;
@@ -32,10 +32,10 @@ class PaymentTest {
     void partialCancel() {
         Payment p = approvedPayment();
 
-        p.cancel(Money.of(3_000), TriggeredBy.USER, "부분 변심");
+        p.cancel(Money.krw(3_000), TriggeredBy.USER, "부분 변심");
 
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.PARTIAL_CANCELED);
-        assertThat(p.balanceAsMoney()).isEqualTo(Money.of(7_000));
+        assertThat(p.balanceAsMoney()).isEqualTo(Money.krw(7_000));
     }
 
     @Test
@@ -43,11 +43,11 @@ class PaymentTest {
     void fullCancelByPartials() {
         Payment p = approvedPayment();
 
-        p.cancel(Money.of(4_000), TriggeredBy.USER, "1차");
-        p.cancel(Money.of(6_000), TriggeredBy.USER, "2차");
+        p.cancel(Money.krw(4_000), TriggeredBy.USER, "1차");
+        p.cancel(Money.krw(6_000), TriggeredBy.USER, "2차");
 
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.CANCELED);
-        assertThat(p.balanceAsMoney()).isEqualTo(Money.ZERO);
+        assertThat(p.balanceAsMoney()).isEqualTo(Money.krw(0));
     }
 
     @Test
@@ -55,7 +55,7 @@ class PaymentTest {
     void cancelExceedingBalance() {
         Payment p = approvedPayment();
 
-        assertThatThrownBy(() -> p.cancel(Money.of(11_000), TriggeredBy.USER, "과다"))
+        assertThatThrownBy(() -> p.cancel(Money.krw(11_000), TriggeredBy.USER, "과다"))
                 .isInstanceOf(PaymentException.class)
                 .satisfies(e -> assertThat(((PaymentException) e).code())
                         .isEqualTo("CANCEL_AMOUNT_EXCEEDED"));
@@ -64,7 +64,7 @@ class PaymentTest {
     @Test
     @DisplayName("타임아웃은 UNKNOWN으로 보존되고 사유가 남는다")
     void timeoutBecomesUnknown() {
-        Payment p = Payment.initiate("order-2", Money.of(5_000));
+        Payment p = Payment.initiate("order-2", Money.krw(5_000));
         p.startApproval("pk-2");
 
         p.markUnknown("PG 응답 타임아웃");
@@ -77,7 +77,7 @@ class PaymentTest {
     @DisplayName("불법 전이 시도는 예외 (취소된 결제를 승인)")
     void illegalTransitionThrows() {
         Payment p = approvedPayment();
-        p.cancel(Money.of(10_000), TriggeredBy.USER, "전액");
+        p.cancel(Money.krw(10_000), TriggeredBy.USER, "전액");
 
         assertThatThrownBy(() -> p.approve("CARD"))
                 .isInstanceOf(PaymentException.class)

@@ -1,6 +1,5 @@
 package com.beomsu.pay.settlement;
 
-import com.beomsu.pay.escrow.EscrowReleasedEvent;
 import com.beomsu.pay.payment.PaymentCanceledEvent;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -51,6 +50,15 @@ public class SettlementService {
     private final SettlementRepository settlementRepository;
     private final SettlementAdjustmentRepository adjustmentRepository;
     private final MeterRegistry meterRegistry;
+
+    /**
+     * 이 시스템이 만드는 정산의 통화.
+     *
+     * <p>지금은 KRW 하나다. 통화를 상수로 뽑아둔 이유는, 다통화를 붙일 때 <b>여기서 갈라야 한다</b>는
+     * 것을 표시하기 위해서다. 하루치를 통화별로 나눠 각각 정산을 만들고, 그때 수수료 반올림도
+     * 통화의 최소 단위 지수를 따라야 한다({@link com.beomsu.pay.shared.Money#fractionDigits()}).
+     */
+    private static final String SETTLEMENT_CURRENCY = "KRW";
 
     /** 정산 수수료율(basis point). 270 bps = 2.7%. KRW는 소수점이 없으므로 정수 연산으로 확정. */
     private final long feeBps;
@@ -174,7 +182,7 @@ public class SettlementService {
      */
     @Transactional
     public Settlement settle(LocalDate date) {
-        if (settlementRepository.existsBySettlementDate(date)) {
+        if (settlementRepository.existsBySettlementDateAndCurrency(date, SETTLEMENT_CURRENCY)) {
             log.info("정산 재실행 감지 → 건너뜀 date={}", date);
             return null; // 멱등: 이미 그 날짜 정산이 존재
         }
@@ -197,7 +205,7 @@ public class SettlementService {
 
         // 회수 대기분을 먼저 반영한다 — 총액이 정해진 뒤에 수수료를 계산해야 맞다.
         Settlement settlement = settlementRepository.save(
-                Settlement.of(date, gross, fee, feeVat, items.size(), payoutDate));
+                Settlement.of(date, SETTLEMENT_CURRENCY, gross, fee, feeVat, items.size(), payoutDate));
         long adjustedGross = applyPendingAdjustments(gross, settlement);
         if (adjustedGross != gross) {
             long adjFee = calculateFee(adjustedGross);

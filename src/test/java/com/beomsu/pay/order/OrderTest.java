@@ -47,9 +47,9 @@ class OrderTest {
     void verifyAmount() {
         Order order = sampleOrder();
 
-        order.verifyAmount(Money.of(25_000)); // 통과 (예외 없음)
+        order.verifyAmount(Money.krw(25_000)); // 통과 (예외 없음)
 
-        assertThatThrownBy(() -> order.verifyAmount(Money.of(24_000)))
+        assertThatThrownBy(() -> order.verifyAmount(Money.krw(24_000)))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
     }

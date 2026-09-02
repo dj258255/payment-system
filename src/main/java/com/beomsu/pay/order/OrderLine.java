@@ -1,5 +1,6 @@
 package com.beomsu.pay.order;
 
+
 /**
  * 주문 생성 요청의 한 줄(항목).
  *

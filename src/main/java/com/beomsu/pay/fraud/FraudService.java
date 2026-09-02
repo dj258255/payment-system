@@ -1,13 +1,12 @@
 package com.beomsu.pay.fraud;
 
+import com.beomsu.pay.fraud.velocity.VelocityCounter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * FDS 룰 엔진 — 결제 요청의 위험 점수를 매겨 판정한다.

@@ -1,5 +1,6 @@
 package com.beomsu.pay;
 
+import com.beomsu.pay.ratelimit.RateLimitFilter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.boot.test.context.TestConfiguration;

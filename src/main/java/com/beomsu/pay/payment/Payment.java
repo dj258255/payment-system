@@ -85,7 +85,7 @@ public class Payment {
 
     /** 결제 시작 — READY 상태로 생성한다. */
     public static Payment initiate(String orderNo, Money amount) {
-        return new Payment(orderNo, amount.amount());
+        return new Payment(orderNo, amount.minorUnit());
     }
 
     /** READY → IN_PROGRESS. paymentKey를 귀속시키고 승인을 시작한다. */
@@ -160,7 +160,7 @@ public class Payment {
      */
     public void cancel(Money cancelAmount, TriggeredBy by, String reason) {
         validateCancelable(cancelAmount);
-        long newBalance = balanceAmount - cancelAmount.amount();
+        long newBalance = balanceAmount - cancelAmount.minorUnit();
         transitionTo(cancelTargetOf(newBalance), by, reason);
         this.balanceAmount = newBalance;
         this.cancelCount++;
@@ -171,10 +171,10 @@ public class Payment {
      * 취소를 걸러내는 데 쓴다. {@link #cancel}도 같은 검사를 통과한 뒤 전이하므로 규칙이 한 곳에 있다.
      */
     public void validateCancelable(Money cancelAmount) {
-        if (cancelAmount.amount() > balanceAmount) {
-            throw PaymentException.cancelAmountExceeded(cancelAmount.amount(), balanceAmount);
+        if (cancelAmount.minorUnit() > balanceAmount) {
+            throw PaymentException.cancelAmountExceeded(cancelAmount.minorUnit(), balanceAmount);
         }
-        PaymentStatus target = cancelTargetOf(balanceAmount - cancelAmount.amount());
+        PaymentStatus target = cancelTargetOf(balanceAmount - cancelAmount.minorUnit());
         if (!status.canTransitionTo(target)) {
             throw PaymentException.invalidTransition(status, target);
         }
@@ -194,11 +194,11 @@ public class Payment {
     }
 
     public Money amountAsMoney() {
-        return Money.of(amount);
+        return Money.krw(amount);
     }
 
     public Money balanceAsMoney() {
-        return Money.of(balanceAmount);
+        return Money.krw(balanceAmount);
     }
 
     public List<PaymentHistory> getHistories() {

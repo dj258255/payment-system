@@ -1,6 +1,6 @@
 package com.beomsu.pay.notification.web;
 
-import com.beomsu.pay.RateLimiter;
+import com.beomsu.pay.ratelimit.RateLimiter;
 import com.beomsu.pay.member.MemberRepository;
 import com.beomsu.pay.SecurityConfig;
 import com.beomsu.pay.notification.NotificationAdminService;

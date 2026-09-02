@@ -1,5 +1,8 @@
 package com.beomsu.pay.fraud;
 
+import com.beomsu.pay.fraud.review.FraudReviewStatus;
+import com.beomsu.pay.fraud.review.FraudReviewRepository;
+import com.beomsu.pay.fraud.review.FraudReview;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

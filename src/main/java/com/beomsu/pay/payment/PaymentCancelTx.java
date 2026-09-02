@@ -129,7 +129,7 @@ class PaymentCancelTx {
         // 소비 쪽에서 Instant.now()를 쓰면 아웃박스 지연만큼 거래일이 밀리므로, 사실이 일어난
         // 시각을 여기서 못박아 실어 보낸다(ADR-013).
         events.publishEvent(new PaymentCanceledEvent(
-                payment.getOrderNo(), payment.getId(), cancelSeq, cancelAmount.amount(),
+                payment.getOrderNo(), payment.getId(), cancelSeq, cancelAmount.minorUnit(),
                 payment.getBalanceAmount(), fullyCanceled, java.time.Instant.now()));
     }
 }

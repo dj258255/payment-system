@@ -1,6 +1,6 @@
 package com.beomsu.pay.payment.webhook;
 
-import com.beomsu.pay.payment.PaymentRecoveryService;
+import com.beomsu.pay.payment.recovery.PaymentRecoveryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
