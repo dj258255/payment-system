@@ -46,7 +46,7 @@ public class InternalRecord {
     private Instant recordedAt;
 
     /** 대사 기준 타임존. 국내 PG 정산 파일은 KST 영업일로 끊긴다. */
-    static final ZoneId TRADE_ZONE = ZoneId.of("Asia/Seoul");
+    public static final ZoneId TRADE_ZONE = ZoneId.of("Asia/Seoul");
 
     /**
      * 0 = 승인, 1..N = 취소 순번 (ADR-013).

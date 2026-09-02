@@ -1,5 +1,6 @@
 package com.beomsu.pay.payment;
 
+import com.beomsu.pay.payment.StuckPaymentInfo;
 import com.beomsu.pay.payment.pg.FakePgClient;
 import com.beomsu.pay.payment.pg.PgApproveResult;
 import com.beomsu.pay.payment.pg.PgClient;

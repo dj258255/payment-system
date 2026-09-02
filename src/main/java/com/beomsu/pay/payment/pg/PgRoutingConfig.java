@@ -1,5 +1,7 @@
 package com.beomsu.pay.payment.pg;
 
+import com.beomsu.pay.payment.PaymentService;
+import com.beomsu.pay.payment.Payment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;

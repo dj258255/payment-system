@@ -1,5 +1,7 @@
 package com.beomsu.pay.subscription;
 
+import com.beomsu.pay.subscription.billing.BillingKey;
+import com.beomsu.pay.subscription.billing.BillingCycle;
 import com.beomsu.pay.shared.crypto.EncryptedStringConverter;
 import jakarta.persistence.*;
 import lombok.AccessLevel;

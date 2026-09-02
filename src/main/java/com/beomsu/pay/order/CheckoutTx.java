@@ -1,5 +1,7 @@
 package com.beomsu.pay.order;
 
+import com.beomsu.pay.order.compensation.CompensationService;
+import com.beomsu.pay.order.catalog.StockDeductionService;
 import com.beomsu.pay.payment.ApprovalOutcome;
 import com.beomsu.pay.payment.ConfirmResult;
 import com.beomsu.pay.payment.PaymentService;
@@ -24,7 +26,9 @@ import java.util.List;
  */
 @Component
 @RequiredArgsConstructor
-class CheckoutTx {
+// 하위 패키지가 같은 모듈 안에서 참조하므로 public 이다. 모듈 밖 접근은 package-private 이 아니라
+// ModularityTests 의 allowedDependencies 가 막는다.
+public class CheckoutTx {
 
     /** 적립률(정책) — 실결제액(카드+월렛)의 %. 취소 시 적립 회수도 이 율을 쓴다. 쿠폰/등급 차등은 이후 확장. */
     static final long EARN_RATE_PERCENT = 1;

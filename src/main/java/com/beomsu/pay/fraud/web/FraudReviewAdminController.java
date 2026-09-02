@@ -1,8 +1,11 @@
 package com.beomsu.pay.fraud.web;
 
-import com.beomsu.pay.fraud.FraudReviewAdminService;
-import com.beomsu.pay.fraud.FraudReviewStatus;
-import com.beomsu.pay.fraud.FraudReviewView;
+import com.beomsu.pay.fraud.review.FraudReviewView;
+import com.beomsu.pay.fraud.review.FraudReviewStatus;
+import com.beomsu.pay.fraud.review.FraudReviewAdminService;
+import com.beomsu.pay.fraud.review.FraudReviewAdminService;
+import com.beomsu.pay.fraud.review.FraudReviewStatus;
+import com.beomsu.pay.fraud.review.FraudReviewView;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

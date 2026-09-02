@@ -15,5 +15,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @Configuration
 @EnableScheduling
 @ConditionalOnProperty(name = "app.dunning.enabled", havingValue = "true")
-class SubscriptionSchedulingConfig {
+// 하위 패키지가 같은 모듈 안에서 참조하므로 public 이다. 모듈 밖 접근은 package-private 이 아니라
+// ModularityTests 의 allowedDependencies 가 막는다.
+public class SubscriptionSchedulingConfig {
 }

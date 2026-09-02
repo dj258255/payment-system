@@ -1,5 +1,6 @@
 package com.beomsu.pay.fraud;
 
+import com.beomsu.pay.fraud.velocity.VelocityCounter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

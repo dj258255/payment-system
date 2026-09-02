@@ -1,5 +1,6 @@
 package com.beomsu.pay.reconciliation;
 
+import com.beomsu.pay.reconciliation.ResolveCause;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;

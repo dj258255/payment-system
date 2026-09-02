@@ -1,5 +1,6 @@
 package com.beomsu.pay.reconciliation;
 
+import com.beomsu.pay.reconciliation.ResolveCause;
 import java.time.Instant;
 
 /** 운영 어드민에 노출하는 정산 불일치(예외 큐) 뷰(엔티티 직접 노출 대신 필요한 필드만). */

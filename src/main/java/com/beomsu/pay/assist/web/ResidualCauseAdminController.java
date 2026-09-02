@@ -1,8 +1,13 @@
 package com.beomsu.pay.assist.web;
 
-import com.beomsu.pay.assist.ResidualCauseService;
-import com.beomsu.pay.assist.ResidualSuggestion;
-import com.beomsu.pay.assist.ResidualSuggestionLog;
+import com.beomsu.pay.reconciliation.ResolveCause;
+import com.beomsu.pay.reconciliation.CauseSuggestion;
+import com.beomsu.pay.assist.residual.ResidualSuggestionLog;
+import com.beomsu.pay.assist.residual.ResidualSuggestion;
+import com.beomsu.pay.assist.residual.ResidualCauseService;
+import com.beomsu.pay.assist.residual.ResidualCauseService;
+import com.beomsu.pay.assist.residual.ResidualSuggestion;
+import com.beomsu.pay.assist.residual.ResidualSuggestionLog;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

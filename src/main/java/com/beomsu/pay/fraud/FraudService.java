@@ -1,5 +1,6 @@
 package com.beomsu.pay.fraud;
 
+import com.beomsu.pay.fraud.velocity.VelocityCounter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;

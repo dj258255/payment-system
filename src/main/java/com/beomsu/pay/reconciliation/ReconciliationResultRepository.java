@@ -6,7 +6,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDate;
 
-interface ReconciliationResultRepository extends JpaRepository<ReconciliationResult, Long> {
+// 하위 패키지가 같은 모듈 안에서 참조하므로 public 이다. 모듈 밖 접근은 package-private 이 아니라
+// ModularityTests 의 allowedDependencies 가 막는다.
+public interface ReconciliationResultRepository extends JpaRepository<ReconciliationResult, Long> {
 
     /** 어드민 관측용 — 상태별 대사 결과 페이지(운영이 PENDING 예외 큐를 조회). 전건 로딩 방지 위해 페이지 단위. */
     Page<ReconciliationResult> findByStatus(ReconStatus status, Pageable pageable);

@@ -1,5 +1,6 @@
 package com.beomsu.pay.order;
 
+import com.beomsu.pay.order.catalog.StockDeductionService;
 import com.beomsu.pay.order.RefundAllocator.RefundAllocation;
 import com.beomsu.pay.payment.PaymentService;
 import com.beomsu.pay.point.PointService;

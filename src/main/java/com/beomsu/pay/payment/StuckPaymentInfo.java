@@ -1,5 +1,7 @@
 package com.beomsu.pay.payment;
 
+import com.beomsu.pay.payment.ApprovalOutcome;
+
 /**
  * 멈춘 사가 복구용 — 특정 주문의 카드 결제 상태를 PG 조회로 확정한 뒤, order 모듈에 노출하는 정보.
  * order의 체크아웃 복구가 이 값으로 {@code CheckoutTx.settle}을 재실행해 주문을 완결/롤백한다.

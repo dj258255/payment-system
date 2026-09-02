@@ -1,5 +1,7 @@
 package com.beomsu.pay.fraud;
 
+import com.beomsu.pay.fraud.review.FraudReviewRepository;
+import com.beomsu.pay.fraud.review.FraudReview;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import com.beomsu.pay.payment.PaymentService;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +26,9 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-class FraudPostHocListener {
+// 하위 패키지가 같은 모듈 안에서 참조하므로 public 이다. 모듈 밖 접근은 package-private 이 아니라
+// ModularityTests 의 allowedDependencies 가 막는다.
+public class FraudPostHocListener {
 
     private final PaymentService paymentService;
     private final FraudService fraudService;

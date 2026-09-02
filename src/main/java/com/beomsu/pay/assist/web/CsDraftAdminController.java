@@ -1,7 +1,9 @@
 package com.beomsu.pay.assist.web;
 
-import com.beomsu.pay.assist.CsDraft;
-import com.beomsu.pay.assist.DraftService;
+import com.beomsu.pay.assist.draft.DraftService;
+import com.beomsu.pay.assist.draft.CsDraft;
+import com.beomsu.pay.assist.draft.CsDraft;
+import com.beomsu.pay.assist.draft.DraftService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;

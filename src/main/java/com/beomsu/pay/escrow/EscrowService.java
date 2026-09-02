@@ -1,5 +1,6 @@
 package com.beomsu.pay.escrow;
 
+import com.beomsu.pay.payment.recovery.PaymentRecoveryService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

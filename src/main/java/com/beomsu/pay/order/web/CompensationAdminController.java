@@ -1,8 +1,11 @@
 package com.beomsu.pay.order.web;
 
-import com.beomsu.pay.order.CompensationAdminService;
-import com.beomsu.pay.order.CompensationStatus;
-import com.beomsu.pay.order.CompensationTaskView;
+import com.beomsu.pay.order.compensation.CompensationTaskView;
+import com.beomsu.pay.order.compensation.CompensationStatus;
+import com.beomsu.pay.order.compensation.CompensationAdminService;
+import com.beomsu.pay.order.compensation.CompensationAdminService;
+import com.beomsu.pay.order.compensation.CompensationStatus;
+import com.beomsu.pay.order.compensation.CompensationTaskView;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -1,6 +1,7 @@
 package com.beomsu.pay.payment.webhook;
 
-import com.beomsu.pay.payment.PaymentRecoveryService;
+import com.beomsu.pay.payment.recovery.PaymentRecoveryService;
+import com.beomsu.pay.payment.recovery.PaymentRecoveryService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;

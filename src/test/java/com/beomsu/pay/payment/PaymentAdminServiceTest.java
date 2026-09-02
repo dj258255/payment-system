@@ -1,5 +1,6 @@
 package com.beomsu.pay.payment;
 
+import com.beomsu.pay.payment.recovery.PaymentRecoveryService;
 import com.beomsu.pay.shared.Money;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

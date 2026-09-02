@@ -1,5 +1,8 @@
 package com.beomsu.pay.fraud;
 
+import com.beomsu.pay.fraud.review.FraudReviewStatus;
+import com.beomsu.pay.fraud.review.FraudReviewRepository;
+import com.beomsu.pay.fraud.review.FraudReview;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
 import com.beomsu.pay.payment.PaymentService;
 import org.junit.jupiter.api.BeforeEach;
