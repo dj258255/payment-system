@@ -1,9 +1,9 @@
 package com.beomsu.pay.fraud.review;
 
-import com.beomsu.pay.fraud.FraudService;
-import com.beomsu.pay.fraud.FraudResult;
-import com.beomsu.pay.fraud.FraudException;
-import com.beomsu.pay.fraud.FdsDecision;
+import com.beomsu.pay.fraud.internal.FraudService;
+import com.beomsu.pay.fraud.internal.FraudResult;
+import com.beomsu.pay.fraud.internal.FraudException;
+import com.beomsu.pay.fraud.internal.FdsDecision;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -1,7 +1,7 @@
 package com.beomsu.pay.wallet.web;
 
 import com.beomsu.pay.wallet.WalletService;
-import com.beomsu.pay.wallet.WalletView;
+import com.beomsu.pay.wallet.internal.WalletView;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;

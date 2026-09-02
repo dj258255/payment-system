@@ -1,5 +1,7 @@
 package com.beomsu.pay.payment;
 
+import com.beomsu.pay.payment.internal.PaymentRepository;
+import com.beomsu.pay.payment.internal.PaymentCancelTx;
 import com.beomsu.pay.payment.pg.PgCancelCommand;
 import com.beomsu.pay.payment.pg.PgCancelResult;
 import com.beomsu.pay.payment.pg.PgClient;

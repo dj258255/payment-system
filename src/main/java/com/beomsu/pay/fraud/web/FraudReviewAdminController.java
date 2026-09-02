@@ -1,5 +1,6 @@
 package com.beomsu.pay.fraud.web;
 
+import com.beomsu.pay.SecurityConfig;
 import com.beomsu.pay.fraud.review.FraudReviewView;
 import com.beomsu.pay.fraud.review.FraudReviewStatus;
 import com.beomsu.pay.fraud.review.FraudReviewAdminService;

@@ -1,5 +1,6 @@
 package com.beomsu.pay.notification.web;
 
+import com.beomsu.pay.SecurityConfig;
 import com.beomsu.pay.notification.consumption.DeadLetterView;
 import com.beomsu.pay.notification.consumption.DeadLetterView;
 import com.beomsu.pay.notification.NotificationAdminService;

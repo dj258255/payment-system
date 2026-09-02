@@ -1,7 +1,7 @@
 package com.beomsu.pay.ledger.web;
 
-import com.beomsu.pay.ledger.LedgerService;
-import com.beomsu.pay.ledger.LedgerView;
+import com.beomsu.pay.ledger.internal.LedgerService;
+import com.beomsu.pay.ledger.internal.LedgerView;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;

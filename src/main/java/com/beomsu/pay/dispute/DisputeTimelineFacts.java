@@ -1,5 +1,6 @@
 package com.beomsu.pay.dispute;
 
+import com.beomsu.pay.dispute.internal.DisputeRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

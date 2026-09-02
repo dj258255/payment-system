@@ -1,5 +1,7 @@
 package com.beomsu.pay.order;
 
+import com.beomsu.pay.order.internal.OrderRepository;
+import com.beomsu.pay.order.internal.Order;
 import java.time.Instant;
 import java.util.Optional;
 

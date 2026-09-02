@@ -14,3 +14,6 @@
         allowedDependencies = { "shared" }
 )
 package com.beomsu.pay.wallet;
+
+import com.beomsu.pay.wallet.internal.WalletTransaction;
+import com.beomsu.pay.wallet.internal.WalletException;

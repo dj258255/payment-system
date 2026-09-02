@@ -1,6 +1,6 @@
 package com.beomsu.pay.order.catalog;
 
-import com.beomsu.pay.order.OrderException;
+import com.beomsu.pay.order.internal.OrderException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;

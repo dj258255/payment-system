@@ -1,6 +1,6 @@
 package com.beomsu.pay.order.catalog;
 
-import com.beomsu.pay.order.OrderException;
+import com.beomsu.pay.order.internal.OrderException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

@@ -1,5 +1,6 @@
 package com.beomsu.pay.reconciliation;
 
+import com.beomsu.pay.reconciliation.internal.ReconRunSummary;
 import com.beomsu.pay.shared.Money;
 import com.beomsu.pay.reconciliation.ResolveCause;
 import org.junit.jupiter.api.DisplayName;

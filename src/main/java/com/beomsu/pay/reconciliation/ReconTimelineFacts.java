@@ -1,5 +1,6 @@
 package com.beomsu.pay.reconciliation;
 
+import com.beomsu.pay.reconciliation.internal.ReconciliationResultRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

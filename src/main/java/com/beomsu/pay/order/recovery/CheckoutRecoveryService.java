@@ -1,9 +1,9 @@
 package com.beomsu.pay.order.recovery;
 
-import com.beomsu.pay.order.OrderStatus;
-import com.beomsu.pay.order.OrderRepository;
-import com.beomsu.pay.order.Order;
-import com.beomsu.pay.order.CheckoutTx;
+import com.beomsu.pay.order.internal.OrderStatus;
+import com.beomsu.pay.order.internal.OrderRepository;
+import com.beomsu.pay.order.internal.Order;
+import com.beomsu.pay.order.internal.CheckoutTx;
 import com.beomsu.pay.payment.StuckPaymentInfo;
 import com.beomsu.pay.payment.ApprovalOutcome;
 import com.beomsu.pay.payment.PaymentService;

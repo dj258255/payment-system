@@ -1,8 +1,9 @@
 package com.beomsu.pay.subscription.web;
 
-import com.beomsu.pay.subscription.SubscriptionDetailView;
-import com.beomsu.pay.subscription.SubscriptionService;
-import com.beomsu.pay.subscription.SubscriptionView;
+import com.beomsu.pay.subscription.dunning.DunningScheduler;
+import com.beomsu.pay.subscription.internal.SubscriptionDetailView;
+import com.beomsu.pay.subscription.internal.SubscriptionService;
+import com.beomsu.pay.subscription.internal.SubscriptionView;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

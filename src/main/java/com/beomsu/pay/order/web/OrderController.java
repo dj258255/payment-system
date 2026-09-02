@@ -1,8 +1,8 @@
 package com.beomsu.pay.order.web;
 
-import com.beomsu.pay.order.CheckoutService;
-import com.beomsu.pay.order.CreateOrderResult;
-import com.beomsu.pay.order.OrderLine;
+import com.beomsu.pay.order.internal.CheckoutService;
+import com.beomsu.pay.order.internal.CreateOrderResult;
+import com.beomsu.pay.order.internal.OrderLine;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;

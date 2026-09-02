@@ -1,5 +1,7 @@
 package com.beomsu.pay.point;
 
+import com.beomsu.pay.point.internal.PointHistoryRepository;
+import com.beomsu.pay.order.internal.RefundAllocator;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

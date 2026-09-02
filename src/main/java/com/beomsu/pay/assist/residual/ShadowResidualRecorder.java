@@ -1,5 +1,6 @@
 package com.beomsu.pay.assist.residual;
 
+import com.beomsu.pay.assist.draft.ShadowDraftRecorder;
 import com.beomsu.pay.reconciliation.ReconciliationResolvedEvent;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;

@@ -1,6 +1,8 @@
 package com.beomsu.pay.order.catalog;
 
-import com.beomsu.pay.order.OrderException;
+import com.beomsu.pay.order.internal.OrderItem;
+import com.beomsu.pay.order.internal.Order;
+import com.beomsu.pay.order.internal.OrderException;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;

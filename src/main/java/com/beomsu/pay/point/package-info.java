@@ -9,3 +9,5 @@
         allowedDependencies = { "shared" }
 )
 package com.beomsu.pay.point;
+
+import com.beomsu.pay.point.internal.PointHistory;

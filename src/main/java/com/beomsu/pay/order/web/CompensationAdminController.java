@@ -1,5 +1,6 @@
 package com.beomsu.pay.order.web;
 
+import com.beomsu.pay.SecurityConfig;
 import com.beomsu.pay.order.compensation.CompensationTaskView;
 import com.beomsu.pay.order.compensation.CompensationStatus;
 import com.beomsu.pay.order.compensation.CompensationAdminService;

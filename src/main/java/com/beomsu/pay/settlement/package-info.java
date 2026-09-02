@@ -14,3 +14,5 @@
         allowedDependencies = { "shared", "payment", "escrow" }
 )
 package com.beomsu.pay.settlement;
+
+import com.beomsu.pay.escrow.EscrowReleasedEvent;

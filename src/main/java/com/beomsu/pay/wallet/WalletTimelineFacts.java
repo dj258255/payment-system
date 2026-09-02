@@ -1,5 +1,6 @@
 package com.beomsu.pay.wallet;
 
+import com.beomsu.pay.wallet.internal.WalletTransactionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

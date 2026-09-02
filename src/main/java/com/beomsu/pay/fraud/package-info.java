@@ -15,3 +15,5 @@
         allowedDependencies = { "shared", "payment" }
 )
 package com.beomsu.pay.fraud;
+
+import com.beomsu.pay.payment.PaymentConfirmedEvent;

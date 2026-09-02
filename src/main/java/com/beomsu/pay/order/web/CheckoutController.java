@@ -1,7 +1,8 @@
 package com.beomsu.pay.order.web;
 
-import com.beomsu.pay.order.CheckoutResult;
-import com.beomsu.pay.order.CheckoutService;
+import com.beomsu.pay.payment.web.PgSelectionController;
+import com.beomsu.pay.order.internal.CheckoutResult;
+import com.beomsu.pay.order.internal.CheckoutService;
 import com.beomsu.pay.order.idempotency.IdempotencyService;
 import com.beomsu.pay.shared.Money;
 import org.springframework.http.HttpStatus;

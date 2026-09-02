@@ -1,8 +1,12 @@
 package com.beomsu.pay.fraud.review;
 
-import com.beomsu.pay.fraud.FraudResult;
-import com.beomsu.pay.fraud.FraudException;
-import com.beomsu.pay.fraud.FdsDecision;
+import com.beomsu.pay.payment.internal.Payment;
+import com.beomsu.pay.order.internal.Order;
+import com.beomsu.pay.fraud.internal.FraudPostHocListener;
+import com.beomsu.pay.escrow.internal.EscrowHold;
+import com.beomsu.pay.fraud.internal.FraudResult;
+import com.beomsu.pay.fraud.internal.FraudException;
+import com.beomsu.pay.fraud.internal.FdsDecision;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;

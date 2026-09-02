@@ -1,8 +1,9 @@
 package com.beomsu.pay.dispute.web;
 
-import com.beomsu.pay.dispute.DisputeException;
-import com.beomsu.pay.dispute.DisputeService;
-import com.beomsu.pay.dispute.DisputeView;
+import com.beomsu.pay.SecurityConfig;
+import com.beomsu.pay.dispute.internal.DisputeException;
+import com.beomsu.pay.dispute.internal.DisputeService;
+import com.beomsu.pay.dispute.internal.DisputeView;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -1,5 +1,6 @@
 package com.beomsu.pay.payment;
 
+import com.beomsu.pay.order.internal.CheckoutTx;
 import com.beomsu.pay.payment.ApprovalOutcome;
 
 /**

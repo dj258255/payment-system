@@ -1,8 +1,8 @@
 package com.beomsu.pay.order.web;
 
-import com.beomsu.pay.order.OrderDetailView;
-import com.beomsu.pay.order.OrderQueryService;
-import com.beomsu.pay.order.OrderSummaryView;
+import com.beomsu.pay.order.internal.OrderDetailView;
+import com.beomsu.pay.order.internal.OrderQueryService;
+import com.beomsu.pay.order.internal.OrderSummaryView;
 import com.beomsu.pay.payment.PaymentDetailView;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
