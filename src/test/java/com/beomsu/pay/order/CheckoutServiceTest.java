@@ -547,6 +547,38 @@ class CheckoutServiceTest {
     }
 
     @Test
+    @DisplayName("앞 결제가 실제로 승인돼 있었으면 ORDER_ALREADY_PAID 로 알린다")
+    void alreadyPaidWhenPriorAttemptSucceeded() {
+        Order order = orderOf(100L, 2);
+        order.startPayment();
+        // 해소가 앞 결제를 승인으로 확정해 주문이 PAID 가 된 상황을 만든다.
+        doAnswer(inv -> { order.markPaid(); return null; })
+                .when(recoveryService).resolveNow(order);
+
+        assertThatThrownBy(() ->
+                service.confirm(order.getOrderNo(), "pk_B", Money.krw(20_000), 0, 0, 1L))
+                .isInstanceOf(OrderException.class)
+                .hasFieldOrPropertyWithValue("code", "ORDER_ALREADY_PAID");
+
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("해소해도 결과를 모르면 PAYMENT_RESULT_PENDING 으로 기다리게 한다")
+    void pendingWhenStillUnknown() {
+        Order order = orderOf(100L, 2);
+        order.startPayment();
+        // 해소가 아무것도 못 바꿨다 — 여전히 미확정.
+
+        assertThatThrownBy(() ->
+                service.confirm(order.getOrderNo(), "pk_B", Money.krw(20_000), 0, 0, 1L))
+                .isInstanceOf(OrderException.class)
+                .hasFieldOrPropertyWithValue("code", "PAYMENT_RESULT_PENDING");
+
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any());
+    }
+
+    @Test
     @DisplayName("해소가 실패해도 이중결제로 가지 않는다 — 주문이 막힌 채 배치로 넘어간다")
     void resolveFailureFallsBackToBatch() {
         Order order = orderOf(100L, 2);

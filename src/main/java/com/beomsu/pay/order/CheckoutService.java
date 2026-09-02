@@ -147,15 +147,35 @@ public class CheckoutService {
      * 떨어질 뿐 이중결제로 가지 않는다.
      */
     private void resolvePendingAttempt(String orderNo) {
-        orderRepository.findByOrderNo(orderNo)
-                .filter(o -> o.getStatus() == OrderStatus.PAYMENT_IN_PROGRESS)
-                .ifPresent(order -> {
-                    try {
-                        recoveryService.resolveNow(order);
-                    } catch (Exception e) {
-                        // 삼키는 이유는 위 javadoc 참고 — 실패하면 배치가 맡는다.
-                        log.warn("재시도 시점 미확정 해소 실패 orderNo={} : {}", orderNo, e.getMessage());
-                    }
-                });
+        Order order = orderRepository.findByOrderNo(orderNo).orElse(null);
+        if (order == null || order.getStatus() != OrderStatus.PAYMENT_IN_PROGRESS) {
+            return;   // 미확정 없음 — 정상 경로
+        }
+        try {
+            recoveryService.resolveNow(order);
+        } catch (Exception e) {
+            // 삼키는 이유는 위 javadoc 참고 — 실패하면 배치가 맡는다.
+            log.warn("재시도 시점 미확정 해소 실패 orderNo={} : {}", orderNo, e.getMessage());
+        }
+
+        // 해소 결과를 다시 읽어 <무슨 일이 일어났는지>를 응답으로 구분한다. 여기서 그냥 진행시키면
+        // 아래 startPayment 가 "허용되지 않은 상태 전이입니다"로 막는데, 고객은 카드가 거절된 건지
+        // 우리가 막는 건지 알 수 없다.
+        OrderStatus after = orderRepository.findByOrderNo(orderNo)
+                .map(Order::getStatus).orElse(null);
+        if (after == OrderStatus.PAID) {
+            throw OrderException.alreadyPaid(orderNo);              // 앞 결제가 실제로 승인돼 있었다
+        }
+        if (after == OrderStatus.PAYMENT_IN_PROGRESS) {
+            throw OrderException.paymentResultPending(orderNo);     // 아직 모른다 — 새 승인을 내보내지 않는다
+        }
+        // PENDING_PAYMENT 로 돌아왔다면 앞 결제는 승인이 아니었다. 재시도를 그대로 진행한다.
+        //
+        // <b>여기에 남는 창이 하나 있다.</b> 조회가 NOT_FOUND 를 줘서 앞 결제를 버렸는데, 그 승인이
+        // 사실은 PG 에서 아직 진행 중이었을 수 있다. 그러면 뒤늦게 승인이 나 <b>둘 다 승인</b>된다.
+        //
+        // 이건 조회로는 못 막는다. 잡는 곳은 <b>대사</b>다. 버린 결제는 완료 이벤트를 안 내보내
+        // 내부 기록이 없는데 PG 정산 파일에는 있으므로 EXTERNAL_ONLY 로 잡히고, 원인은
+        // INTERNAL_RECORD_LOST 다 — 여덟 원인 중 유일하게 모델을 켜 둔 유형이다.
     }
 }
