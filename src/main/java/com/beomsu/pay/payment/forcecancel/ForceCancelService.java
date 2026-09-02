@@ -1,7 +1,7 @@
 package com.beomsu.pay.payment.forcecancel;
 
 import com.beomsu.pay.payment.PaymentService;
-import com.beomsu.pay.payment.PaymentRepository;
+import com.beomsu.pay.payment.internal.PaymentRepository;
 import com.beomsu.pay.payment.PaymentException;
 import com.beomsu.pay.shared.Money;
 import lombok.RequiredArgsConstructor;

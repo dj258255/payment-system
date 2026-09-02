@@ -1,5 +1,7 @@
 package com.beomsu.pay.payment;
 
+import com.beomsu.pay.payment.internal.TriggeredBy;
+import com.beomsu.pay.payment.internal.Payment;
 import com.beomsu.pay.payment.pg.PgCancelCommand;
 import com.beomsu.pay.shared.Money;
 import org.junit.jupiter.api.DisplayName;

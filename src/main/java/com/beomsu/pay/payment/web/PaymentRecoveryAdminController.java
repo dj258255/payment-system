@@ -1,8 +1,9 @@
 package com.beomsu.pay.payment.web;
 
-import com.beomsu.pay.payment.PaymentAdminService;
-import com.beomsu.pay.payment.PaymentSyncView;
-import com.beomsu.pay.payment.UnknownPaymentView;
+import com.beomsu.pay.SecurityConfig;
+import com.beomsu.pay.payment.internal.PaymentAdminService;
+import com.beomsu.pay.payment.internal.PaymentSyncView;
+import com.beomsu.pay.payment.internal.UnknownPaymentView;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

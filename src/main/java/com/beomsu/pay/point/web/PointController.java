@@ -1,7 +1,7 @@
 package com.beomsu.pay.point.web;
 
 import com.beomsu.pay.point.PointService;
-import com.beomsu.pay.point.PointView;
+import com.beomsu.pay.point.internal.PointView;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;

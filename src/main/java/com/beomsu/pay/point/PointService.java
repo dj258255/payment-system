@@ -1,5 +1,12 @@
 package com.beomsu.pay.point;
 
+import com.beomsu.pay.point.internal.PointView;
+import com.beomsu.pay.point.internal.PointHistoryType;
+import com.beomsu.pay.point.internal.PointHistoryRepository;
+import com.beomsu.pay.point.internal.PointHistory;
+import com.beomsu.pay.point.internal.PointException;
+import com.beomsu.pay.point.internal.PointAccountRepository;
+import com.beomsu.pay.point.internal.PointAccount;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

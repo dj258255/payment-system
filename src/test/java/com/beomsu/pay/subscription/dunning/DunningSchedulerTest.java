@@ -1,6 +1,6 @@
 package com.beomsu.pay.subscription.dunning;
 
-import com.beomsu.pay.subscription.SubscriptionService;
+import com.beomsu.pay.subscription.internal.SubscriptionService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

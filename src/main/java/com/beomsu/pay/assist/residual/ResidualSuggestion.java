@@ -1,5 +1,6 @@
 package com.beomsu.pay.assist.residual;
 
+import com.beomsu.pay.assist.draft.NumericProvenanceGuard;
 import com.beomsu.pay.reconciliation.ResolveCause;
 import com.beomsu.pay.reconciliation.ResolveCause;
 

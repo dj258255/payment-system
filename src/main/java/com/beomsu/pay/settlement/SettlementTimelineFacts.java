@@ -1,5 +1,7 @@
 package com.beomsu.pay.settlement;
 
+import com.beomsu.pay.settlement.internal.SettlementItemRepository;
+import com.beomsu.pay.settlement.internal.Settlement;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

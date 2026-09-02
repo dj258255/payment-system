@@ -1,5 +1,7 @@
 package com.beomsu.pay.auth;
 
+import com.beomsu.pay.auth.internal.AuthTokenService;
+import com.beomsu.pay.auth.internal.AuthException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;

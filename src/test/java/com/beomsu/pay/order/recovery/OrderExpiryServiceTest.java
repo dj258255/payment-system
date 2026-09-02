@@ -1,9 +1,9 @@
 package com.beomsu.pay.order.recovery;
 
-import com.beomsu.pay.order.OrderStatus;
-import com.beomsu.pay.order.OrderRepository;
-import com.beomsu.pay.order.OrderItem;
-import com.beomsu.pay.order.Order;
+import com.beomsu.pay.order.internal.OrderStatus;
+import com.beomsu.pay.order.internal.OrderRepository;
+import com.beomsu.pay.order.internal.OrderItem;
+import com.beomsu.pay.order.internal.Order;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

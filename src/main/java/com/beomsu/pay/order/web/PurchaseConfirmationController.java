@@ -1,7 +1,7 @@
 package com.beomsu.pay.order.web;
 
-import com.beomsu.pay.order.PurchaseConfirmationResult;
-import com.beomsu.pay.order.PurchaseConfirmationService;
+import com.beomsu.pay.order.internal.PurchaseConfirmationResult;
+import com.beomsu.pay.order.internal.PurchaseConfirmationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 

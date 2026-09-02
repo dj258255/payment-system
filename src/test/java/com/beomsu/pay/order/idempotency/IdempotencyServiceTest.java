@@ -1,7 +1,7 @@
 package com.beomsu.pay.order.idempotency;
 
-import com.beomsu.pay.order.CheckoutResult;
-import com.beomsu.pay.order.OrderStatus;
+import com.beomsu.pay.order.internal.CheckoutResult;
+import com.beomsu.pay.order.internal.OrderStatus;
 import com.beomsu.pay.payment.PaymentStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;

@@ -2,9 +2,9 @@ package com.beomsu.pay.reconciliation.cause;
 
 import com.beomsu.pay.reconciliation.ResolveCause;
 import com.beomsu.pay.reconciliation.CauseSuggestion;
-import com.beomsu.pay.reconciliation.ReconciliationResultRepository;
-import com.beomsu.pay.reconciliation.ReconciliationResult;
-import com.beomsu.pay.reconciliation.InternalRecord;
+import com.beomsu.pay.reconciliation.internal.ReconciliationResultRepository;
+import com.beomsu.pay.reconciliation.internal.ReconciliationResult;
+import com.beomsu.pay.reconciliation.internal.InternalRecord;
 import com.beomsu.pay.payment.PaymentTimelineFacts;
 import com.beomsu.pay.payment.PaymentTimelineFacts.PaymentState;
 import org.springframework.beans.factory.annotation.Value;

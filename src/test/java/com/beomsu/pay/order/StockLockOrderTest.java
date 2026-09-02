@@ -1,5 +1,6 @@
 package com.beomsu.pay.order;
 
+import com.beomsu.pay.order.internal.CheckoutTx;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

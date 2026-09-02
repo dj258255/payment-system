@@ -1,5 +1,7 @@
 package com.beomsu.pay.payment;
 
+import com.beomsu.pay.payment.internal.PaymentRepository;
+import com.beomsu.pay.payment.internal.Payment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

@@ -14,3 +14,5 @@
         allowedDependencies = { "shared" }
 )
 package com.beomsu.pay.member;
+
+import com.beomsu.pay.SecurityConfig;

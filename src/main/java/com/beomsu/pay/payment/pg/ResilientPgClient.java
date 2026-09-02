@@ -1,5 +1,6 @@
 package com.beomsu.pay.payment.pg;
 
+import com.beomsu.pay.payment.PaymentService;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;

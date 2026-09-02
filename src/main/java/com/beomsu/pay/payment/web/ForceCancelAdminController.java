@@ -1,5 +1,6 @@
 package com.beomsu.pay.payment.web;
 
+import com.beomsu.pay.SecurityConfig;
 import com.beomsu.pay.payment.forcecancel.ForceCancelView;
 import com.beomsu.pay.payment.forcecancel.ForceCancelStatus;
 import com.beomsu.pay.payment.forcecancel.ForceCancelService;

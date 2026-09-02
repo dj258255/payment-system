@@ -1,5 +1,7 @@
 package com.beomsu.pay.ledger;
 
+import com.beomsu.pay.ledger.internal.LedgerTransactionRepository;
+import com.beomsu.pay.ledger.internal.LedgerEntry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

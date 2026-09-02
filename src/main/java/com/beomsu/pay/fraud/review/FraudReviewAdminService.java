@@ -1,7 +1,7 @@
 package com.beomsu.pay.fraud.review;
 
-import com.beomsu.pay.fraud.FraudService;
-import com.beomsu.pay.fraud.FraudException;
+import com.beomsu.pay.fraud.internal.FraudService;
+import com.beomsu.pay.fraud.internal.FraudException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;

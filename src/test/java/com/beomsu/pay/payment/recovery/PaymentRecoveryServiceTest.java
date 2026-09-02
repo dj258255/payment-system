@@ -1,9 +1,9 @@
 package com.beomsu.pay.payment.recovery;
 
 import com.beomsu.pay.payment.PaymentStatus;
-import com.beomsu.pay.payment.PaymentRepository;
+import com.beomsu.pay.payment.internal.PaymentRepository;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
-import com.beomsu.pay.payment.Payment;
+import com.beomsu.pay.payment.internal.Payment;
 import com.beomsu.pay.payment.pg.PgClient;
 import com.beomsu.pay.payment.pg.PgPaymentStatus;
 import com.beomsu.pay.payment.pg.PgQueryResult;

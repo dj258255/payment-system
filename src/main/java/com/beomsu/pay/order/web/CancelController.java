@@ -1,7 +1,7 @@
 package com.beomsu.pay.order.web;
 
-import com.beomsu.pay.order.CancelResult;
-import com.beomsu.pay.order.CancelService;
+import com.beomsu.pay.order.internal.CancelResult;
+import com.beomsu.pay.order.internal.CancelService;
 import com.beomsu.pay.order.idempotency.IdempotencyService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

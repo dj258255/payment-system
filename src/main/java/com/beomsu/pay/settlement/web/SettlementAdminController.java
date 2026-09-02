@@ -1,8 +1,9 @@
 package com.beomsu.pay.settlement.web;
 
-import com.beomsu.pay.settlement.Settlement;
-import com.beomsu.pay.settlement.SettlementAdminService;
-import com.beomsu.pay.settlement.SettlementView;
+import com.beomsu.pay.SecurityConfig;
+import com.beomsu.pay.settlement.internal.Settlement;
+import com.beomsu.pay.settlement.internal.SettlementAdminService;
+import com.beomsu.pay.settlement.internal.SettlementView;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
