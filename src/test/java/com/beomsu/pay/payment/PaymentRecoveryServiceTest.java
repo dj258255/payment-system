@@ -34,7 +34,7 @@ class PaymentRecoveryServiceTest {
 
     /** UNKNOWN 상태로 방치된 결제 하나를 만들어 리포지토리가 돌려주게 한다. */
     private Payment unknownPayment(String paymentKey) {
-        Payment p = Payment.initiate("order-1", Money.of(10_000));
+        Payment p = Payment.initiate("order-1", Money.krw(10_000));
         p.startApproval(paymentKey);
         p.markUnknown("PG 응답 타임아웃");
         when(repository.findByStatusAndRequestedAtBefore(eq(PaymentStatus.UNKNOWN), any(Instant.class)))

@@ -120,7 +120,7 @@ class SettlementServiceTest {
         service.confirmSettlement("order-1", releaseDate);
 
         // 릴리스일 배치가 이 항목을 집계 대상으로 조회한다(승인일이 아니라).
-        when(settlementRepository.existsBySettlementDate(releaseDate)).thenReturn(false);
+        when(settlementRepository.existsBySettlementDateAndCurrency(releaseDate, "KRW")).thenReturn(false);
         when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, releaseDate))
                 .thenReturn(List.of(item));
         when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -147,7 +147,7 @@ class SettlementServiceTest {
     @Test
     @DisplayName("정산 배치: CONFIRMED만 합계 → 2.7% 수수료+부가세(내림) → net 저장 + 항목 SETTLED")
     void settleAggregatesFeeAndMarksItems() {
-        when(settlementRepository.existsBySettlementDate(DATE)).thenReturn(false);
+        when(settlementRepository.existsBySettlementDateAndCurrency(DATE, "KRW")).thenReturn(false);
         SettlementItem item1 = confirmedItem(1L, "order-1", 40_000);
         SettlementItem item2 = confirmedItem(2L, "order-2", 60_000);
         when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
@@ -178,7 +178,7 @@ class SettlementServiceTest {
     @Test
     @DisplayName("수수료 검산: gross=100,000 → fee 2700, feeVat 270, net 97030")
     void settleFeeModelExactValues() {
-        when(settlementRepository.existsBySettlementDate(DATE)).thenReturn(false);
+        when(settlementRepository.existsBySettlementDateAndCurrency(DATE, "KRW")).thenReturn(false);
         SettlementItem item = confirmedItem(1L, "order-1", 100_000);
         when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
                 .thenReturn(List.of(item));
@@ -195,7 +195,7 @@ class SettlementServiceTest {
     @Test
     @DisplayName("정산 배치는 CONFIRMED만 조회한다 — PENDING_CONFIRMATION(구매확정 전)은 집계 제외")
     void settleQueriesOnlyConfirmed() {
-        when(settlementRepository.existsBySettlementDate(DATE)).thenReturn(false);
+        when(settlementRepository.existsBySettlementDateAndCurrency(DATE, "KRW")).thenReturn(false);
         SettlementItem confirmed = confirmedItem(1L, "order-1", 10_000);
         when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
                 .thenReturn(List.of(confirmed));
@@ -212,7 +212,7 @@ class SettlementServiceTest {
     @Test
     @DisplayName("이미 정산된 날짜 재실행: 아무 것도 하지 않는다 (배치 멱등)")
     void idempotentOnAlreadySettledDate() {
-        when(settlementRepository.existsBySettlementDate(DATE)).thenReturn(true);
+        when(settlementRepository.existsBySettlementDateAndCurrency(DATE, "KRW")).thenReturn(true);
 
         Settlement settlement = service.settle(DATE);
 
@@ -224,7 +224,7 @@ class SettlementServiceTest {
     @Test
     @DisplayName("집계 대상 CONFIRMED 항목이 없으면 빈 정산을 만들지 않는다")
     void noItemsProducesNoSettlement() {
-        when(settlementRepository.existsBySettlementDate(DATE)).thenReturn(false);
+        when(settlementRepository.existsBySettlementDateAndCurrency(DATE, "KRW")).thenReturn(false);
         when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
                 .thenReturn(List.of());
 

@@ -54,7 +54,7 @@ class CheckoutRecoveryServiceTest {
         int recovered = service.recoverStuckCheckouts();
 
         assertThat(recovered).isEqualTo(1);
-        verify(checkoutTx).settle(eq(order.getOrderNo()), eq(1L), eq(Money.of(14_000)), eq(6_000L), eq(0L),
+        verify(checkoutTx).settle(eq(order.getOrderNo()), eq(1L), eq(Money.krw(14_000)), eq(6_000L), eq(0L),
                 any(ApprovalOutcome.class));
     }
 
@@ -69,7 +69,7 @@ class CheckoutRecoveryServiceTest {
         service.recoverStuckCheckouts();
 
         // 전액 포인트: cardAmount 0, pointAmount 20,000, outcome null
-        verify(checkoutTx).settle(eq(order.getOrderNo()), isNull(), eq(Money.of(0)), eq(20_000L), eq(0L), isNull());
+        verify(checkoutTx).settle(eq(order.getOrderNo()), isNull(), eq(Money.krw(0)), eq(20_000L), eq(0L), isNull());
     }
 
     @Test

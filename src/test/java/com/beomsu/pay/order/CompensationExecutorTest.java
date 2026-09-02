@@ -48,7 +48,7 @@ class CompensationExecutorTest {
 
         executor.attempt(1L);
 
-        verify(paymentService).cancelByOrderNo("ord-1", Money.of(14_000),
+        verify(paymentService).cancelByOrderNo("ord-1", Money.krw(14_000),
                 "재고 부족: 카드 승인 후 자동 망취소");
         assertThat(task.getStatus()).isEqualTo(CompensationStatus.DONE);
         assertThat(counter("compensation.processed", "success")).isEqualTo(1.0);

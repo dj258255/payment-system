@@ -35,7 +35,7 @@ class ForceCancelServiceTest {
     }
 
     private Payment payment() {
-        return Payment.initiate("ord-1", Money.of(10_000));
+        return Payment.initiate("ord-1", Money.krw(10_000));
     }
 
     private ForceCancelRequest requestedBy(String requester) {
@@ -99,7 +99,7 @@ class ForceCancelServiceTest {
         assertThat(view.status()).isEqualTo("EXECUTED");
         assertThat(view.approvedBy()).isEqualTo("admin2");
         // 승인=실행: 기존 PaymentService.cancel을 재사용해 실제 취소한다.
-        verify(paymentService).cancel(eq(10L), eq(Money.of(5_000)), eq("분쟁 정정"));
+        verify(paymentService).cancel(eq(10L), eq(Money.krw(5_000)), eq("분쟁 정정"));
         verify(repository).saveAndFlush(req);
     }
 

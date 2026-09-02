@@ -62,7 +62,7 @@ public class CheckoutRecoveryService {
                 ApprovalOutcome outcome = info.map(StuckPaymentInfo::outcome).orElse(null);
                 Long paymentId = info.map(StuckPaymentInfo::paymentId).orElse(null);
 
-                checkoutTx.settle(order.getOrderNo(), paymentId, Money.of(cardAmount),
+                checkoutTx.settle(order.getOrderNo(), paymentId, Money.krw(cardAmount),
                         pointAmount, walletAmount, outcome);
                 recovered++;
             } catch (Exception e) {

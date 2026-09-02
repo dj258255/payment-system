@@ -99,7 +99,7 @@ public class CheckoutService {
     public CheckoutResult confirm(String orderNo, String paymentKey, Money cardAmount,
                                   long pointAmount, long walletAmount, long authenticatedUserId) {
         // 0. 음수 방어 — 음수 금액으로 검증 우회·오버플로를 시도할 수 없게 한다. (DB 없음)
-        if (pointAmount < 0 || walletAmount < 0 || cardAmount.amount() < 0) {
+        if (pointAmount < 0 || walletAmount < 0 || cardAmount.minorUnit() < 0) {
             throw new OrderException("INVALID_REQUEST", "결제 금액은 음수일 수 없습니다.");
         }
 
@@ -110,7 +110,7 @@ public class CheckoutService {
 
         // Phase 2 (tx 밖) — PG 승인: 외부 HTTP 콜을 트랜잭션 밖에서 한다. 이 동안 DB 커넥션 0개 점유
         // → 느린 PG가 커넥션 풀을 마르게 하지 않는다(ADR-007). 카드 몫이 0이면(포인트+월렛 전액) PG 콜을 생략한다.
-        ApprovalOutcome outcome = (cardAmount.amount() > 0)
+        ApprovalOutcome outcome = (cardAmount.minorUnit() > 0)
                 ? paymentService.pgApprove(orderNo, paymentKey, cardAmount)
                 : null;
 

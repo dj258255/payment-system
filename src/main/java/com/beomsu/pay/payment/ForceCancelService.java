@@ -51,7 +51,7 @@ public class ForceCancelService {
         ForceCancelRequest req = load(requestId);
         req.approve(approver);   // maker-checker 가드(요청자==승인자면 MAKER_CHECKER_VIOLATION)
         // 가드 통과 후에만 실제 취소를 실행한다(기존 PaymentService.cancel 재사용).
-        paymentService.cancel(req.getPaymentId(), Money.of(req.getCancelAmount()), req.getReason());
+        paymentService.cancel(req.getPaymentId(), Money.krw(req.getCancelAmount()), req.getReason());
         repository.saveAndFlush(req);
         return ForceCancelView.of(req);
     }

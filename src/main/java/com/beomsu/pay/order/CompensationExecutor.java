@@ -43,7 +43,7 @@ public class CompensationExecutor {
             return; // 없거나 이미 처리됨 — 멱등
         }
         try {
-            paymentService.cancelByOrderNo(task.getOrderNo(), Money.of(task.getAmount()), task.getReason());
+            paymentService.cancelByOrderNo(task.getOrderNo(), Money.krw(task.getAmount()), task.getReason());
             task.markDone();
             meterRegistry.counter("compensation.processed", "outcome", "success").increment();
         } catch (PaymentException e) {

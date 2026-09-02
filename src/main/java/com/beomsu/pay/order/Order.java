@@ -107,8 +107,8 @@ public class Order {
      * order가 total_amount의 소유자이므로 검증도 여기서 수행한다.
      */
     public void verifyAmount(Money requested) {
-        if (requested.amount() != totalAmount) {
-            throw OrderException.amountMismatch(totalAmount, requested.amount());
+        if (requested.minorUnit() != totalAmount) {
+            throw OrderException.amountMismatch(totalAmount, requested.minorUnit());
         }
     }
 
@@ -161,7 +161,7 @@ public class Order {
     }
 
     public Money totalAsMoney() {
-        return Money.of(totalAmount);
+        return Money.krw(totalAmount);
     }
 
     public List<OrderItem> getItems() {

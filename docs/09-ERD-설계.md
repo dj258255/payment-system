@@ -334,12 +334,15 @@ CREATE TABLE settlements (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     merchant_id     BIGINT       NOT NULL,
     settlement_date DATE         NOT NULL,             -- 정산 기준일
-    gross_amount    BIGINT       NOT NULL,             -- 거래 총액
+    currency        CHAR(3)      NOT NULL,             -- ISO 4217. 정산은 통화별로 따로 만든다
+    gross_amount    BIGINT       NOT NULL,             -- 거래 총액(해당 통화의 최소 단위)
     fee_amount      BIGINT       NOT NULL,             -- 수수료 합
     net_amount      BIGINT       NOT NULL,             -- 지급액 (gross - fee) — 불변식 검증 대상
     status          VARCHAR(20)  NOT NULL,             -- CREATED / CONFIRMED / PAID
     created_at      DATETIME(6)  NOT NULL,
-    UNIQUE KEY uk_settlement (merchant_id, settlement_date)   -- ★ 배치 재실행 멱등성의 핵심
+    UNIQUE KEY uk_settlement (merchant_id, settlement_date, currency)   -- ★ 배치 재실행 멱등성의 핵심
+    -- 통화가 키에 없으면 같은 날 KRW·USD 정산이 둘 다 못 나온다. 그렇다고 제약을 풀면
+    -- 같은 날짜를 두 번 집계해 지급이 두 배가 되는 것을 못 막는다(ADR-016).
 );
 
 CREATE TABLE settlement_details (   -- 실제 이름: settlement_items

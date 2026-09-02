@@ -36,7 +36,7 @@ class SettlementAdminServiceTest {
     @Test
     @DisplayName("list: 정산을 페이지 뷰 record로 매핑한다")
     void listMapsToView() {
-        Settlement s = Settlement.of(DATE, 100_000, 2_700, 270, 3, PAYOUT);
+        Settlement s = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 3, PAYOUT);
         Pageable pageable = PageRequest.of(0, 20);
         when(repository.findAll(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(s), pageable, 1));
@@ -57,7 +57,7 @@ class SettlementAdminServiceTest {
     @Test
     @DisplayName("confirmPayout: CREATED → PAID_OUT 전이하고 saveAndFlush로 명시 영속")
     void confirmPayoutTransitionsAndPersists() {
-        Settlement s = Settlement.of(DATE, 100_000, 2_700, 270, 3, PAYOUT);
+        Settlement s = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 3, PAYOUT);
         when(repository.findById(7L)).thenReturn(Optional.of(s));
         when(repository.saveAndFlush(s)).thenReturn(s);
 
@@ -85,7 +85,7 @@ class SettlementAdminServiceTest {
     @Test
     @DisplayName("runSettlement: settle에 위임한다")
     void runSettlementDelegates() {
-        Settlement s = Settlement.of(DATE, 100_000, 2_700, 270, 3, PAYOUT);
+        Settlement s = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 3, PAYOUT);
         when(settlementService.settle(DATE)).thenReturn(s);
 
         Settlement result = service.runSettlement(DATE);

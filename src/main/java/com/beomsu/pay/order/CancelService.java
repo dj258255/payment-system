@@ -40,7 +40,7 @@ public class CancelService {
 
         // Phase 2 (tx 밖) — 카드 취소. 이 동안 DB 커넥션 0개 점유.
         if (plan.alloc().fromCard() > 0) {
-            paymentService.cancelByOrderNo(orderNo, Money.of(plan.alloc().fromCard()), reason);
+            paymentService.cancelByOrderNo(orderNo, Money.krw(plan.alloc().fromCard()), reason);
         }
 
         // Phase 3 (tx) — 내부 자원 환불·적립 회수·재고 복원·주문 상태 확정.

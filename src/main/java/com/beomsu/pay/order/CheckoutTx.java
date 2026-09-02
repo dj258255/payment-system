@@ -59,11 +59,11 @@ class CheckoutTx {
 
         long requestedTotal;
         try {
-            requestedTotal = Math.addExact(Math.addExact(cardAmount.amount(), pointAmount), walletAmount);
+            requestedTotal = Math.addExact(Math.addExact(cardAmount.minorUnit(), pointAmount), walletAmount);
         } catch (ArithmeticException e) {
             throw new OrderException("AMOUNT_OVERFLOW", "결제 금액이 허용 범위를 초과했습니다.");
         }
-        order.verifyAmount(Money.of(requestedTotal));
+        order.verifyAmount(Money.krw(requestedTotal));
 
         order.startPayment(); // PENDING_PAYMENT → PAYMENT_IN_PROGRESS (조건부 전이, 이중지불 차단)
 
@@ -72,7 +72,7 @@ class CheckoutTx {
         }
 
         Long paymentId = null;
-        if (cardAmount.amount() > 0) {
+        if (cardAmount.minorUnit() > 0) {
             paymentId = paymentService.beginApproval(orderNo, paymentKey, cardAmount);
         }
         orderRepository.saveAndFlush(order);
@@ -130,7 +130,7 @@ class CheckoutTx {
                 order.markPaid();
                 // 실결제액(카드+월렛, 포인트 사용분 제외) 기준 적립 — 포인트로 포인트를 버는 이중적립 방지.
                 // earn은 orderNo 멱등이라 복구가 이 성공분기를 재실행해도 이중적립되지 않는다.
-                long paidByMoney = cardAmount.amount() + walletAmount;
+                long paidByMoney = cardAmount.minorUnit() + walletAmount;
                 pointService.earn(order.getUserId(), paidByMoney * EARN_RATE_PERCENT / 100, orderNo);
             } else {
                 // 승인 후 재고 부족 → 자동 보상(망취소). 예외를 던지지 않아 tx는 깨끗이 커밋된다.
@@ -143,8 +143,8 @@ class CheckoutTx {
                 if (walletAmount > 0) {
                     walletService.restore(order.getUserId(), walletAmount, orderNo); // 예약 해제(멱등)
                 }
-                if (cardAmount.amount() > 0) {
-                    compensationService.enqueueNetworkCancel(orderNo, cardAmount.amount(),
+                if (cardAmount.minorUnit() > 0) {
+                    compensationService.enqueueNetworkCancel(orderNo, cardAmount.minorUnit(),
                             "재고 부족: 카드 승인 후 자동 망취소");
                 }
                 order.markFailed();

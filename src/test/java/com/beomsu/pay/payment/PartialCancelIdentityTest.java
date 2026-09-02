@@ -26,10 +26,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PartialCancelIdentityTest {
 
     private static final long TOTAL = 20_000L;
-    private static final Money PART = Money.of(5_000);
+    private static final Money PART = Money.krw(5_000);
 
     private static Payment approvedPayment() {
-        Payment payment = Payment.initiate("order-1", Money.of(TOTAL));
+        Payment payment = Payment.initiate("order-1", Money.krw(TOTAL));
         payment.startApproval("pk-1");
         payment.approve("CARD");
         return payment;
@@ -49,8 +49,8 @@ class PartialCancelIdentityTest {
                 .as("금액이 같아도 취소 건이 다르면 순번이 갈려야 한다")
                 .isEqualTo(2);
 
-        String firstKey = new PgCancelCommand("pk-1", PART.amount(), "1차", firstSeq).idempotencyKey();
-        String secondKey = new PgCancelCommand("pk-1", PART.amount(), "2차", secondSeq).idempotencyKey();
+        String firstKey = new PgCancelCommand("pk-1", PART.minorUnit(), "1차", firstSeq).idempotencyKey();
+        String secondKey = new PgCancelCommand("pk-1", PART.minorUnit(), "2차", secondSeq).idempotencyKey();
         assertThat(firstKey)
                 .as("멱등키가 같으면 PG가 첫 취소 응답을 재생해 두 번째 취소가 아예 나가지 않는다")
                 .isNotEqualTo(secondKey);
@@ -66,8 +66,8 @@ class PartialCancelIdentityTest {
         int retry = payment.getCancelCount() + 1;
 
         assertThat(retry).isEqualTo(attempt);
-        assertThat(new PgCancelCommand("pk-1", PART.amount(), "r", attempt).idempotencyKey())
-                .isEqualTo(new PgCancelCommand("pk-1", PART.amount(), "r", retry).idempotencyKey());
+        assertThat(new PgCancelCommand("pk-1", PART.minorUnit(), "r", attempt).idempotencyKey())
+                .isEqualTo(new PgCancelCommand("pk-1", PART.minorUnit(), "r", retry).idempotencyKey());
     }
 
     @Test

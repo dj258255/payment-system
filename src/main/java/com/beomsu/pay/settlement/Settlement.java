@@ -22,7 +22,7 @@ import java.time.LocalDate;
 @Entity
 @Table(name = "settlements",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_settlement_date", columnNames = {"settlementDate"}))
+                name = "uk_settlement_date_currency", columnNames = {"settlementDate", "currency"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Settlement {
@@ -31,8 +31,17 @@ public class Settlement {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private LocalDate settlementDate;
+
+    /**
+     * 정산 통화(ISO 4217).
+     *
+     * <p>정산은 <b>통화별로 따로</b> 만든다. 하루치 합계를 하나로 두면 KRW 와 USD 가 한 숫자에
+     * 섞여 지급액이 뜻을 잃는다. 그래서 유니크도 {@code (settlementDate, currency)}다.
+     */
+    @Column(nullable = false, length = 3)
+    private String currency;
 
     /** 거래 총액 */
     @Column(nullable = false)
@@ -82,9 +91,10 @@ public class Settlement {
         this.netAmount = gross - fee - feeVat;
     }
 
-    private Settlement(LocalDate settlementDate, long grossAmount, long feeAmount, long feeVatAmount,
-                       int itemCount, LocalDate payoutDate) {
+    private Settlement(LocalDate settlementDate, String currency, long grossAmount, long feeAmount,
+                       long feeVatAmount, int itemCount, LocalDate payoutDate) {
         this.settlementDate = settlementDate;
+        this.currency = currency;
         this.grossAmount = grossAmount;
         this.feeAmount = feeAmount;
         this.feeVatAmount = feeVatAmount;
@@ -99,7 +109,7 @@ public class Settlement {
      * 하루치 집계로 정산을 만든다. netAmount는 gross - fee - feeVat로 계산하며, 불변식
      * (net = gross - fee - feeVat)을 생성 직후 재검증한다 — 불균형 정산은 만들어질 수 없다.
      */
-    public static Settlement of(LocalDate settlementDate, long grossAmount, long feeAmount,
+    public static Settlement of(LocalDate settlementDate, String currency, long grossAmount, long feeAmount,
                                 long feeVatAmount, int itemCount, LocalDate payoutDate) {
         if (grossAmount < 0 || feeAmount < 0 || feeVatAmount < 0) {
             throw new IllegalArgumentException("금액은 음수일 수 없습니다: gross=%d, fee=%d, feeVat=%d"
@@ -109,7 +119,7 @@ public class Settlement {
             throw new IllegalArgumentException("수수료+부가세가 총액보다 클 수 없습니다: gross=%d, fee=%d, feeVat=%d"
                     .formatted(grossAmount, feeAmount, feeVatAmount));
         }
-        Settlement settlement = new Settlement(settlementDate, grossAmount, feeAmount, feeVatAmount, itemCount, payoutDate);
+        Settlement settlement = new Settlement(settlementDate, currency, grossAmount, feeAmount, feeVatAmount, itemCount, payoutDate);
         if (settlement.netAmount != grossAmount - feeAmount - feeVatAmount) {
             throw new IllegalStateException("정산 불변식 위반: net(%d) ≠ gross(%d) - fee(%d) - feeVat(%d)"
                     .formatted(settlement.netAmount, grossAmount, feeAmount, feeVatAmount));

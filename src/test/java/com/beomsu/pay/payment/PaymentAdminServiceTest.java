@@ -33,14 +33,14 @@ class PaymentAdminServiceTest {
     }
 
     private Payment unknownPayment() {
-        Payment p = Payment.initiate("ord-1", Money.of(14_000));
+        Payment p = Payment.initiate("ord-1", Money.krw(14_000));
         p.startApproval("pk-1");
         p.markUnknown("PG 타임아웃");
         return p;
     }
 
     private Payment donePayment() {
-        Payment p = Payment.initiate("ord-1", Money.of(14_000));
+        Payment p = Payment.initiate("ord-1", Money.krw(14_000));
         p.startApproval("pk-1");
         p.approve("CARD");
         return p;

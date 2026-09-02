@@ -39,7 +39,7 @@ class PaymentServiceTest {
 
     /** IN_PROGRESS(예약 완료) 상태의 결제를 id를 심어 만든다 — applyResult 테스트용. */
     private Payment inProgress(String orderNo, String paymentKey, long amount, long id) {
-        Payment p = Payment.initiate(orderNo, Money.of(amount));
+        Payment p = Payment.initiate(orderNo, Money.krw(amount));
         p.startApproval(paymentKey); // READY → IN_PROGRESS
         org.springframework.test.util.ReflectionTestUtils.setField(p, "id", id);
         return p;
@@ -50,7 +50,7 @@ class PaymentServiceTest {
     void beginApprovalPersistsInProgress() {
         ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
 
-        service.beginApproval("order-0", "pk-0", Money.of(10_000));
+        service.beginApproval("order-0", "pk-0", Money.krw(10_000));
 
         verify(repository).save(saved.capture());
         assertThat(saved.getValue().getStatus()).isEqualTo(PaymentStatus.IN_PROGRESS);
@@ -62,7 +62,7 @@ class PaymentServiceTest {
     void pgApproveMapsOutcomeAndCountsMetric() {
         pg.setNextResult(PgApproveResult.success("CARD"));
 
-        ApprovalOutcome outcome = service.pgApprove("order-1", "pk-1", Money.of(10_000));
+        ApprovalOutcome outcome = service.pgApprove("order-1", "pk-1", Money.krw(10_000));
 
         assertThat(outcome.result()).isEqualTo(ApprovalOutcome.Result.SUCCESS);
         assertThat(outcome.method()).isEqualTo("CARD");
@@ -174,14 +174,14 @@ class PaymentServiceTest {
     @Test
     @DisplayName("부분취소 시 PaymentCanceledEvent 발행 (fullyCanceled=false)")
     void cancelPartial() {
-        Payment done = Payment.initiate("order-4", Money.of(10_000));
+        Payment done = Payment.initiate("order-4", Money.krw(10_000));
         done.startApproval("pk-4");
         done.approve("CARD");
         when(repository.findById(1L)).thenReturn(Optional.of(done));
         // 취소 사가 3단계는 PG 취소에 쓴 paymentKey로 결제를 다시 집는다.
         when(repository.findByPaymentKey("pk-4")).thenReturn(Optional.of(done));
 
-        service.cancel(1L, Money.of(3_000), "부분 변심");
+        service.cancel(1L, Money.krw(3_000), "부분 변심");
 
         assertThat(done.getStatus()).isEqualTo(PaymentStatus.PARTIAL_CANCELED);
         // 취소 상태 전이가 명시 saveAndFlush로 영속된다(OSIV off에서 dirty-checking 자동 flush에 의존하지 않음).
@@ -197,14 +197,14 @@ class PaymentServiceTest {
     @Test
     @DisplayName("주문번호 취소 시 취소 상태 전이가 명시 saveAndFlush로 영속된다")
     void cancelByOrderNoPersistsWithSave() {
-        Payment done = Payment.initiate("order-5", Money.of(10_000));
+        Payment done = Payment.initiate("order-5", Money.krw(10_000));
         done.startApproval("pk-5");
         done.approve("CARD");
         when(repository.findFirstByOrderNoAndStatusIn(any(), any()))
                 .thenReturn(Optional.of(done));
         when(repository.findByPaymentKey("pk-5")).thenReturn(Optional.of(done));
 
-        service.cancelByOrderNo("order-5", Money.of(10_000), "전액 변심");
+        service.cancelByOrderNo("order-5", Money.krw(10_000), "전액 변심");
 
         assertThat(done.getStatus()).isEqualTo(PaymentStatus.CANCELED);
         verify(repository).saveAndFlush(done);
@@ -219,7 +219,7 @@ class PaymentServiceTest {
     @Test
     @DisplayName("orderNoOf: 결제의 주문번호 반환 / 없으면 empty")
     void orderNoOf() {
-        Payment done = Payment.initiate("order-6", Money.of(10_000));
+        Payment done = Payment.initiate("order-6", Money.krw(10_000));
         when(repository.findById(1L)).thenReturn(Optional.of(done));
         when(repository.findById(2L)).thenReturn(Optional.empty());
 
@@ -230,10 +230,10 @@ class PaymentServiceTest {
     @Test
     @DisplayName("getDetail: 상태/이력 매핑 + 취소 전이만 cancels로 투영")
     void getDetailMapsHistoryAndCancels() {
-        Payment payment = Payment.initiate("order-7", Money.of(10_000));
+        Payment payment = Payment.initiate("order-7", Money.krw(10_000));
         payment.startApproval("pk-7");        // READY → IN_PROGRESS
         payment.approve("CARD");              // IN_PROGRESS → DONE
-        payment.cancel(Money.of(3_000), TriggeredBy.USER, "부분 변심"); // DONE → PARTIAL_CANCELED
+        payment.cancel(Money.krw(3_000), TriggeredBy.USER, "부분 변심"); // DONE → PARTIAL_CANCELED
         // id는 DB 생성분(persist된 엔티티)이라 단위 테스트에선 직접 심는다.
         org.springframework.test.util.ReflectionTestUtils.setField(payment, "id", 1L);
         when(repository.findById(1L)).thenReturn(Optional.of(payment));
@@ -264,7 +264,7 @@ class PaymentServiceTest {
     @Test
     @DisplayName("paymentStatusByOrderNo: 최신 결제 상태 반환 / 결제 없으면 empty")
     void paymentStatusByOrderNo() {
-        Payment done = Payment.initiate("order-8", Money.of(10_000));
+        Payment done = Payment.initiate("order-8", Money.krw(10_000));
         done.startApproval("pk-8");
         done.approve("CARD");
         when(repository.findFirstByOrderNoOrderByRequestedAtDesc("order-8"))

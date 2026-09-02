@@ -49,29 +49,29 @@ class PaymentCancelSagaTest {
     @Test
     @DisplayName("주문번호 취소: 대상 확정(tx) → PG 취소(tx 밖) → 결과 반영(tx) 순서로 실행된다")
     void cancelByOrderNoRunsThreePhasesInOrder() {
-        when(cancelTx.resolveByOrderNo("order-9", Money.of(5_000)))
+        when(cancelTx.resolveByOrderNo("order-9", Money.krw(5_000)))
                 .thenReturn(new PaymentCancelTx.CancelTarget("pk-9", 1, null));
 
-        service.cancelByOrderNo("order-9", Money.of(5_000), "고객변심");
+        service.cancelByOrderNo("order-9", Money.krw(5_000), "고객변심");
 
         InOrder ordered = inOrder(cancelTx, pg);
-        ordered.verify(cancelTx).resolveByOrderNo("order-9", Money.of(5_000));
+        ordered.verify(cancelTx).resolveByOrderNo("order-9", Money.krw(5_000));
         ordered.verify(pg).cancel(new PgCancelCommand("pk-9", 5_000, "고객변심", 1));
-        ordered.verify(cancelTx).apply("pk-9", 1, Money.of(5_000), "고객변심", "pg-tx-1");
+        ordered.verify(cancelTx).apply("pk-9", 1, Money.krw(5_000), "고객변심", "pg-tx-1");
     }
 
     @Test
     @DisplayName("결제 식별자 취소도 같은 3단계를 지킨다")
     void cancelByIdRunsThreePhasesInOrder() {
-        when(cancelTx.resolveById(7L, Money.of(3_000)))
+        when(cancelTx.resolveById(7L, Money.krw(3_000)))
                 .thenReturn(new PaymentCancelTx.CancelTarget("pk-7", 1, null));
 
-        service.cancel(7L, Money.of(3_000), "부분 변심");
+        service.cancel(7L, Money.krw(3_000), "부분 변심");
 
         InOrder ordered = inOrder(cancelTx, pg);
-        ordered.verify(cancelTx).resolveById(7L, Money.of(3_000));
+        ordered.verify(cancelTx).resolveById(7L, Money.krw(3_000));
         ordered.verify(pg).cancel(new PgCancelCommand("pk-7", 3_000, "부분 변심", 1));
-        ordered.verify(cancelTx).apply("pk-7", 1, Money.of(3_000), "부분 변심", "pg-tx-1");
+        ordered.verify(cancelTx).apply("pk-7", 1, Money.krw(3_000), "부분 변심", "pg-tx-1");
     }
 
     @Test
@@ -80,7 +80,7 @@ class PaymentCancelSagaTest {
         when(cancelTx.resolveByOrderNo(anyString(), any(Money.class)))
                 .thenThrow(new PaymentException("CANCEL_AMOUNT_EXCEEDED", "취소 가능 금액을 초과했습니다."));
 
-        assertThatThrownBy(() -> service.cancelByOrderNo("order-9", Money.of(99_000), "과다취소"))
+        assertThatThrownBy(() -> service.cancelByOrderNo("order-9", Money.krw(99_000), "과다취소"))
                 .isInstanceOf(PaymentException.class);
 
         verify(pg, never()).cancel(any(PgCancelCommand.class));
@@ -90,12 +90,12 @@ class PaymentCancelSagaTest {
     @Test
     @DisplayName("PG 취소가 실패하면 결과 반영을 하지 않는다 — 우리만 취소로 남지 않게")
     void doesNotApplyWhenPgCancelFails() {
-        when(cancelTx.resolveByOrderNo("order-9", Money.of(5_000)))
+        when(cancelTx.resolveByOrderNo("order-9", Money.krw(5_000)))
                 .thenReturn(new PaymentCancelTx.CancelTarget("pk-9", 1, null));
         when(pg.cancel(new PgCancelCommand("pk-9", 5_000, "고객변심", 1)))
                 .thenThrow(new IllegalStateException("PG 취소 실패"));
 
-        assertThatThrownBy(() -> service.cancelByOrderNo("order-9", Money.of(5_000), "고객변심"))
+        assertThatThrownBy(() -> service.cancelByOrderNo("order-9", Money.krw(5_000), "고객변심"))
                 .isInstanceOf(IllegalStateException.class);
 
         verify(cancelTx, never()).apply(anyString(), anyInt(), any(Money.class), anyString(), anyString());

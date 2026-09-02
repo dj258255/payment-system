@@ -14,6 +14,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -45,6 +46,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @WebMvcTest(ResidualCauseAdminController.class)
 @Import({SecurityConfig.class, MetricsTestConfig.class})
+// 블라인드 표집을 끈다. 기본 20%면 다섯 번에 한 번꼴로 제안이 감춰져 suggested=false 가 되고,
+// 그때마다 이 테스트가 무작위로 깨진다. 표집 자체는 별도 테스트에서 확률로 검증한다.
+@TestPropertySource(properties = "app.assist.residual.blind-percent=0")
 class ResidualCauseAdminControllerTest {
 
     @Autowired

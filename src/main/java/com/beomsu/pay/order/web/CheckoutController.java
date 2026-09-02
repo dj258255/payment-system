@@ -48,7 +48,7 @@ public class CheckoutController {
                 idempotencyKey, PATH, "POST", request, CheckoutResult.class,
                 () -> checkoutService.confirm(
                         request.orderNo(), request.paymentKey(),
-                        Money.of(request.amount()), request.pointAmount(), request.walletAmount(), userId));
+                        Money.krw(request.amount()), request.pointAmount(), request.walletAmount(), userId));
 
         HttpStatus status = switch (result.paymentStatus()) {
             case DONE -> HttpStatus.OK;               // 승인 완료
