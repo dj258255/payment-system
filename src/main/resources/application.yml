@@ -327,6 +327,14 @@ app:
 payment:
   webhook:
     secret: ${PAYMENT_WEBHOOK_SECRET:local-webhook-secret-please-override-32b}
+    # 토스 웹훅 발신 IP 허용 목록(쉼표 구분). 비우면 검사하지 않는다 — 다른 기능과 같은 규약으로
+    # 기본 off 다. 앱이 프록시·터널 뒤에 있으면 보이는 IP가 토스가 아니라 그 프록시라서, 켜면
+    # 정상 웹훅까지 막힌다. <b>앞단이 있으면 이 검사는 앱이 아니라 그 앞단이 해야 한다.</b>
+    # 토스가 공개한 발신 IP(2026-09 기준):
+    #   13.124.18.147,13.124.108.35,3.36.173.151,3.38.81.32,
+    #   115.92.221.121,115.92.221.122,115.92.221.123,
+    #   115.92.221.125,115.92.221.126,115.92.221.127
+    toss-allowed-ips: ${PAYMENT_WEBHOOK_TOSS_ALLOWED_IPS:}
 
 ---
 # kafka 프로파일: 브로커가 있을 때만 활성화한다(예: SPRING_PROFILES_ACTIVE=kafka).
