@@ -125,20 +125,18 @@ public class WebhookService {
             repository.save(event);
             return;
         }
-        // 페이로드가 아니라 조회 API로 실상태 재검증. 실패 시 예외 전파 → 아웃박스가 재시도.
-        try {
-            paymentRecoveryService.resolveByPaymentKey(paymentKey);
-        } catch (PaymentException e) {
-            if (!PAYMENT_NOT_FOUND.equals(e.code())) {
-                throw e;
-            }
-            // 결제 행이 아직 없다 = 웹훅이 승인 응답보다 먼저 왔다. 실패가 아니라 순서 문제다.
-            // 예외로 던지면 아웃박스에 미완료로 남는데 그 재시도는 재기동 때만 돌아, 그때까지 방치된다.
+        // 결제 행이 아직 없다 = 웹훅이 승인 응답보다 먼저 왔다. 실패가 아니라 순서 문제다.
+        // <b>먼저 물어보고 넘어간다.</b> 예외를 받아 처리하면 그 예외가 이 트랜잭션을 rollback-only 로
+        // 오염시켜, 뒤이어 쓰는 PENDING_PAYMENT 조차 커밋되지 않는다(실 MySQL 통합 테스트로 확인).
+        if (!paymentRecoveryService.exists(paymentKey)) {
             event.markPendingPayment(Instant.now().plus(PENDING_BACKOFF));
-            repository.save(event);
+            // saveAndFlush — 이 상태가 DB에 확정되지 않으면 웹훅이 통째로 유실된다.
+            repository.saveAndFlush(event);
             log.info("웹훅이 결제보다 먼저 도착 — 보류 paymentKey={} retry={}", paymentKey, event.getRetryCount());
             return;
         }
+        // 페이로드가 아니라 조회 API로 실상태 재검증. 실패 시 예외 전파 → 아웃박스가 재시도.
+        paymentRecoveryService.resolveByPaymentKey(paymentKey);
         event.markProcessed();
         repository.save(event);
     }

@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
@@ -68,6 +69,21 @@ public class PaymentRecoveryService {
      * paymentKey 하나를 PG 조회로 확정한다. 웹훅 수신 시 "페이로드를 믿지 말고 조회로 재검증"하는
      * 경로가 이 메서드를 쓴다. 이미 확정된(DONE/CANCELED 등) 결제면 아무 것도 하지 않는다(멱등).
      */
+    /**
+     * 결제 행이 있는지만 본다.
+     *
+     * <p><b>예외를 던지지 않는다</b>: 호출부가 "없음"을 보고 다른 상태를 쓰려는데, 여기서 예외가 나면
+     * 그 트랜잭션이 rollback-only 로 오염돼 그 write 마저 버려진다(실 MySQL 통합 테스트로 확인).
+     *
+     * <p><b>{@code readOnly} 를 쓰지 않는다</b>: readOnly 로 바깥 트랜잭션에 합류하면 Hibernate
+     * FlushMode 가 MANUAL 이 되어, 호출부가 이어서 하는 save 가 flush 되지 않고 사라진다.
+     * 이 저장소가 {@code saveAndFlush} 를 쓰는 이유와 같은 함정이다(pay-26).
+     */
+    @Transactional(propagation = Propagation.SUPPORTS)
+    public boolean exists(String paymentKey) {
+        return paymentRepository.findByPaymentKey(paymentKey).isPresent();
+    }
+
     @Transactional
     public void resolveByPaymentKey(String paymentKey) {
         Payment payment = paymentRepository.findByPaymentKey(paymentKey)
