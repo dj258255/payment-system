@@ -50,6 +50,13 @@ public class WebhookEvent {
     @Column(length = 500)
     private String failReason;
 
+    /** PENDING_PAYMENT 로 미뤄진 횟수. 상한을 넘기면 FAILED 로 넘긴다. */
+    @Column(nullable = false)
+    private int retryCount;
+
+    /** 다음 재시도 시각. 이 값이 지난 PENDING_PAYMENT 만 스케줄러가 집는다. */
+    private Instant nextRetryAt;
+
     private WebhookEvent(String externalEventId, String eventType, String rawPayload) {
         this.externalEventId = externalEventId;
         this.eventType = eventType;
@@ -75,6 +82,19 @@ public class WebhookEvent {
         this.status = WebhookEventStatus.FAILED;
         this.processedAt = Instant.now();
         this.failReason = reason;
+    }
+
+    /**
+     * 결제 행이 아직 없어 처리를 미룬다. <b>실패가 아니라 순서 문제다.</b>
+     *
+     * <p>승인 요청은 나갔는데 우리 쪽 결제 행이 커밋되기 전에 PG 웹훅이 먼저 도착하면 이 상태가 된다.
+     * 예외로 던지면 아웃박스에 미완료로 남는데, 그 재시도는 재기동 때만 돌아 그때까지 방치된다.
+     */
+    public void markPendingPayment(Instant nextRetryAt) {
+        this.status = WebhookEventStatus.PENDING_PAYMENT;
+        this.retryCount += 1;
+        this.nextRetryAt = nextRetryAt;
+        this.failReason = "결제 행 없음 — 웹훅이 승인 응답보다 먼저 도착";
     }
 
     /** 처리 대상이 아니라 건너뜀(예: paymentKey 없음). */
