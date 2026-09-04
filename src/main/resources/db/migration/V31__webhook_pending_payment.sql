@@ -12,6 +12,12 @@
 -- 조치: 결제 행이 아직 없으면 예외 대신 PENDING_PAYMENT 로 남기고, 전용 스케줄러가 재시도한다.
 -- 아웃박스 재시도에 얹지 않는 이유: 그 경로는 "예외가 났으니 다시"라 사유가 코드에 안 남는다.
 -- 이 상태는 "결제 행을 기다리는 중"이라는 뜻이 이름에 있다.
+-- status 가 ENUM 컬럼이라 값 목록에 PENDING_PAYMENT 를 더해야 한다.
+-- 실 MySQL 통합 테스트에서 "Data truncated for column 'status'" 로 잡혔다.
+-- H2 는 문자열로 받아 통과시켜, 이 함정은 실 DB 에서만 드러난다.
+ALTER TABLE webhook_events
+    MODIFY COLUMN status ENUM('FAILED','PROCESSED','RECEIVED','SKIPPED','PENDING_PAYMENT') NOT NULL;
+
 ALTER TABLE webhook_events
     ADD COLUMN retry_count INT NOT NULL DEFAULT 0 AFTER fail_reason,
     ADD COLUMN next_retry_at DATETIME(6) NULL AFTER retry_count;

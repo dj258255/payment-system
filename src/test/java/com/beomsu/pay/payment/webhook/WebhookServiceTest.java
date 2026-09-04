@@ -16,6 +16,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 class WebhookServiceTest {
@@ -40,6 +41,8 @@ class WebhookServiceTest {
         service = new WebhookService(repository, verifier, recoveryService, new ObjectMapper(), events);
         // save는 인자를 그대로 돌려준다.
         when(repository.save(any(WebhookEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+        // 기본은 "결제 행이 이미 있다" — 순서 역전 케이스만 아래에서 false 로 덮는다.
+        lenient().when(recoveryService.exists(anyString())).thenReturn(true);
     }
 
     private String body(String eventId, String paymentKey) {
@@ -143,8 +146,7 @@ class WebhookServiceTest {
     void pendingWhenPaymentRowNotYetCommitted() {
         WebhookEvent event = WebhookEvent.received("evt-early", "PAYMENT_STATUS_CHANGED",
                 body("evt-early", "pk-early"));
-        doThrow(new PaymentException("PAYMENT_NOT_FOUND", "결제를 찾을 수 없습니다: pk-early"))
-                .when(recoveryService).resolveByPaymentKey("pk-early");
+        when(recoveryService.exists("pk-early")).thenReturn(false);
 
         service.process(event);
 
@@ -158,6 +160,7 @@ class WebhookServiceTest {
     void otherFailuresStillPropagate() {
         WebhookEvent event = WebhookEvent.received("evt-boom", "PAYMENT_STATUS_CHANGED",
                 body("evt-boom", "pk-boom"));
+        when(recoveryService.exists("pk-boom")).thenReturn(true);
         doThrow(new PaymentException("PG_TIMEOUT", "조회 실패"))
                 .when(recoveryService).resolveByPaymentKey("pk-boom");
 
@@ -171,12 +174,11 @@ class WebhookServiceTest {
     void resolvesOncePaymentRowExists() {
         WebhookEvent event = WebhookEvent.received("evt-late", "PAYMENT_STATUS_CHANGED",
                 body("evt-late", "pk-late"));
-        doThrow(new PaymentException("PAYMENT_NOT_FOUND", "없음"))
-                .when(recoveryService).resolveByPaymentKey("pk-late");
+        when(recoveryService.exists("pk-late")).thenReturn(false);
         service.process(event);
         assertThat(event.getStatus()).isEqualTo(WebhookEventStatus.PENDING_PAYMENT);
 
-        doNothing().when(recoveryService).resolveByPaymentKey("pk-late");
+        when(recoveryService.exists("pk-late")).thenReturn(true);
         service.process(event);
 
         assertThat(event.getStatus()).isEqualTo(WebhookEventStatus.PROCESSED);
