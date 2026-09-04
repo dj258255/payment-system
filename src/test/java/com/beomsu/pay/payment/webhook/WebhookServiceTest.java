@@ -1,5 +1,6 @@
 package com.beomsu.pay.payment.webhook;
 
+import com.beomsu.pay.payment.PaymentException;
 import com.beomsu.pay.payment.recovery.PaymentRecoveryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -135,5 +136,49 @@ class WebhookServiceTest {
 
         verify(recoveryService, never()).resolveByPaymentKey(any());
         assertThat(event.getStatus()).isEqualTo(WebhookEventStatus.SKIPPED);
+    }
+
+    @Test
+    @DisplayName("웹훅이 승인 응답보다 먼저 오면 실패가 아니라 PENDING_PAYMENT로 미룬다")
+    void pendingWhenPaymentRowNotYetCommitted() {
+        WebhookEvent event = WebhookEvent.received("evt-early", "PAYMENT_STATUS_CHANGED",
+                body("evt-early", "pk-early"));
+        doThrow(new PaymentException("PAYMENT_NOT_FOUND", "결제를 찾을 수 없습니다: pk-early"))
+                .when(recoveryService).resolveByPaymentKey("pk-early");
+
+        service.process(event);
+
+        assertThat(event.getStatus()).isEqualTo(WebhookEventStatus.PENDING_PAYMENT);
+        assertThat(event.getRetryCount()).isEqualTo(1);
+        assertThat(event.getNextRetryAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("PAYMENT_NOT_FOUND가 아닌 실패는 그대로 던져 아웃박스 재시도에 맡긴다")
+    void otherFailuresStillPropagate() {
+        WebhookEvent event = WebhookEvent.received("evt-boom", "PAYMENT_STATUS_CHANGED",
+                body("evt-boom", "pk-boom"));
+        doThrow(new PaymentException("PG_TIMEOUT", "조회 실패"))
+                .when(recoveryService).resolveByPaymentKey("pk-boom");
+
+        assertThatThrownBy(() -> service.process(event))
+                .isInstanceOf(PaymentException.class);
+        assertThat(event.getStatus()).isEqualTo(WebhookEventStatus.RECEIVED);
+    }
+
+    @Test
+    @DisplayName("보류됐다가 결제 행이 생기면 PROCESSED로 닫힌다")
+    void resolvesOncePaymentRowExists() {
+        WebhookEvent event = WebhookEvent.received("evt-late", "PAYMENT_STATUS_CHANGED",
+                body("evt-late", "pk-late"));
+        doThrow(new PaymentException("PAYMENT_NOT_FOUND", "없음"))
+                .when(recoveryService).resolveByPaymentKey("pk-late");
+        service.process(event);
+        assertThat(event.getStatus()).isEqualTo(WebhookEventStatus.PENDING_PAYMENT);
+
+        doNothing().when(recoveryService).resolveByPaymentKey("pk-late");
+        service.process(event);
+
+        assertThat(event.getStatus()).isEqualTo(WebhookEventStatus.PROCESSED);
     }
 }

@@ -55,6 +55,47 @@ groups:
           summary: "대사 미해결(PENDING) 적체"
           description: "PENDING 대사 예외가 15분 넘게 남아 있습니다. 어드민에서 예외 큐를 검토·종결하세요."
 
+      # 6) AI 후보 제안이 조용히 멈춤 — 모델이 틀린 게 아니라 아무 답도 안 내는 상태.
+      #    핀테크에서 LLM 사고는 대부분 "모델이 틀려서"가 아니라 "틀린 걸 아무도 못 봐서" 난다.
+      #    가드에 다 걸려 제안이 0이 되면 기능이 꺼진 것과 같은데, 에러는 한 건도 안 난다.
+      - alert: AssistResidualNoSuggestion
+        expr: |
+          sum(rate(assist_residual_outcome_total{outcome="suggested"}[30m])) == 0
+          and sum(rate(assist_residual_outcome_total[30m])) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI 잔여 후보 제안이 30분째 0건"
+          description: "모델은 불리고 있는데 통과한 제안이 없습니다. 가드 임계나 모델 응답이 바뀌었는지 확인하세요."
+
+      # 7) 조회 재검증 가드가 갑자기 자주 걸림 — 모델이 없는 숫자를 쓰기 시작했다는 신호.
+      #    이 가드는 원래 드물게 걸려야 한다. 비율이 뛰면 프롬프트나 모델이 바뀐 것이다.
+      - alert: AssistUnsourcedFiguresSpike
+        expr: |
+          sum(rate(assist_residual_outcome_total{outcome="unsourced_figures"}[1h]))
+          / sum(rate(assist_residual_outcome_total[1h])) > 0.2
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI 응답의 출처 없는 숫자 비율 급증"
+          description: "숫자 검증기에 걸리는 비율이 20%를 넘었습니다. 모델이나 프롬프트가 바뀌었는지 확인하세요."
+
+      # 8) 이상거래 심사 적체 — 사람이 봐야 하는 건이 오래 방치되고 있음.
+      #    심사가 밀리면 사기로 의심되는 결제가 그대로 정산으로 넘어간다. 미확정 결제가
+      #    떠 있는 것과 성격이 같아 같은 모양으로 잡는다.
+      #    건수가 아니라 "가장 오래된 건의 나이"를 본다 — 열 건이 방금 들어온 것과
+      #    한 건이 이틀 묵은 것은 위험이 다르다.
+      - alert: FraudReviewBacklog
+        expr: fraud_review_oldest_age_seconds > 3600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "이상거래 심사 적체"
+          description: "사람 심사를 1시간 넘게 기다린 이상거래 건이 있습니다. 어드민 심사 큐를 확인하세요."
+
       # 6) 비밀번호 해시 이관 정체 — 레거시 해시가 오래 남아 있음(ADR-009).
       #    이관은 로그인한 사람만 된다(원문이 그때만 존재). 이 값이 0이 되어야 레거시 인코더를
       #    제거할 수 있으므로, 줄지 않으면 재설정 유도 같은 별도 조치를 판단해야 한다.

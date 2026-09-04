@@ -1,10 +1,13 @@
 package com.beomsu.pay.payment.webhook;
 
-import com.beomsu.pay.payment.recovery.PaymentRecoveryService;
+import com.beomsu.pay.payment.PaymentException;
 import com.beomsu.pay.payment.recovery.PaymentRecoveryService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Duration;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.modulith.events.ApplicationModuleListener;
@@ -25,9 +28,16 @@ import org.springframework.transaction.annotation.Transactional;
  * {@link #onWebhookReceived}가 <b>별도 스레드</b>에서 수행한다. 발행은 Modulith 아웃박스에 수신
  * 트랜잭션과 함께 기록되므로, 해석 전에 앱이 죽어도 재기동 시 재발행된다({@code @Async}와 달리 유실 없음).
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class WebhookService {
+
+    /** {@code PaymentRecoveryService} 가 결제 행을 못 찾을 때 쓰는 코드. */
+    private static final String PAYMENT_NOT_FOUND = "PAYMENT_NOT_FOUND";
+
+    /** 보류 후 다시 볼 때까지의 간격. 승인 커밋은 보통 초 단위로 끝난다. */
+    static final Duration PENDING_BACKOFF = Duration.ofSeconds(5);
 
     private final WebhookEventRepository repository;
     private final WebhookSignatureVerifier signatureVerifier;
@@ -116,7 +126,19 @@ public class WebhookService {
             return;
         }
         // 페이로드가 아니라 조회 API로 실상태 재검증. 실패 시 예외 전파 → 아웃박스가 재시도.
-        paymentRecoveryService.resolveByPaymentKey(paymentKey);
+        try {
+            paymentRecoveryService.resolveByPaymentKey(paymentKey);
+        } catch (PaymentException e) {
+            if (!PAYMENT_NOT_FOUND.equals(e.code())) {
+                throw e;
+            }
+            // 결제 행이 아직 없다 = 웹훅이 승인 응답보다 먼저 왔다. 실패가 아니라 순서 문제다.
+            // 예외로 던지면 아웃박스에 미완료로 남는데 그 재시도는 재기동 때만 돌아, 그때까지 방치된다.
+            event.markPendingPayment(Instant.now().plus(PENDING_BACKOFF));
+            repository.save(event);
+            log.info("웹훅이 결제보다 먼저 도착 — 보류 paymentKey={} retry={}", paymentKey, event.getRetryCount());
+            return;
+        }
         event.markProcessed();
         repository.save(event);
     }
