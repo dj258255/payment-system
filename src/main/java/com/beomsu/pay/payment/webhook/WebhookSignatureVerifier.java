@@ -14,7 +14,9 @@ import java.time.Duration;
 /**
  * 웹훅 HMAC-SHA256 서명 검증기 (Stripe 방식).
  *
- * <p>토스페이먼츠는 서명 스펙을 공개하지 않으므로 자체 Mock PG 기준으로 구현한다. 서명 헤더 형식은
+ * <p>토스페이먼츠에도 서명이 있지만 {@code payout.changed}·{@code seller.changed} <b>두 이벤트에만</b>
+ * 붙는다({@code tosspayments-webhook-signature} 헤더). 우리가 받는 {@code PAYMENT_STATUS_CHANGED}·
+ * {@code DEPOSIT_CALLBACK} 에는 없다. 그래서 이 검증기는 자체 Mock PG 기준으로 둔다. 서명 헤더 형식은
  * {@code t=<timestamp>,v1=<hex signature>} 이며 검증 절차는 다음과 같다.
  * <ol>
  *   <li>헤더에서 {@code t}, {@code v1} 파싱</li>
