@@ -60,19 +60,24 @@ public class WebhookService {
     }
 
     /**
-     * 두 번째 진입점 — <b>수신 어댑터가 그 PG의 방식으로 이미 검증을 마친</b> 페이로드를 받는다.
+     * 두 번째 진입점 — <b>서명이 없는</b> 웹훅을 받는다. 이름이 {@code Unsigned} 인 것은 의도다.
+     * 이 문으로 들어온 요청은 <b>보낸 쪽이 누구인지 확인되지 않았다.</b>
      *
-     * <p>HMAC 서명은 자체 Mock PG의 규약이다. 토스페이먼츠는 서명 헤더를 보내지 않으므로 그 문으로는
-     * 실 웹훅이 못 들어온다. 그렇다고 검증을 서비스 안에서 PG별로 갈래치면 이 서비스가 PG를 알게 된다.
-     * 그래서 <b>PG마다 다른 것은 어댑터가 흡수하고</b>, 이 문은 "검증은 이미 끝났다"는 한 가지 약속만 진다.
+     * <p>HMAC 서명은 자체 Mock PG의 규약이고, 토스페이먼츠는 서명 헤더를 보내지 않는다. 그래서 실
+     * 웹훅은 서명을 요구하는 문으로 못 들어온다. 그렇다고 검증을 서비스 안에서 PG별로 갈래치면 이
+     * 서비스가 PG를 알게 되므로, PG마다 다른 것은 어댑터가 흡수하고 이 문은 형식만 맞춰 받는다.
      *
-     * <p><b>남은 구멍</b>: 토스는 서명을 주지 않으므로 이 문에는 위조 요청도 들어올 수 있다.
-     * 막는 것은 페이로드를 믿지 않는 설계다 — {@link #process}가 조회 API로 실상태를 다시 물어보므로,
-     * 위조가 할 수 있는 최대치는 <b>쓸모없는 조회를 유발하는 것</b>이고 장부는 바뀌지 않는다.
-     * 발신 IP 제한은 아직 걸지 않았다.
+     * <p><b>그래서 무엇이 위조를 막나</b>: 이 문이 아니라 <b>페이로드를 믿지 않는 설계</b>다.
+     * {@link #process}가 페이로드의 상태를 쓰지 않고 조회 API로 실상태를 다시 물어보므로,
+     * 위조 요청이 장부를 바꿀 수는 없다. 할 수 있는 최대치는 {@code webhook_events} 행을 만들고
+     * <b>쓸모없는 조회를 유발하는 것</b>이다(멱등 키가 같은 요청의 반복은 접는다).
+     *
+     * <p><b>남는 위험</b>: 그 쓸모없는 조회와 보류 행이 쌓이는 것 자체가 부하이자 알림 소음이다.
+     * 발신 IP 허용 목록({@code payment.webhook.toss-allowed-ips})으로 좁힐 수 있지만, 앱이 프록시
+     * 뒤에 있으면 보이는 IP가 프록시라서 앱단 검사로는 부족하다 — <b>앞단이 있으면 거기서 막는 게 맞다.</b>
      */
     @Transactional
-    public void handleVerified(String rawBody) {
+    public void handleUnsigned(String rawBody) {
         receiveVerified(rawBody);
     }
 
@@ -90,7 +95,7 @@ public class WebhookService {
         return receiveVerified(rawBody);
     }
 
-    /** 검증 이후 공통 경로 — 멱등 저장과 비동기 해석 트리거 발행만 한다. */
+    /** 수신 이후 공통 경로 — 멱등 저장과 비동기 해석 트리거 발행만 한다. */
     @Transactional
     public WebhookEvent receiveVerified(String rawBody) {
         // 2. 최소 필드 파싱
