@@ -60,6 +60,23 @@ public class WebhookService {
     }
 
     /**
+     * 두 번째 진입점 — <b>수신 어댑터가 그 PG의 방식으로 이미 검증을 마친</b> 페이로드를 받는다.
+     *
+     * <p>HMAC 서명은 자체 Mock PG의 규약이다. 토스페이먼츠는 서명 헤더를 보내지 않으므로 그 문으로는
+     * 실 웹훅이 못 들어온다. 그렇다고 검증을 서비스 안에서 PG별로 갈래치면 이 서비스가 PG를 알게 된다.
+     * 그래서 <b>PG마다 다른 것은 어댑터가 흡수하고</b>, 이 문은 "검증은 이미 끝났다"는 한 가지 약속만 진다.
+     *
+     * <p><b>남은 구멍</b>: 토스는 서명을 주지 않으므로 이 문에는 위조 요청도 들어올 수 있다.
+     * 막는 것은 페이로드를 믿지 않는 설계다 — {@link #process}가 조회 API로 실상태를 다시 물어보므로,
+     * 위조가 할 수 있는 최대치는 <b>쓸모없는 조회를 유발하는 것</b>이고 장부는 바뀌지 않는다.
+     * 발신 IP 제한은 아직 걸지 않았다.
+     */
+    @Transactional
+    public void handleVerified(String rawBody) {
+        receiveVerified(rawBody);
+    }
+
+    /**
      * 서명 검증 → 멱등 저장 → (신규면) 비동기 해석 트리거 발행. 원본만 저장하고 상태 해석은 하지 않는다.
      *
      * <p>서명 검증 실패 시 예외를 던진다(컨트롤러가 401). 이미 받은 이벤트면 저장하지 않고
@@ -70,7 +87,12 @@ public class WebhookService {
     public WebhookEvent receive(String signatureHeader, String rawBody) {
         // 1. 서명 검증(실패 시 WebhookException → 컨트롤러 401)
         signatureVerifier.verify(signatureHeader, rawBody);
+        return receiveVerified(rawBody);
+    }
 
+    /** 검증 이후 공통 경로 — 멱등 저장과 비동기 해석 트리거 발행만 한다. */
+    @Transactional
+    public WebhookEvent receiveVerified(String rawBody) {
         // 2. 최소 필드 파싱
         JsonNode root = parse(rawBody);
         String externalEventId = text(root, "eventId");

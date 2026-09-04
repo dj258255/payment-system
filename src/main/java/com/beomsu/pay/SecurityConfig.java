@@ -41,7 +41,8 @@ import java.util.Map;
  *       시연을 위해 2번째 어드민({@code admin2})을 둔다 — 요청자≠승인자를 강제하려면 서로 다른 어드민이 필요.</li>
  *   <li>{@code /api/v1/orders/**}, {@code /api/v1/payments/confirm} → ROLE_USER 인증.
  *       userId는 인증된 principal에서 얻어 <b>주문 소유권을 검증</b>한다(IDOR 방지).</li>
- *   <li>{@code /api/v1/webhooks/**} → 개방(HMAC 서명으로 자체 인증)</li>
+ *   <li>{@code /api/v1/webhooks/**} → 개방(수신부가 스스로 인증한다. Mock PG 경로는 HMAC 서명,
+ *       토스 경로는 서명이 없어 <b>페이로드를 믿지 않고 조회 API로 재검증</b>하는 쪽으로 막는다)</li>
  *   <li>{@code /actuator} → ADMIN. 단 {@code health/info}와 {@code prometheus}(수집기 스크레이프)는 공개</li>
  * </ul>
  *
@@ -77,7 +78,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/members/signup").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/api/v1/webhooks/**").permitAll()      // HMAC 자체 인증
+                        .requestMatchers("/api/v1/webhooks/**").permitAll()      // 수신부가 자체 인증
                         .requestMatchers("/api/v1/orders/**", "/api/v1/payments/**").hasRole("USER")
                         .requestMatchers("/api/v1/subscriptions/**").hasRole("USER")   // 구독은 회원 본인 소유
                         .requestMatchers("/api/v1/wallet/**").hasRole("USER")          // 월렛은 회원 본인 소유
