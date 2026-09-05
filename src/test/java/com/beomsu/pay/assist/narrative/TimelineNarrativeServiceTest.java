@@ -160,4 +160,21 @@ class TimelineNarrativeServiceTest {
         assertThat(out.get().source()).isEqualTo("template");
         assertThat(counted("fell_back_to_template")).isZero();
     }
+
+    @Test
+    @DisplayName("모델 서버가 죽어 있어도 화면은 안 비운다 — 연결 실패도 폴백으로 간다")
+    void fallsBackWhenModelServerIsDown() {
+        // 기본값을 ollama 로 바꾼 뒤, 그 서버가 안 떠 있는 상태를 실제 어댑터로 재현한다.
+        // 코드를 읽어 "RuntimeException 을 잡으니 괜찮다"로 넘기면 오늘만 두 번 틀렸다.
+        var dead = new OllamaNarrativeAdapter("http://localhost:1", "qwen3:8b", 2);
+        var withDeadModel = new TimelineNarrativeService(
+                draftService, dead, new NumericProvenanceGuard(), new AmountCoverageGuard(),
+                registry, mock(NarrativeAuditRepository.class));
+
+        var out = withDeadModel.narrate("ORD-1");
+
+        assertThat(out).as("모델 서버가 죽었다고 화면이 비면 안 된다").isPresent();
+        assertThat(out.get().source()).isEqualTo("template");
+        assertThat(out.get().text()).contains("100,000").contains("97,000");
+    }
 }
