@@ -114,6 +114,28 @@ public class NarrativeComparisonService {
         return r == null || !r.startsWith(MACHINE_PREFIX);
     }
 
+    /**
+     * 고른 것을 CSV 로 내보낸다. <b>판정은 컨테이너보다 오래 살아야 한다.</b>
+     *
+     * <p>표본과 정답 키는 저장소에 있는데 <b>판정만 로컬 MySQL 에 있었다.</b>
+     * {@code docker compose down} 한 번에 사라지고, 사라진 것을 알아차릴 방법도 없다.
+     * 사람이 30건을 고르는 데 드는 시간을 그렇게 잃으면 안 된다.
+     */
+    @Transactional(readOnly = true)
+    public String exportCsv() {
+        StringBuilder sb = new StringBuilder("orderNo,sourceA,sourceB,choice,chosenSource,reviewer,chosenAt\n");
+        for (NarrativePreference p : repository.findByChoiceIsNotNullOrderByIdAsc()) {
+            sb.append(p.getOrderNo()).append(',')
+              .append(p.getSourceA()).append(',')
+              .append(p.getSourceB()).append(',')
+              .append(p.getChoice()).append(',')
+              .append(p.chosenSource() == null ? "" : p.chosenSource()).append(',')
+              .append(p.getReviewer() == null ? "" : p.getReviewer()).append(',')
+              .append(p.getChosenAt()).append('\n');
+        }
+        return sb.toString();
+    }
+
     /** 사람에게 보이는 것 — <b>출처가 없다</b>. */
     public record Comparison(Long id, String orderNo, String textA, String textB) {
     }
