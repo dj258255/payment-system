@@ -82,6 +82,48 @@ groups:
           summary: "AI 응답의 출처 없는 숫자 비율 급증"
           description: "숫자 검증기에 걸리는 비율이 20%를 넘었습니다. 모델이나 프롬프트가 바뀌었는지 확인하세요."
 
+      # 7-1) 서술이 계속 템플릿으로만 나감 — 모델을 켰는데 실질은 꺼진 상태.
+      #      이게 가장 잡기 어려운 모양이다. 폴백이 있으니 화면은 늘 채워지고 에러도 안 난다.
+      #      운영자는 평소와 똑같은 화면을 보므로 아무도 이상하다고 말하지 않는다.
+      #      6번과 성격이 같은데, 그쪽은 화면이 비어서 티가 나고 이쪽은 티가 안 난다.
+      - alert: AssistNarrativeAlwaysFallingBack
+        expr: |
+          sum(rate(assist_narrative_outcome_total{outcome="fell_back_to_template"}[30m]))
+          / sum(rate(assist_narrative_outcome_total{outcome=~"narrated|fell_back_to_template"}[30m])) > 0.5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "운영자용 서술의 절반 이상이 템플릿 폴백"
+          description: "모델 서술이 가드에 걸리거나 모델 서버가 응답하지 않고 있습니다. 화면은 채워지므로 티가 안 납니다."
+
+      # 7-2) 모델이 금액을 빠뜨리는 비율 급증 — 프롬프트나 모델이 바뀐 신호.
+      #      실측에서 30건 중 0~4건이었다. 그 위로 뛰면 다른 일이 생긴 것이다.
+      - alert: AssistNarrativeDroppedAmountsSpike
+        expr: |
+          sum(rate(assist_narrative_outcome_total{outcome="dropped_amounts"}[1h]))
+          / sum(rate(assist_narrative_outcome_total[1h])) > 0.2
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "서술이 금액을 빠뜨리는 비율 급증"
+          description: "금액 결손 가드에 걸리는 비율이 20%를 넘었습니다. 실측 기준선은 30건 중 0~4건입니다."
+
+      # 7-3) 장애 원인 분석에서 모델이 조용히 답을 안 냄.
+      #      규칙이 기권한 자리에만 모델이 불린다. 그 자리가 통째로 비면 켜기 전 상태로
+      #      돌아간 것인데, 규칙이 답한 건은 그대로 나오므로 지표를 안 보면 모른다.
+      - alert: AssistIncidentModelSilent
+        expr: |
+          sum(rate(assist_incident_outcome_total{outcome="by_model"}[1h])) == 0
+          and sum(rate(assist_incident_outcome_total{outcome=~"model_silent|model_ungrounded"}[1h])) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "장애 원인 분석에서 모델이 1시간째 한 건도 답하지 못함"
+          description: "규칙이 기권한 건이 통째로 비고 있습니다. 모델 서버나 가드 임계를 확인하세요."
+
       # 8) 이상거래 심사 적체 — 사람이 봐야 하는 건이 오래 방치되고 있음.
       #    심사가 밀리면 사기로 의심되는 결제가 그대로 정산으로 넘어간다. 미확정 결제가
       #    떠 있는 것과 성격이 같아 같은 모양으로 잡는다.

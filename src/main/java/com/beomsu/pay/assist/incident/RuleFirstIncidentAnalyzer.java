@@ -1,5 +1,6 @@
 package com.beomsu.pay.assist.incident;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +35,11 @@ public class RuleFirstIncidentAnalyzer implements IncidentAnalysisPort {
     private final RuleBasedIncidentAnalyzer rule;
     private final IncidentAnalysisPort model;
     private final EvidenceGroundingGuard grounding = new EvidenceGroundingGuard();
+    /**
+     * 누가 답했는지를 센다. 이 지표가 없으면 <b>모델이 죽어도 화면은 멀쩡해 보인다</b> —
+     * 규칙이 답한 건은 그대로 나오고, 기권한 건은 원래도 비어 있었기 때문이다.
+     */
+    private final MeterRegistry registry;
 
     /**
      * <b>{@code @Autowired} 가 붙은 이유</b>: 아래 테스트용 생성자와 둘이라, 표시가 없으면 스프링이
@@ -47,13 +53,21 @@ public class RuleFirstIncidentAnalyzer implements IncidentAnalysisPort {
     public RuleFirstIncidentAnalyzer(
             @Value("${app.assist.ollama.base-url:http://localhost:11434}") String baseUrl,
             @Value("${app.assist.ollama.incident-model:qwen3:8b}") String model,
-            @Value("${app.assist.ollama.timeout-seconds:120}") long timeoutSeconds) {
-        this(new RuleBasedIncidentAnalyzer(), new OllamaIncidentAnalyzer(baseUrl, model, timeoutSeconds));
+            @Value("${app.assist.ollama.timeout-seconds:120}") long timeoutSeconds,
+            MeterRegistry registry) {
+        this(new RuleBasedIncidentAnalyzer(), new OllamaIncidentAnalyzer(baseUrl, model, timeoutSeconds),
+                registry);
     }
 
-    RuleFirstIncidentAnalyzer(RuleBasedIncidentAnalyzer rule, IncidentAnalysisPort model) {
+    RuleFirstIncidentAnalyzer(RuleBasedIncidentAnalyzer rule, IncidentAnalysisPort model,
+                              MeterRegistry registry) {
         this.rule = rule;
         this.model = model;
+        this.registry = registry;
+    }
+
+    private void count(String outcome) {
+        registry.counter("assist.incident", "outcome", outcome).increment();
     }
 
     @Override
@@ -65,15 +79,24 @@ public class RuleFirstIncidentAnalyzer implements IncidentAnalysisPort {
     public Optional<IncidentDiagnosis> diagnose(String logText) {
         Optional<IncidentDiagnosis> byRule = rule.diagnose(logText);
         if (byRule.isPresent() && byRule.get().cause() != IncidentCause.UNKNOWN) {
+            count("by_rule");
             return byRule;
         }
 
         Optional<IncidentDiagnosis> byModel = model.diagnose(logText);
         // 인용이 원문에 없으면 버린다. 규칙이 이미 기권한 자리이므로 여기서 버려도 잃는 게 없다.
         if (byModel.isPresent() && !grounding.grounded(byModel.get(), logText)) {
+            count("model_ungrounded");
             log.warn("모델 진단을 버렸다 — 인용이 원문에 없다: {}", byModel.get().cause());
             return Optional.empty();
         }
+        if (byModel.isEmpty()) {
+            // 모델이 기권했거나 <b>모델 서버가 죽었다.</b> 둘은 여기서 구별되지 않지만,
+            // 이 값이 계속 오르면 규칙이 기권한 자리가 통째로 비고 있다는 뜻이다.
+            count("model_silent");
+            return Optional.empty();
+        }
+        count("by_model");
         return byModel;
     }
 }
