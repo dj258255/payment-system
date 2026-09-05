@@ -57,6 +57,14 @@ public class CheckoutTx {
     @Transactional
     public Reservation reserve(String orderNo, String paymentKey, Money cardAmount,
                                long pointAmount, long walletAmount, long authenticatedUserId) {
+        return reserve(orderNo, paymentKey, cardAmount, pointAmount, walletAmount,
+                authenticatedUserId, 0);
+    }
+
+    /** 할부 개월을 함께 받는 형태. 0이면 일시불이다. */
+    public Reservation reserve(String orderNo, String paymentKey, Money cardAmount,
+                               long pointAmount, long walletAmount, long authenticatedUserId,
+                               int installmentMonths) {
         Order order = orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> OrderException.orderNotFound(orderNo));
         order.verifyOwner(authenticatedUserId); // IDOR 방지 — 무엇보다 먼저
@@ -77,7 +85,7 @@ public class CheckoutTx {
 
         Long paymentId = null;
         if (cardAmount.minorUnit() > 0) {
-            paymentId = paymentService.beginApproval(orderNo, paymentKey, cardAmount);
+            paymentId = paymentService.beginApproval(orderNo, paymentKey, cardAmount, installmentMonths);
         }
         orderRepository.saveAndFlush(order);
 

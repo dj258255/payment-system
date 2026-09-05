@@ -28,10 +28,17 @@ class PaymentContributor implements TimelineContributor {
                         "PAYMENT_" + f.toStatus(),
                         // 사유는 있을 때만 붙인다. 없는데 "()"만 남으면 읽는 사람이 헷갈린다.
                         f.reason() == null || f.reason().isBlank()
-                                ? "결제 %s → %s (%s, %s)".formatted(f.fromStatus(), f.toStatus(), f.triggeredBy(), f.pgProvider())
-                                : "결제 %s → %s (%s, %s) — %s".formatted(f.fromStatus(), f.toStatus(), f.triggeredBy(), f.pgProvider(), f.reason()),
+                                ? "결제 %s → %s (%s, %s%s)".formatted(f.fromStatus(), f.toStatus(),
+                                        f.triggeredBy(), f.pgProvider(), installment(f.installmentMonths()))
+                                : "결제 %s → %s (%s, %s%s) — %s".formatted(f.fromStatus(), f.toStatus(),
+                                        f.triggeredBy(), f.pgProvider(), installment(f.installmentMonths()), f.reason()),
                         f.amount()))
                 .toList();
+    }
+
+    /** 일시불이면 아무 말도 하지 않는다. 대부분이 일시불이라 매 줄에 "일시불"이 붙으면 잡음이 된다. */
+    private static String installment(int months) {
+        return months > 0 ? ", %d개월 할부".formatted(months) : "";
     }
 
     @Override

@@ -78,17 +78,60 @@ public class Payment {
     @OneToMany(mappedBy = "payment", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private final List<PaymentHistory> histories = new ArrayList<>();
 
-    private Payment(String orderNo, long amount) {
+    /**
+     * 할부 개월. <b>0이면 일시불</b>이고, 그 밖에는 카드사에 요청한 개월 수다.
+     *
+     * <p><b>이 값은 우리 정산 금액을 바꾸지 않는다.</b> 고객이 12개월로 나눠 내도 카드사가
+     * 가맹점에는 일시에 전액을 지급하고, 분납은 카드사와 고객 사이의 일이다. 그래서 대사·정산은
+     * 이 값을 보지 않는다. 그럼에도 저장하는 이유는 둘이다 — 운영자가 대사 화면에서 건을 판단할 때
+     * 필요하고, 이상거래 판정이 이 값을 본다(고액을 한도 안에서 키우는 가장 쉬운 수단이 할부다).
+     */
+    @Column(nullable = false)
+    private int installmentMonths;
+
+    private Payment(String orderNo, long amount, int installmentMonths) {
         this.orderNo = orderNo;
         this.amount = amount;
         this.balanceAmount = amount;
         this.status = PaymentStatus.READY;
         this.requestedAt = Instant.now();
+        this.installmentMonths = installmentMonths;
     }
 
-    /** 결제 시작 — READY 상태로 생성한다. */
+    /** 결제 시작 — READY 상태로 생성한다. 일시불. */
     public static Payment initiate(String orderNo, Money amount) {
-        return new Payment(orderNo, amount.minorUnit());
+        return initiate(orderNo, amount, 0);
+    }
+
+    /**
+     * 결제 시작 — 할부 개월을 함께 받는다. 값을 <b>여기서</b> 검증하는 이유는, 승인 요청을
+     * 내보낸 뒤에 카드사가 거절하면 그때는 이미 우리 쪽에 IN_PROGRESS 행이 남기 때문이다.
+     * 우리가 미리 알 수 있는 것은 미리 막는다.
+     */
+    public static Payment initiate(String orderNo, Money amount, int installmentMonths) {
+        validateInstallment(amount.minorUnit(), installmentMonths);
+        return new Payment(orderNo, amount.minorUnit(), installmentMonths);
+    }
+
+    /** 할부 최대 개월. 토스페이먼츠 승인 응답의 {@code installmentPlanMonths} 범위와 맞춘다. */
+    private static final int MAX_INSTALLMENT_MONTHS = 12;
+
+    /** 국내 카드사 공통 — 건당 5만원 이상일 때만 할부가 걸린다. */
+    private static final long MIN_INSTALLMENT_AMOUNT = 50_000L;
+
+    private static void validateInstallment(long amount, int months) {
+        if (months == 0) {
+            return;                       // 일시불
+        }
+        if (months < 0 || months > MAX_INSTALLMENT_MONTHS) {
+            throw new PaymentException("INVALID_INSTALLMENT",
+                    "할부 개월은 0(일시불) 또는 1~%d 이어야 합니다: %d"
+                            .formatted(MAX_INSTALLMENT_MONTHS, months));
+        }
+        if (amount < MIN_INSTALLMENT_AMOUNT) {
+            throw new PaymentException("INVALID_INSTALLMENT",
+                    "%,d원 미만은 할부가 되지 않습니다: %,d원".formatted(MIN_INSTALLMENT_AMOUNT, amount));
+        }
     }
 
     /** READY → IN_PROGRESS. paymentKey를 귀속시키고 승인을 시작한다. */

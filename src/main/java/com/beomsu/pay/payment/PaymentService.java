@@ -52,7 +52,13 @@ public class PaymentService {
      */
     @Transactional
     public Long beginApproval(String orderNo, String paymentKey, Money amount) {
-        Payment payment = Payment.initiate(orderNo, amount);
+        return beginApproval(orderNo, paymentKey, amount, 0);
+    }
+
+    /** 할부 개월을 함께 받는 형태. 0이면 일시불이다. */
+    @Transactional
+    public Long beginApproval(String orderNo, String paymentKey, Money amount, int installmentMonths) {
+        Payment payment = Payment.initiate(orderNo, amount, installmentMonths);
         payment.startApproval(paymentKey);
         paymentRepository.save(payment);
         return payment.getId();
@@ -64,8 +70,13 @@ public class PaymentService {
      * 내부 PG 타입은 모듈 노출용 {@link ApprovalOutcome}로 매핑해 돌려준다(order가 불투명하게 전달).
      */
     public ApprovalOutcome pgApprove(String orderNo, String paymentKey, Money amount) {
+        return pgApprove(orderNo, paymentKey, amount, 0);
+    }
+
+    /** 할부 개월을 함께 보내는 형태. 0이면 일시불이다. */
+    public ApprovalOutcome pgApprove(String orderNo, String paymentKey, Money amount, int installmentMonths) {
         PgApproveResult result = pgClient.approve(
-                new PgApproveCommand(paymentKey, orderNo, amount.minorUnit()));
+                new PgApproveCommand(paymentKey, orderNo, amount.minorUnit(), installmentMonths));
         // 관측성: 승인 결과를 결과별로 계측한다. Grafana의 "결제 성공률" 패널의 소스.
         meterRegistry.counter("payment.confirm", "outcome", result.outcome().name().toLowerCase())
                 .increment();
