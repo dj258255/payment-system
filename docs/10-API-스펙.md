@@ -231,6 +231,9 @@
 | POST | `/admin/dlq/{id}/retry` | DLQ 재처리 |
 | GET | `/admin/compensations?status=MANUAL` | 보상 실패 수동 처리 큐 |
 | GET | `/admin/orders/{orderNo}/narrative` | 이 주문에 무슨 일이 있었나를 **한 문단으로**. 읽기 전용, 못 만들면 **204**. 기본은 모델 없는 템플릿(18 문서) |
+| POST | `/admin/orders/{orderNo}/narrative/compare` | 두 서술을 **출처를 가린 채** 제시(A/B, 순서 무작위). 비교할 게 없으면 204 |
+| POST | `/admin/orders/narrative/compare/{id}` | 고른다 — `{"choice": "A"\|"B"\|"TIE"}`. **고른 뒤에야** 출처가 공개된다 |
+| GET | `/admin/orders/narrative/compare/stats` | 집계. **이 표가 쌓인 다음에** 기본값을 정한다 |
 
 ---
 

@@ -31,6 +31,7 @@ public class TimelineNarrativeService {
     private final TimelineNarrativePort port;
     private final NumericProvenanceGuard numberGuard;
     private final MeterRegistry registry;
+    private final NarrativeAuditRepository auditRepository;
 
     /**
      * 주문 하나를 한 문단으로 엮는다.
@@ -40,31 +41,43 @@ public class TimelineNarrativeService {
     public Optional<Narrative> narrate(String orderNo) {
         FactPack facts = draftService.factsFor(orderNo, null);
         if (facts.facts().isEmpty()) {
-            count("no_facts");
+            record(orderNo, "no_facts", null, facts);
             return Optional.empty();
         }
 
         Optional<String> raw = port.narrate(facts);
         if (raw.isEmpty()) {
-            count("abstained");
+            record(orderNo, "abstained", null, facts);
             return Optional.empty();
         }
 
         List<String> unsourced = numberGuard.verify(raw.get(), facts);
         if (!unsourced.isEmpty()) {
-            count("unsourced_figures");
+            record(orderNo, "unsourced_figures", null, facts);
             log.info("[narrative] 출처 없는 숫자가 있어 서술을 버림 order={} figures={}",
                     orderNo, unsourced);
             return Optional.empty();
         }
 
-        count("narrated");
+        record(orderNo, "narrated", raw.get(), facts);
         // 무엇이 쓴 문장인지 함께 낸다 — 사람이 템플릿과 모델을 구별할 수 있어야 한다.
         return Optional.of(new Narrative(raw.get(), port.name(), facts.complete()));
     }
 
-    private void count(String outcome) {
+    /**
+     * 지표와 감사 기록을 함께 남긴다. <b>버린 것도 남긴다</b> — 화면이 빈 이유를 나중에
+     * 답할 수 있어야 하고, 폐기율 자체가 이 기능의 상태를 말한다.
+     *
+     * <p>기록에 실패해도 서술은 내보낸다. 감사가 기능을 세우면 그건 다른 사고가 된다.
+     */
+    private void record(String orderNo, String outcome, String output, FactPack facts) {
         registry.counter("assist.narrative", "outcome", outcome).increment();
+        try {
+            auditRepository.save(NarrativeAudit.of(orderNo, port.name(), outcome, output,
+                    facts.facts().size(), facts.complete()));
+        } catch (RuntimeException e) {
+            log.warn("[narrative] 감사 기록 실패 order={} outcome={} : {}", orderNo, outcome, e.toString());
+        }
     }
 
     /**

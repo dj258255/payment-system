@@ -47,7 +47,8 @@ class TimelineNarrativeServiceTest {
         when(port.name()).thenReturn("test-port");
         when(draftService.factsFor(anyString(), any())).thenReturn(FACTS);
         service = new TimelineNarrativeService(
-                draftService, port, new NumericProvenanceGuard(), registry);
+                draftService, port, new NumericProvenanceGuard(), registry,
+                mock(NarrativeAuditRepository.class));
     }
 
     private double counted(String outcome) {
