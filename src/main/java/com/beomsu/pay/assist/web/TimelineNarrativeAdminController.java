@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+
+import java.util.Map;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -60,6 +62,25 @@ class TimelineNarrativeAdminController {
         return comparison.choose(id, request.choice(), reviewer)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * 미리 만들어 둔 것 중 아직 안 고른 비교 하나. 없으면 204.
+     *
+     * <p>고르는 사람은 이 문만 두드리면 된다. 만드는 일({@code POST .../compare})과 갈라 둔 이유는
+     * 모델 호출이 건당 10초 안팎이라 클릭 사이의 대기가 그대로 사람 시간이 되기 때문이다.
+     */
+    @GetMapping("/narrative/compare/next")
+    ResponseEntity<NarrativeComparisonService.Comparison> next() {
+        return comparison.nextPending()
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    /** 아직 안 고른 비교가 몇 건 남았나. */
+    @GetMapping("/narrative/compare/pending")
+    Map<String, Long> pending() {
+        return Map.of("pending", comparison.pendingCount());
     }
 
     /** 집계 — 무엇이 몇 번 선택됐나. <b>이 표가 쌓인 다음에</b> 기본값을 정한다. */
