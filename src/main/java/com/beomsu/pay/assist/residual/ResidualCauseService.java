@@ -102,6 +102,24 @@ public class ResidualCauseService {
     static final EnumSet<ResolveCause> ENABLED =
             EnumSet.of(ResolveCause.INTERNAL_RECORD_LOST);
 
+    /*
+     * <b>넓히려다 넓힐 자리가 없다는 것을 확인했다.</b>
+     *
+     * 규칙 분류기가 못 내는 원인은 아홉 종 중 둘뿐이었다 — DUPLICATE_RECORD 와 OTHER 다.
+     * OTHER 는 위 FORBIDDEN 이라 남는 것은 DUPLICATE_RECORD 하나였다.
+     *
+     * 그런데 그 자리도 모델의 자리가 아니었다. 대사 엔진의 결과 유형은 넷뿐이라
+     * (MATCHED·INTERNAL_ONLY·EXTERNAL_ONLY·AMOUNT_MISMATCH) 중복 기록은 별도 유형으로
+     * 오지 않고 <b>외부가 내부의 정수배인 AMOUNT_MISMATCH</b> 로 나타난다. 배수인지는 나눗셈이다.
+     *
+     * 그래서 모델을 켜는 대신 규칙에 넣었다(CauseClassifier ③). 그 전까지 이 건들은 규칙 ④로
+     * 떨어져 <b>SUSPECTED_TAMPERING</b> 이 붙고 있었다. PG 파일에 같은 줄이 두 번 실린 것에
+     * 위변조 의심이 붙는 상태였다.
+     *
+     * 결론은 15 문서와 같다. 이 자리에서 모델이 규칙보다 나은 구간을 아직 못 찾았다.
+     * 찾으면 그때 넓힌다.
+     */
+
     private final DraftService draftService;
     private final NumericProvenanceGuard numberGuard;
     private final Optional<ResidualCausePort> port;

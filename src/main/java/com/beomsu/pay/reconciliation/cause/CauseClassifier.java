@@ -109,9 +109,26 @@ public class CauseClassifier {
             }
         });
 
-        // ③ 남은 것: 위 어느 것으로도 설명되지 않을 때만 의심을 제기한다.
+        // ③ 중복 기록: 외부가 내부의 정수배다. PG 파일에 같은 줄이 두 번 실리면 이렇게 보인다.
+        //    산수로 결정되므로 모델에 물을 자리가 아니다. 이걸 안 보면 아래 ④로 떨어져
+        //    <b>평범한 파일 중복에 위변조 의심이 붙는다.</b>
+        boolean explainedByDuplicate = false;
+        if (internal > 0 && diff < 0 && (-diff) % internal == 0) {
+            long times = (-diff) / internal + 1;          // 외부가 내부의 몇 배인가
+            explainedByDuplicate = true;
+            // <b>결정적이 아니라 유력이다.</b> 같은 주문에 결제가 실제로 두 번 일어났는데
+            // 우리가 하나만 기록한 경우도 같은 숫자가 된다. 그 둘은 산수로 안 갈린다.
+            out.add(CauseSuggestion.likely(ResolveCause.DUPLICATE_RECORD,
+                    "외부 %,d원이 내부 %,d원의 정확히 %d배다. PG 파일에 같은 건이 %d번 실렸을 수 있다. "
+                            .formatted(r.getExternalAmount(), internal, times, times)
+                            + "다만 실제로 결제가 %d번 일어났는데 내부에 1건만 남은 경우도 같은 숫자가 된다"
+                            .formatted(times),
+                    internal, r.getExternalAmount()));
+        }
+
+        // ④ 남은 것: 위 어느 것으로도 설명되지 않을 때만 의심을 제기한다.
         //    설명이 있는데도 이걸 붙이면 사람이 매번 배제 확인을 해야 한다.
-        if (!explainedByFee && !explainedByCancel && diff != 0) {
+        if (!explainedByFee && !explainedByCancel && !explainedByDuplicate && diff != 0) {
             String cancelNote = state
                     .map(p -> p.cancelCount() == 0
                             ? "취소 이력이 없다"

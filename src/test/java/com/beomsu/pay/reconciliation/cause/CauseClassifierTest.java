@@ -118,4 +118,44 @@ class CauseClassifierTest {
         assertThat(out).singleElement().satisfies(s ->
                 assertThat(s.evidence()).contains("결제 기록을 찾지 못했다"));
     }
+
+    @Test
+    @DisplayName("외부가 내부의 정수배면 중복 기록 — 위변조로 몰지 않는다")
+    void externalIsMultipleOfInternalMeansDuplicate() {
+        paymentWithCancel(10_000, 10_000, 0);
+
+        // PG 파일에 같은 건이 두 번 실리면 외부가 내부의 2배로 온다.
+        List<CauseSuggestion> out = classifier.suggest(mismatch(10_000, 20_000));
+
+        assertThat(out).singleElement().satisfies(s -> {
+            assertThat(s.cause()).isEqualTo(ResolveCause.DUPLICATE_RECORD);
+            // 결정적이 아니다 — 실제로 두 번 결제되고 내부에 1건만 남은 경우도 같은 숫자가 된다.
+            assertThat(s.confidence()).isEqualTo(CauseSuggestion.Confidence.LIKELY);
+            assertThat(s.evidence()).contains("2배").contains("2번 실렸을 수 있다");
+        });
+    }
+
+    @Test
+    @DisplayName("중복이면 위변조 의심을 함께 내지 않는다 — 설명이 있는데 의심을 붙이면 배제 확인이 늘어난다")
+    void duplicateSuppressesSuspicion() {
+        paymentWithCancel(10_000, 10_000, 0);
+
+        List<CauseSuggestion> out = classifier.suggest(mismatch(10_000, 30_000));   // 3배
+
+        assertThat(out).extracting(CauseSuggestion::cause)
+                .containsExactly(ResolveCause.DUPLICATE_RECORD)
+                .doesNotContain(ResolveCause.SUSPECTED_TAMPERING);
+    }
+
+    @Test
+    @DisplayName("배수가 아니면 중복이 아니다 — 그때는 종전대로 의심이 남는다")
+    void nonMultipleIsStillSuspicious() {
+        paymentWithCancel(10_000, 10_000, 0);
+
+        // 외부가 더 크지만 정수배가 아니다.
+        List<CauseSuggestion> out = classifier.suggest(mismatch(10_000, 17_000));
+
+        assertThat(out).extracting(CauseSuggestion::cause)
+                .containsExactly(ResolveCause.SUSPECTED_TAMPERING);
+    }
 }
