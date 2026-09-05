@@ -2,6 +2,7 @@ package com.beomsu.pay.assist.residual;
 
 import com.beomsu.pay.reconciliation.ResolveCause;
 import com.beomsu.pay.assist.draft.FactPack;
+import com.beomsu.pay.assist.draft.UntrustedText;
 import com.beomsu.pay.reconciliation.ResolveCause;
 import org.springframework.stereotype.Component;
 
@@ -97,7 +98,7 @@ public class ResidualPromptBuilder {
     String user(FactPack facts) {
         StringBuilder sb = new StringBuilder("주문번호: ").append(facts.orderNo()).append("\n\n사실:\n");
         for (String f : facts.facts()) {
-            sb.append("- ").append(f).append('\n');
+            sb.append("- ").append(UntrustedText.flatten(f)).append('\n');
         }
         if (!facts.complete()) {
             sb.append("\n주의: 일부 출처 조회가 실패해 이 목록은 불완전합니다.\n");
