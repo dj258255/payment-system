@@ -19,4 +19,7 @@ public interface DisputeRepository extends JpaRepository<Dispute, Long> {
 
     /** 타임라인 조립용(ADR-011). 한 주문에 분쟁이 여러 번 걸릴 수 있어 목록이다. */
     List<Dispute> findByOrderNoOrderByIdAsc(String orderNo);
+
+    /** 아직 다투지 않은 건. 기한이 살아 있는 동안에만 대응할 수 있다. */
+    List<Dispute> findByStatus(DisputeStatus status);
 }

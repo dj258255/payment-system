@@ -124,6 +124,30 @@ groups:
           summary: "장애 원인 분석에서 모델이 1시간째 한 건도 답하지 못함"
           description: "규칙이 기권한 건이 통째로 비고 있습니다. 모델 서버나 가드 임계를 확인하세요."
 
+      # 7-4) 이의제기 대응 기한 임박 — 이 시스템에서 외부 하드 기한이 있는 유일한 사람 대기열.
+      #      이상거래 심사는 밀려도 늦게나마 할 수 있지만, 이의제기는 기한을 넘기면 다툴 기회
+      #      자체가 사라지고 그대로 패소가 되어 대금이 회수된다. 늦은 대응과 안 한 대응이 같다.
+      #      넘기는 순간에는 아무 에러도 안 난다. 행은 그대로 OPEN 이고 어느 날 패소 통보만 온다.
+      - alert: DisputeDeadlineApproaching
+        expr: dispute_nearest_deadline_seconds < 172800 and dispute_open_count > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "이의제기 대응 기한이 48시간 안으로 들어옴"
+          description: "증빙을 제출하지 않은 건이 있고 가장 임박한 기한이 48시간 미만입니다. 넘기면 다툴 수 없습니다."
+
+      # 7-5) 이미 기한을 넘긴 건이 남아 있음 — 놓친 것을 늦게라도 알아야 한다.
+      #      남은 시간이 음수인 것은 기한이 지났다는 뜻이다. 0 으로 깎지 않는 이유가 이것이다.
+      - alert: DisputeDeadlineMissed
+        expr: dispute_nearest_deadline_seconds < 0 and dispute_open_count > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "대응 기한이 지난 이의제기가 남아 있음"
+          description: "기한을 넘긴 건이 OPEN 으로 남아 있습니다. 사실상 패소이며 대금 회수를 예상해야 합니다."
+
       # 8) 이상거래 심사 적체 — 사람이 봐야 하는 건이 오래 방치되고 있음.
       #    심사가 밀리면 사기로 의심되는 결제가 그대로 정산으로 넘어간다. 미확정 결제가
       #    떠 있는 것과 성격이 같아 같은 모양으로 잡는다.
