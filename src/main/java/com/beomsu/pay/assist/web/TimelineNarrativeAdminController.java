@@ -83,6 +83,14 @@ class TimelineNarrativeAdminController {
         return Map.of("pending", comparison.pendingCount());
     }
 
+    /** 고른 것을 CSV 로 받는다. 로컬 DB 는 지워지므로 판정은 파일로 꺼내 둔다. */
+    @GetMapping(value = "/narrative/compare/export", produces = "text/csv;charset=UTF-8")
+    ResponseEntity<String> export() {
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"narrative-preferences.csv\"")
+                .body(comparison.exportCsv());
+    }
+
     /** 집계 — 무엇이 몇 번 선택됐나. <b>이 표가 쌓인 다음에</b> 기본값을 정한다. */
     @GetMapping("/narrative/compare/stats")
     NarrativeComparisonService.Stats stats() {
