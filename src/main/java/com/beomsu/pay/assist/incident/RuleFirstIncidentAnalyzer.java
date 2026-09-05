@@ -32,6 +32,9 @@ public class RuleFirstIncidentAnalyzer implements IncidentAnalysisPort {
 
     private static final Logger log = LoggerFactory.getLogger(RuleFirstIncidentAnalyzer.class);
 
+    /** 알림이 보는 이름. {@code assist.residual.outcome} 과 규칙을 맞춘다. */
+    public static final String METRIC = "assist.incident.outcome";
+
     private final RuleBasedIncidentAnalyzer rule;
     private final IncidentAnalysisPort model;
     private final EvidenceGroundingGuard grounding = new EvidenceGroundingGuard();
@@ -67,7 +70,7 @@ public class RuleFirstIncidentAnalyzer implements IncidentAnalysisPort {
     }
 
     private void count(String outcome) {
-        registry.counter("assist.incident", "outcome", outcome).increment();
+        registry.counter(METRIC, "outcome", outcome).increment();
     }
 
     @Override

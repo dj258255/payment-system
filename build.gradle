@@ -56,6 +56,9 @@ dependencies {
     // --- Observability ---
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'   // /actuator/prometheus
+    // 알림 파일이 찾는 지표 이름과 실제 노출 이름을 대조하는 테스트에 필요하다.
+    // 이름이 어긋나면 알림은 영원히 안 울리고, 안 울리는 알림은 잘 도는 알림과 구별되지 않는다.
+    testImplementation 'io.micrometer:micrometer-registry-prometheus'
 
     // --- Resilience (서킷브레이커·재시도) ---
     implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.2.0'
