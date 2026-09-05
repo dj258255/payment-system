@@ -40,6 +40,12 @@ public class WalletService {
     private final WalletAccountRepository accountRepository;
     private final WalletTransactionRepository transactionRepository;
 
+    /**
+     * 재고 차감과 같은 이유로 둔다 — <b>재시도가 흡수하면 경합이 있었다는 사실이 사라진다.</b>
+     * 최종 결과만 세면 다섯 번 만에 성공한 요청이 한 번에 성공한 요청과 구별되지 않는다.
+     */
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+
     /** 선불 충전 — 전금법 기명 한도 초과 시 LIMIT_EXCEEDED. 낙관적 락 충돌은 재시도. 주문과 무관해 orderNo 없음. */
     public long charge(long userId, long amount) {
         return mutateWithRetry(userId, WalletTransactionType.CHARGE, amount, null, WalletAccount::charge);
@@ -133,7 +139,9 @@ public class WalletService {
                 transactionRepository.save(WalletTransaction.of(userId, type, amount, account.getBalance(), orderNo));
                 return account.getBalance();
             } catch (ObjectOptimisticLockingFailureException | OptimisticLockException e) {
+                meterRegistry.counter("wallet.mutate.retry").increment();
                 if (++attempts >= MAX_RETRY) {
+                    meterRegistry.counter("wallet.mutate.exhausted").increment();
                     throw new WalletException("WALLET_CONCURRENCY",
                             "월렛 잔액 변경 경합이 계속됩니다: userId=" + userId);
                 }
