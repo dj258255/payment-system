@@ -38,6 +38,9 @@ public class KakaoPayPgClient implements PgClient {
     /** 카카오페이가 문서로 공개한 테스트 가맹점 코드. 계약 없이도 값 자체는 쓸 수 있다. */
     static final String TEST_CID = "TC0ONETIME";
 
+    /** 사용자 인증 뒤에야 생기는 값이라 지금은 채울 수 없다. {@link #approve} 주석 참고. */
+    static final String PG_TOKEN_PLACEHOLDER = "pg-token-not-available-yet";
+
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final String cid;
@@ -60,7 +63,10 @@ public class KakaoPayPgClient implements PgClient {
         //
         // 어느 쪽이든 우리에게는 치명적이다 — HTTP 상태가 아니라 <PG 에러 코드>로 판정하기 때문에,
         // 본문을 못 읽으면 판정이 통째로 무너진다. 그래서 본문이 확실히 읽히는 팩토리를 쓴다.
-        var factory = new org.springframework.http.client.JdkClientHttpRequestFactory();
+        // 연결 타임아웃은 팩토리가 아니라 HttpClient 에 건다. 팩토리에만 읽기 타임아웃을 걸고
+        // 연결 타임아웃을 빠뜨리면 <연결이 안 되는 PG> 에 무한정 매달린다.
+        var factory = new org.springframework.http.client.JdkClientHttpRequestFactory(
+                java.net.http.HttpClient.newBuilder().connectTimeout(connectTimeout).build());
         factory.setReadTimeout(readTimeout);
         // 카카오페이 인증은 Basic 이 아니라 전용 스킴이다. 개발 키는 DEV_SECRET_KEY 로 보낸다.
         String scheme = secretKey.startsWith("DEV") ? "DEV_SECRET_KEY" : "SECRET_KEY";
@@ -80,13 +86,18 @@ public class KakaoPayPgClient implements PgClient {
                             "tid", command.paymentKey(),
                             "partner_order_id", command.orderNo(),
                             "partner_user_id", "pay",
-                            "pg_token", "pg-token-placeholder"))
+                            // pg_token 은 사용자가 결제창에서 인증한 뒤 redirect 로 돌아오는 값이다.
+                            // 우리 PgClient 계약(승인 한 번)에는 그 값을 실을 자리가 없다.
+                            // <그래서 이 어댑터는 지금 승인을 성공시킬 수 없다.> 권한(비즈앱)이
+                            // 열리면 계약을 두 단계로 넓히는 것이 먼저다. 그때까지 이 값은
+                            // 자리표시자이고, 그 사실을 숨기지 않는다.
+                            "pg_token", PG_TOKEN_PLACEHOLDER))
                     .retrieve()
                     .onStatus(status -> true, (request, response) -> { })
                     .toEntity(String.class);
 
             if (res.getStatusCode().is2xxSuccessful()) {
-                return PgApproveResult.success(methodOf(res.getBody()), "KAKAOPAY");
+                return mapApproved(res.getBody(), command.amount());
             }
             return classify(res.getBody());
         } catch (ResourceAccessException e) {
@@ -132,6 +143,31 @@ public class KakaoPayPgClient implements PgClient {
     public PgQueryResult query(String paymentKey) {
         throw new UnsupportedOperationException(
                 "카카오페이 조회는 아직 구현하지 않았습니다 — 승인 권한(비즈앱)이 열린 뒤에 만듭니다.");
+    }
+
+    /**
+     * <b>승인 응답의 금액이 우리가 기대한 금액과 같은지 본다.</b> 토스 어댑터와 같은 규약이다.
+     *
+     * <p>다르면 성공으로 처리하지 않고 <b>던진다</b>. 승인이 났는지 안 났는지 우리가 모르는
+     * 상태이므로 실패로 단정하면 안 되고, 그렇다고 성공으로 넘기면 <b>장부와 실제 돈이
+     * 어긋난 채로 확정</b>된다. 던지면 미확정으로 보존되고 조회가 진실을 정한다.
+     */
+    private PgApproveResult mapApproved(String body, long expectedAmount) {
+        try {
+            JsonNode node = objectMapper.readTree(body == null ? "{}" : body);
+            JsonNode total = node.path("amount").path("total");
+            if (!total.isMissingNode() && total.asLong() != expectedAmount) {
+                throw new IllegalStateException(
+                        "승인 금액 불일치: 요청 " + expectedAmount + ", 응답 " + total.asLong());
+            }
+            return PgApproveResult.success(
+                    node.path("payment_method_type").asText("KAKAOPAY"), "KAKAOPAY");
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            // 본문을 못 읽으면 승인 여부를 모른다. 성공으로 넘기지 않는다.
+            throw new IllegalStateException("승인 응답을 읽지 못했습니다: " + e.getMessage(), e);
+        }
     }
 
     private String methodOf(String body) {
