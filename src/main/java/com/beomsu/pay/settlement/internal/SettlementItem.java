@@ -31,6 +31,16 @@ public class SettlementItem {
     @Column(nullable = false, length = 64)
     private String orderNo;
 
+    /**
+     * 정산을 받을 판매자. <b>{@code null} 이면 플랫폼 직판</b>이다.
+     *
+     * <p>기존 주문은 플랫폼이 직접 판 것이고 그건 사실이다. 가짜 판매자를 만들어 채우면
+     * 없던 판매자를 지어내는 것이 되므로 {@code null} 로 둔다. 집계는 이것도 하나의
+     * 묶음으로 센다.
+     */
+    @Column(name = "seller_id")
+    private Long sellerId;
+
     @Column(nullable = false)
     private long amount;
 
@@ -72,7 +82,15 @@ public class SettlementItem {
 
     /** 결제 승인 항목을 PENDING_CONFIRMATION(구매확정 대기) 상태로 만든다. */
     public static SettlementItem of(long paymentId, String orderNo, long amount, LocalDate confirmedDate) {
-        return new SettlementItem(paymentId, orderNo, amount, confirmedDate);
+        return of(paymentId, orderNo, amount, confirmedDate, null);
+    }
+
+    /** @param sellerId 정산을 받을 판매자. {@code null} 이면 플랫폼 직판 */
+    public static SettlementItem of(long paymentId, String orderNo, long amount,
+                                    LocalDate confirmedDate, Long sellerId) {
+        SettlementItem item = new SettlementItem(paymentId, orderNo, amount, confirmedDate);
+        item.sellerId = sellerId;
+        return item;
     }
 
     /**
