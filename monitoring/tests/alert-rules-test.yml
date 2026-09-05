@@ -1,0 +1,132 @@
+# 알림 규칙 단위 테스트 (promtool test rules).
+#
+# 왜 필요한가: 지표 이름이 맞아도 조건식이 틀리면 안 울린다. 그리고 안 울리는 알림은
+# 잘 도는 알림과 화면에서 구별되지 않는다. 이름은 자바 계약 테스트가, 게이지 조건은
+# 통합 테스트가 잡는데, rate() 를 쓰는 알림은 시계열이 있어야 해서 둘 다로는 못 잡았다.
+# promtool 이 그 자리를 메운다 — 시계열을 만들어 넣고 어느 알림이 뜨는지 검사한다.
+#
+# 돌리는 법:
+#   docker run --rm -v "$PWD/monitoring:/m" --entrypoint promtool prom/prometheus:latest \
+#     test rules /m/tests/alert-rules-test.yml
+rule_files:
+  - ../alert-rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ── 서술이 계속 템플릿으로만 나가는 상태 ──────────────────────────────
+  # 폴백이 있어 화면은 늘 채워지고 에러도 안 난다. 지표를 안 보면 아무도 모른다.
+  - interval: 1m
+    input_series:
+      - series: 'assist_narrative_outcome_total{outcome="fell_back_to_template"}'
+        values: '0+9x40'      # 분당 9건씩 폴백
+      - series: 'assist_narrative_outcome_total{outcome="narrated"}'
+        values: '0+1x40'      # 분당 1건만 모델 서술
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: AssistNarrativeAlwaysFallingBack
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "운영자용 서술의 절반 이상이 템플릿 폴백"
+              description: "모델 서술이 가드에 걸리거나 모델 서버가 응답하지 않고 있습니다. 화면은 채워지므로 티가 안 납니다."
+
+  # 반대 방향 — 모델이 잘 쓰고 있으면 조용해야 한다.
+  # 항상 울리는 알림은 알림이 아니다.
+  - interval: 1m
+    input_series:
+      - series: 'assist_narrative_outcome_total{outcome="fell_back_to_template"}'
+        values: '0+1x40'
+      - series: 'assist_narrative_outcome_total{outcome="narrated"}'
+        values: '0+9x40'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: AssistNarrativeAlwaysFallingBack
+        exp_alerts: []
+
+  # ── 장애 분석에서 모델이 조용히 답을 안 내는 상태 ─────────────────────
+  # 규칙이 답한 건은 그대로 나오므로 화면만 봐서는 정상으로 보인다.
+  - interval: 1m
+    input_series:
+      - series: 'assist_incident_outcome_total{outcome="by_model"}'
+        values: '0+0x80'      # 한 건도 안 늘어난다
+      - series: 'assist_incident_outcome_total{outcome="model_silent"}'
+        values: '0+3x80'
+      - series: 'assist_incident_outcome_total{outcome="by_rule"}'
+        values: '0+5x80'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: AssistIncidentModelSilent
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "장애 원인 분석에서 모델이 1시간째 한 건도 답하지 못함"
+              description: "규칙이 기권한 건이 통째로 비고 있습니다. 모델 서버나 가드 임계를 확인하세요."
+
+  # 모델이 답하고 있으면 조용하다.
+  - interval: 1m
+    input_series:
+      - series: 'assist_incident_outcome_total{outcome="by_model"}'
+        values: '0+2x80'
+      - series: 'assist_incident_outcome_total{outcome="model_silent"}'
+        values: '0+1x80'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: AssistIncidentModelSilent
+        exp_alerts: []
+
+  # ── 이의제기 기한 ────────────────────────────────────────────────
+  # 즉시값 게이지라 통합 테스트로도 확인했지만, 임계 숫자가 규칙 파일에
+  # 제대로 박혀 있는지는 여기서만 보인다.
+  - interval: 1m
+    input_series:
+      - series: 'dispute_nearest_deadline_seconds'
+        values: '100000x20'   # 약 27시간 남음 → 48시간 임계 안
+      - series: 'dispute_open_count'
+        values: '2x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: DisputeDeadlineApproaching
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "이의제기 대응 기한이 48시간 안으로 들어옴"
+              description: "증빙을 제출하지 않은 건이 있고 가장 임박한 기한이 48시간 미만입니다. 넘기면 다툴 수 없습니다."
+      - eval_time: 20m
+        alertname: DisputeDeadlineMissed
+        exp_alerts: []
+
+  # 기한이 지나면 critical 로 올라간다. 음수를 0 으로 깎으면 이 검사가 깨진다.
+  - interval: 1m
+    input_series:
+      - series: 'dispute_nearest_deadline_seconds'
+        values: '-3600x20'
+      - series: 'dispute_open_count'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: DisputeDeadlineMissed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "대응 기한이 지난 이의제기가 남아 있음"
+              description: "기한을 넘긴 건이 OPEN 으로 남아 있습니다. 사실상 패소이며 대금 회수를 예상해야 합니다."
+
+  # 다툴 건이 없으면 기한 지표가 0 이어도 조용하다.
+  - interval: 1m
+    input_series:
+      - series: 'dispute_nearest_deadline_seconds'
+        values: '0x20'
+      - series: 'dispute_open_count'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: DisputeDeadlineApproaching
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: DisputeDeadlineMissed
+        exp_alerts: []

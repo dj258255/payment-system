@@ -151,6 +151,21 @@ app:
       base-url: ${APP_ASSIST_OLLAMA_BASE_URL:http://localhost:11434}
       model: ${APP_ASSIST_OLLAMA_MODEL:qwen3:14b}
       narrative-model: ${APP_ASSIST_OLLAMA_NARRATIVE_MODEL:qwen3:8b}
+      # 읽기 타임아웃. <b>실측으로 정했다</b>(18 문서 11절). 그 전에는 코드에 박힌 기본값이
+      # 서술 60초 · 장애분석 120초로 서로 달랐고, 그 숫자를 아무도 정한 적이 없었다.
+      #
+      #   템플릿        p50 0ms
+      #   모델 순차      p50 8.8s · p95 12.7s
+      #   모델 동시 4    p50 30.3s · p95 31.6s
+      #
+      # 60초로 두면 동시 요청이 몰릴 때 운영자 화면이 30초 넘게 멈춘 채 기다린다.
+      # 타임아웃이 걸리면 템플릿으로 떨어지므로 <b>기다리는 것보다 떨어지는 편이 낫다.</b>
+      # 15초는 순차 p95(12.7s)는 살리고 동시 적체(30s+)는 끊는 자리다.
+      timeout-seconds: ${APP_ASSIST_OLLAMA_TIMEOUT_SECONDS:15}
+      # 장애 로그 분석은 성격이 다르다. 운영자가 로그를 붙여 넣고 결과를 기다리는
+      # 명시적 동작이라 화면 렌더링과 예산이 같지 않다. 대신 폴백이 없어 시간이 지나면
+      # 그냥 빈손이므로, 무한정 늘리지 않는다.
+      incident-timeout-seconds: ${APP_ASSIST_OLLAMA_INCIDENT_TIMEOUT_SECONDS:30}
     # 운영자용 타임라인 서술(18 문서). 어드민 화면에서 "이 주문에 무슨 일이 있었나"를
     # 한 문단으로 돌려준다. 읽기 전용이고 고객에게 나가지 않는다.
     #

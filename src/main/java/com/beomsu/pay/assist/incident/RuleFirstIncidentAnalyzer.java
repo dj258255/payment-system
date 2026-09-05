@@ -56,7 +56,7 @@ public class RuleFirstIncidentAnalyzer implements IncidentAnalysisPort {
     public RuleFirstIncidentAnalyzer(
             @Value("${app.assist.ollama.base-url:http://localhost:11434}") String baseUrl,
             @Value("${app.assist.ollama.incident-model:qwen3:8b}") String model,
-            @Value("${app.assist.ollama.timeout-seconds:120}") long timeoutSeconds,
+            @Value("${app.assist.ollama.incident-timeout-seconds:30}") long timeoutSeconds,
             MeterRegistry registry) {
         this(new RuleBasedIncidentAnalyzer(), new OllamaIncidentAnalyzer(baseUrl, model, timeoutSeconds),
                 registry);

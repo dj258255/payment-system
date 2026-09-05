@@ -35,7 +35,7 @@ public class OllamaNarrativeAdapter implements TimelineNarrativePort {
     OllamaNarrativeAdapter(
             @Value("${app.assist.ollama.base-url:http://localhost:11434}") String baseUrl,
             @Value("${app.assist.ollama.narrative-model:qwen3:8b}") String model,
-            @Value("${app.assist.ollama.timeout-seconds:60}") long timeoutSeconds) {
+            @Value("${app.assist.ollama.timeout-seconds:15}") long timeoutSeconds) {
         this.model = model;
         var factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout((int) Duration.ofSeconds(5).toMillis());
