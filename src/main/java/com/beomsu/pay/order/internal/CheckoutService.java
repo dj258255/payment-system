@@ -107,6 +107,14 @@ public class CheckoutService {
      */
     public CheckoutResult confirm(String orderNo, String paymentKey, Money cardAmount,
                                   long pointAmount, long walletAmount, long authenticatedUserId) {
+        return confirm(orderNo, paymentKey, cardAmount, pointAmount, walletAmount,
+                authenticatedUserId, 0);
+    }
+
+    /** 할부 개월을 함께 받는 형태. 0이면 일시불이다. */
+    public CheckoutResult confirm(String orderNo, String paymentKey, Money cardAmount,
+                                  long pointAmount, long walletAmount, long authenticatedUserId,
+                                  int installmentMonths) {
         // 0. 음수 방어 — 음수 금액으로 검증 우회·오버플로를 시도할 수 없게 한다. (DB 없음)
         if (pointAmount < 0 || walletAmount < 0 || cardAmount.minorUnit() < 0) {
             throw new OrderException("INVALID_REQUEST", "결제 금액은 음수일 수 없습니다.");
@@ -123,12 +131,13 @@ public class CheckoutService {
         // Phase 1 (tx) — 예약: 검증·주문 상태 전이(이중지불 잠금)·포인트/월렛 선점·결제 IN_PROGRESS 적재.
         // 커밋 후 DB 커넥션을 반납한다.
         CheckoutTx.Reservation reservation =
-                checkoutTx.reserve(orderNo, paymentKey, cardAmount, pointAmount, walletAmount, authenticatedUserId);
+                checkoutTx.reserve(orderNo, paymentKey, cardAmount, pointAmount, walletAmount,
+                        authenticatedUserId, installmentMonths);
 
         // Phase 2 (tx 밖) — PG 승인: 외부 HTTP 콜을 트랜잭션 밖에서 한다. 이 동안 DB 커넥션 0개 점유
         // → 느린 PG가 커넥션 풀을 마르게 하지 않는다(ADR-007). 카드 몫이 0이면(포인트+월렛 전액) PG 콜을 생략한다.
         ApprovalOutcome outcome = (cardAmount.minorUnit() > 0)
-                ? paymentService.pgApprove(orderNo, paymentKey, cardAmount)
+                ? paymentService.pgApprove(orderNo, paymentKey, cardAmount, installmentMonths)
                 : null;
 
         // Phase 3 (tx) — 확정/보상: PG 결과를 결제·주문에 반영하고 재고 차감/보상까지 마친다.

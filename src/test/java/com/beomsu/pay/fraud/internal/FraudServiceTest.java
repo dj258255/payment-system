@@ -40,6 +40,9 @@ class FraudServiceTest {
         ReflectionTestUtils.setField(service, "deviceWeight", 25);
         ReflectionTestUtils.setField(service, "ipThreshold", 15);
         ReflectionTestUtils.setField(service, "ipWeight", 20);
+        ReflectionTestUtils.setField(service, "longInstallmentMonths", 6);
+        ReflectionTestUtils.setField(service, "installmentAmountThreshold", 1_000_000L);
+        ReflectionTestUtils.setField(service, "installmentWeight", 20);
     }
 
     private FraudCheckRequest req(long amount) {
@@ -88,6 +91,45 @@ class FraudServiceTest {
 
         assertThat(r.score()).isEqualTo(70);
         assertThat(r.decision()).isEqualTo(FdsDecision.REVIEW);
+    }
+
+    private FraudCheckRequest req(long amount, int installmentMonths) {
+        return new FraudCheckRequest(1L, "card-1", "1.2.3.4", "device-1", amount, installmentMonths);
+    }
+
+    @Test
+    @DisplayName("고액 장기 할부는 점수만 얹는다 — 차단이 아니라 사람이 볼 이유를 만든다")
+    void longInstallmentOnHighAmountScoresButDoesNotBlock() {
+        when(velocityCounter.recordAndCount(anyString())).thenReturn(1);
+
+        FraudResult r = service.evaluate(req(4_000_000, 12));
+
+        // 고액(+30) + 장기 할부(+20) = 50. CHALLENGE(40) 는 넘고 REVIEW(60) 에는 못 미친다.
+        assertThat(r.score()).isEqualTo(50);
+        assertThat(r.reasons()).anyMatch(s -> s.startsWith("LONG_INSTALLMENT_HIGH_AMOUNT"));
+        assertThat(r.decision()).isEqualTo(FdsDecision.CHALLENGE);
+    }
+
+    @Test
+    @DisplayName("소액 장기 할부는 신호가 아니다 — 할부 자체는 정상이다")
+    void longInstallmentOnSmallAmountIsNotASignal() {
+        when(velocityCounter.recordAndCount(anyString())).thenReturn(1);
+
+        FraudResult r = service.evaluate(req(300_000, 12));
+
+        assertThat(r.score()).isZero();
+        assertThat(r.reasons()).noneMatch(s -> s.startsWith("LONG_INSTALLMENT"));
+    }
+
+    @Test
+    @DisplayName("고액 일시불도 할부 신호가 아니다")
+    void highAmountLumpSumIsNotAnInstallmentSignal() {
+        when(velocityCounter.recordAndCount(anyString())).thenReturn(1);
+
+        FraudResult r = service.evaluate(req(4_000_000, 0));
+
+        assertThat(r.score()).isEqualTo(30);      // 고액만
+        assertThat(r.reasons()).noneMatch(s -> s.startsWith("LONG_INSTALLMENT"));
     }
 
     @Test

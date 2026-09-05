@@ -43,7 +43,8 @@ public class PaymentTimelineFacts {
                                 h.getTriggeredBy().name(),
                                 h.getReason(),
                                 payment.getAmount(),
-                                payment.getPgProvider()))
+                                payment.getPgProvider(),
+                                payment.getInstallmentMonths()))
                         .toList())
                 .orElseGet(List::of);
     }
@@ -86,6 +87,7 @@ public class PaymentTimelineFacts {
 
     /** 전이 한 건. 상태 이름은 문자열로 내준다 — enum을 내주면 받는 쪽이 payment 내부에 묶인다. */
     public record PaymentFact(Instant at, String fromStatus, String toStatus,
-                              String triggeredBy, String reason, long amount, String pgProvider) {
+                              String triggeredBy, String reason, long amount, String pgProvider,
+                              int installmentMonths) {
     }
 }

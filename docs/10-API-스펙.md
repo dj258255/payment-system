@@ -28,6 +28,7 @@
 |---|---|---|
 | 400 | `INVALID_REQUEST` | 필드 검증 실패 |
 | 400 | `INVALID_IDEMPOTENCY_KEY` | 멱등키 형식 오류 (누락·300자 초과) |
+| 400 | `INVALID_INSTALLMENT` | 할부 개월이 범위 밖(0 또는 1~12)이거나, **카드 몫이 5만원 미만인데 할부를 요청** |
 | 404 | `PAYMENT_NOT_FOUND` / `ORDER_NOT_FOUND` | 대상 없음 |
 | 409 | `IDEMPOTENT_REQUEST_PROCESSING` | 같은 멱등키의 이전 요청이 아직 처리 중 → **클라이언트는 잠시 후 같은 키로 재시도** |
 | 409 | `INVALID_STATE_TRANSITION` | 상태머신 위반 (예: CANCELED 건 승인 시도) |

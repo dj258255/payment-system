@@ -92,8 +92,8 @@ class CheckoutServiceTest {
 
     /** 카드 승인 성공 경로 스텁 — beginApproval→id, pgApprove→SUCCESS, applyResult→DONE. */
     private void cardApproved() {
-        when(paymentService.beginApproval(anyString(), anyString(), any(Money.class))).thenReturn(123L);
-        when(paymentService.pgApprove(anyString(), anyString(), any(Money.class)))
+        when(paymentService.beginApproval(anyString(), anyString(), any(Money.class), anyInt())).thenReturn(123L);
+        when(paymentService.pgApprove(anyString(), anyString(), any(Money.class), anyInt()))
                 .thenReturn(new ApprovalOutcome(ApprovalOutcome.Result.SUCCESS, "CARD", null));
         when(paymentService.applyResult(anyLong(), any(ApprovalOutcome.class))).thenReturn(approved());
     }
@@ -105,8 +105,8 @@ class CheckoutServiceTest {
             case UNKNOWN -> ApprovalOutcome.Result.TIMEOUT;
             default -> ApprovalOutcome.Result.FAILED;
         };
-        when(paymentService.beginApproval(anyString(), anyString(), any(Money.class))).thenReturn(123L);
-        when(paymentService.pgApprove(anyString(), anyString(), any(Money.class)))
+        when(paymentService.beginApproval(anyString(), anyString(), any(Money.class), anyInt())).thenReturn(123L);
+        when(paymentService.pgApprove(anyString(), anyString(), any(Money.class), anyInt()))
                 .thenReturn(new ApprovalOutcome(pg, null, msg));
         when(paymentService.applyResult(anyLong(), any(ApprovalOutcome.class)))
                 .thenReturn(new ConfirmResult(123L, finalStatus, null, msg));
@@ -140,8 +140,8 @@ class CheckoutServiceTest {
         service.confirm(order.getOrderNo(), "pk-1", Money.krw(20_000), 0, 0, 1L);
 
         // 예약(beginApproval) → PG(pgApprove, tx 밖) → 확정(applyResult) 순으로 배선됨.
-        verify(paymentService).beginApproval(eq(order.getOrderNo()), eq("pk-1"), eq(Money.krw(20_000)));
-        verify(paymentService).pgApprove(eq(order.getOrderNo()), eq("pk-1"), eq(Money.krw(20_000)));
+        verify(paymentService).beginApproval(eq(order.getOrderNo()), eq("pk-1"), eq(Money.krw(20_000)), eq(0));
+        verify(paymentService).pgApprove(eq(order.getOrderNo()), eq("pk-1"), eq(Money.krw(20_000)), eq(0));
         verify(paymentService).applyResult(eq(123L), any(ApprovalOutcome.class));
     }
 
@@ -155,7 +155,7 @@ class CheckoutServiceTest {
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
-        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class), anyInt());
         verify(stockDeductionService, never()).tryDeduct(anyLong(), anyInt());
     }
 
@@ -278,7 +278,7 @@ class CheckoutServiceTest {
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(pointService).use(1L, 6_000, order.getOrderNo());          // 포인트 선점(카드보다 먼저)
-        verify(paymentService).pgApprove(eq(order.getOrderNo()), eq("pk-1"), eq(Money.krw(14_000)));
+        verify(paymentService).pgApprove(eq(order.getOrderNo()), eq("pk-1"), eq(Money.krw(14_000)), eq(0));
         verify(stockDeductionService).tryDeduct(100L, 2);
         verify(pointService, never()).restore(anyLong(), anyLong(), anyString());
         // 적립은 실결제액(카드 14,000, 포인트 사용분 제외)의 1% = 140
@@ -312,7 +312,7 @@ class CheckoutServiceTest {
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         verify(pointService, never()).use(anyLong(), anyLong(), anyString());
-        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class), anyInt());
     }
 
     // --- 월렛 복합결제(카드+월렛) — 월렛은 커밋되는 부수효과라 실패 시 '명시적 환불'로 보상 ---
@@ -327,7 +327,7 @@ class CheckoutServiceTest {
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(walletService).use(1L, 6_000, order.getOrderNo());              // 월렛 선점(예약)
-        verify(paymentService).pgApprove(eq(order.getOrderNo()), eq("pk-1"), eq(Money.krw(14_000)));
+        verify(paymentService).pgApprove(eq(order.getOrderNo()), eq("pk-1"), eq(Money.krw(14_000)), eq(0));
         verify(walletService, never()).restore(anyLong(), anyLong(), anyString());
         // 적립은 실결제액(카드 14,000 + 월렛 6,000 = 20,000)의 1% = 200
         verify(pointService).earn(1L, 200, order.getOrderNo());
@@ -375,7 +375,7 @@ class CheckoutServiceTest {
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
 
         verify(walletService, never()).use(anyLong(), anyLong(), anyString());
-        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class), anyInt());
     }
 
     @Test
@@ -386,7 +386,7 @@ class CheckoutServiceTest {
         CheckoutResult result = service.confirm(order.getOrderNo(), "pk-1", Money.krw(0), 20_000, 0, 1L);
 
         verify(pointService).use(1L, 20_000, order.getOrderNo());
-        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class), anyInt());
         verify(paymentService, never()).beginApproval(anyString(), anyString(), any(Money.class));
         verify(stockDeductionService).tryDeduct(100L, 2);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
@@ -403,7 +403,7 @@ class CheckoutServiceTest {
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("ORDER_FORBIDDEN"));
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
-        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class), anyInt());
         verify(paymentService, never()).beginApproval(anyString(), anyString(), any(Money.class));
         verify(pointService, never()).use(anyLong(), anyLong(), anyString());
     }
@@ -416,7 +416,7 @@ class CheckoutServiceTest {
         assertThatThrownBy(() -> service.confirm(order.getOrderNo(), "pk-1", Money.krw(25_000), -5_000, 0, 1L))
                 .isInstanceOf(OrderException.class)
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("INVALID_REQUEST"));
-        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class), anyInt());
     }
 
     @Test
@@ -454,7 +454,7 @@ class CheckoutServiceTest {
                 .satisfies(e -> assertThat(((OrderException) e).code()).isEqualTo("AMOUNT_MISMATCH"));
 
         // 이 테스트의 요점 — 거절이 <PG를 부르기 전에> 일어난다.
-        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class));
+        verify(paymentService, never()).pgApprove(anyString(), anyString(), any(Money.class), anyInt());
     }
 
     @Test

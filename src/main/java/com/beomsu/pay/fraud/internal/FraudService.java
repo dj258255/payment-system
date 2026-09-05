@@ -41,6 +41,12 @@ public class FraudService {
     private int ipThreshold;                // 공용망·NAT 뒤에서 남남이 공유하므로 가장 느슨하게
     @Value("${fds.velocity.ip.weight:20}")
     private int ipWeight;
+    @Value("${fds.installment.months:6}")
+    private int longInstallmentMonths;       // 이 개월 수 이상을 <장기>로 본다
+    @Value("${fds.installment.amount:1000000}")
+    private long installmentAmountThreshold; // 장기 할부가 이 금액 이상일 때만 신호로 본다
+    @Value("${fds.installment.weight:20}")
+    private int installmentWeight;
     // 점수 구간 임계 (BLOCK >= 100, REVIEW >= 60, CHALLENGE >= 40)
     @Value("${fds.decision.block:100}")
     private int blockThreshold;
@@ -92,6 +98,18 @@ public class FraudService {
         if (req.amount() > amountThreshold) {
             score += amountWeight;
             reasons.add("HIGH_AMOUNT");
+        }
+
+        // 룰 4: 고액 + 장기 할부.
+        //
+        // 할부 자체는 정상이다. 안마의자 400만원을 12개월로 긁는 것은 흔하다. 그런데 도난 카드도
+        // 같은 모양을 쓴다 — <한도 안에서 결제 금액을 키우는 가장 쉬운 수단>이 할부이기 때문이다.
+        // 상품명이 올라와도 정상인지 사람이 바로 못 가른다. 그래서 <차단하지 않고> 낮은 점수만
+        // 얹어 사람이 들여다볼 이유를 만든다. 이것만으로는 어떤 임계도 넘지 않는다.
+        if (req.installmentMonths() >= longInstallmentMonths
+                && req.amount() >= installmentAmountThreshold) {
+            score += installmentWeight;
+            reasons.add("LONG_INSTALLMENT_HIGH_AMOUNT(" + req.installmentMonths() + "개월)");
         }
 
         return new FraudResult(score, decide(score), reasons);
