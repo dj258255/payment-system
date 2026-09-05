@@ -65,6 +65,11 @@ jobs:
         run: |
           docker run --rm -v "$PWD/monitoring:/m" --entrypoint promtool \
             prom/prometheus:latest test rules /m/tests/alert-rules-test.yml
+      # 한 고장이 알림 몇 건을 만드는지 고정한다. 늘어나면 여기서 먼저 보인다.
+      - name: Check alert co-firing on a single fault
+        run: |
+          docker run --rm -v "$PWD/monitoring:/m" --entrypoint promtool \
+            prom/prometheus:latest test rules /m/tests/db-outage-probe.yml
 
   integration-test:
     name: integration test (real DB)

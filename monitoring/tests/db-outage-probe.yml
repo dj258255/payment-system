@@ -1,0 +1,95 @@
+# DB 장애 하나에 몇 개가 동시에 뜨는지 고정한다.
+#
+# 왜 재나: 업계 수치로 온콜은 주 50건을 받는데 실제 조치가 필요한 건 2~5% 다.
+# 교대당 40건을 넘으면 MTTR 이 3배가 된다. 그런데 알림을 18개까지 늘려 놓고
+# <한 고장이 몇 건을 만드는지>는 세어 본 적이 없었다.
+#
+# 재 보니 여섯이었다. 그리고 alertmanager 가 group_by: ['alertname'] 이라
+# 여섯 건이 그대로 나갔다. domain 라벨을 붙이고 그걸로 묶어 payment 다섯 +
+# settlement 하나가 되게 했다.
+#
+# 이 파일은 그 여섯이 유지되는지를 지킨다. 알림을 더 붙일 때 이 수가 늘면
+# 여기서 먼저 보인다.
+rule_files:
+  - ../alert-rules.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      # DB 가 죽으면 승인이 실패한다
+      - series: 'payment_confirm_total{outcome="success"}'
+        values: '0+0x30'
+      - series: 'payment_confirm_total{outcome="failure"}'
+        values: '0+20x30'
+      # 미확정이 쌓인다
+      - series: 'payment_unknown_oldest_age_seconds'
+        values: '0+60x30'
+      # 아웃박스를 못 비운다
+      - series: 'outbox_pending_oldest_age_seconds'
+        values: '0+40x30'
+      # 보상 재시도가 소진된다
+      - series: 'compensation_exhausted_total'
+        values: '0+1x30'
+      # 대사 잔여가 남는다
+      - series: 'recon_pending_count'
+        values: '3x30'
+      # 낙관적 락 재시도가 는다
+      - series: 'stock_deduct_retry_total'
+        values: '0+90x30'
+      - series: 'wallet_mutate_retry_total'
+        values: '0+30x30'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentSuccessRateLow
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              domain: payment
+            exp_annotations:
+              description: "최근 5분 결제 성공률이 95% 미만입니다. PG 장애/승인 실패 급증 여부를 확인하세요."
+              summary: "결제 성공률 저하 (< 95%)"
+      - eval_time: 30m
+        alertname: UnknownPaymentAging
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              domain: payment
+            exp_annotations:
+              description: "가장 오래된 UNKNOWN 결제가 10분 넘게 미확정 상태입니다. 복구 배치/망취소 동작을 확인하세요."
+              summary: "미확정 결제 장기 방치 (> 10분)"
+      - eval_time: 30m
+        alertname: CompensationExhausted
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              domain: payment
+            exp_annotations:
+              description: "최근 10분 내 보상 재시도가 소진된 건이 있습니다. 수동 개입(어드민 보상 재처리)이 필요합니다."
+              summary: "보상 재시도 소진 발생"
+      - eval_time: 30m
+        alertname: OutboxConsumptionStalled
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              domain: payment
+            exp_annotations:
+              description: "5분 넘게 소비되지 않은 이벤트가 있습니다. 비동기 실행기 스레드 고갈, 리스너 예외 반복, DB 잠금을 확인하세요. 재기동 시에는 republish-outstanding-events-on-restart로 재발행됩니다."
+              summary: "아웃박스 소비 정체 (최고령 1200초)"
+      - eval_time: 30m
+        alertname: OptimisticLockRetryRising
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              domain: payment
+            exp_annotations:
+              description: "재시도가 충돌을 흡수해 성공률·에러율에는 안 나타나는 경합입니다. 10분 넘게 이어지면 락 전략(조건부 UPDATE)으로 옮길 때가 된 것입니다(ADR-004의 실측 비교 참고)."
+              summary: "낙관적 락 재시도가 늘고 있음 (초당 2.0회)"
+      - eval_time: 30m
+        alertname: ReconPendingBacklog
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              domain: settlement
+            exp_annotations:
+              description: "PENDING 대사 예외가 15분 넘게 남아 있습니다. 어드민에서 예외 큐를 검토·종결하세요."
+              summary: "대사 미해결(PENDING) 적체"

@@ -11,6 +11,7 @@ groups:
         for: 5m
         labels:
           severity: critical
+          domain: payment
         annotations:
           summary: "결제 성공률 저하 (< 95%)"
           description: "최근 5분 결제 성공률이 95% 미만입니다. PG 장애/승인 실패 급증 여부를 확인하세요."
@@ -21,6 +22,7 @@ groups:
         for: 0m
         labels:
           severity: critical
+          domain: payment
         annotations:
           summary: "보상 재시도 소진 발생"
           description: "최근 10분 내 보상 재시도가 소진된 건이 있습니다. 수동 개입(어드민 보상 재처리)이 필요합니다."
@@ -31,6 +33,7 @@ groups:
         for: 5m
         labels:
           severity: critical
+          domain: payment
         annotations:
           summary: "미확정 결제 장기 방치 (> 10분)"
           description: "가장 오래된 UNKNOWN 결제가 10분 넘게 미확정 상태입니다. 복구 배치/망취소 동작을 확인하세요."
@@ -41,6 +44,7 @@ groups:
         for: 5m
         labels:
           severity: warning
+          domain: payment
         annotations:
           summary: "멱등키 데드락 재시도 폭증 (> 10회/분)"
           description: "멱등키 데드락 재시도가 분당 10회를 초과합니다. 경합/락 대기 증가 여부를 확인하세요."
@@ -51,6 +55,7 @@ groups:
         for: 15m
         labels:
           severity: warning
+          domain: settlement
         annotations:
           summary: "대사 미해결(PENDING) 적체"
           description: "PENDING 대사 예외가 15분 넘게 남아 있습니다. 어드민에서 예외 큐를 검토·종결하세요."
@@ -65,6 +70,7 @@ groups:
         for: 30m
         labels:
           severity: warning
+          domain: assist
         annotations:
           summary: "AI 잔여 후보 제안이 30분째 0건"
           description: "모델은 불리고 있는데 통과한 제안이 없습니다. 가드 임계나 모델 응답이 바뀌었는지 확인하세요."
@@ -78,6 +84,7 @@ groups:
         for: 1h
         labels:
           severity: warning
+          domain: assist
         annotations:
           summary: "AI 응답의 출처 없는 숫자 비율 급증"
           description: "숫자 검증기에 걸리는 비율이 20%를 넘었습니다. 모델이나 프롬프트가 바뀌었는지 확인하세요."
@@ -93,6 +100,7 @@ groups:
         for: 30m
         labels:
           severity: warning
+          domain: assist
         annotations:
           summary: "운영자용 서술의 절반 이상이 템플릿 폴백"
           description: "모델 서술이 가드에 걸리거나 모델 서버가 응답하지 않고 있습니다. 화면은 채워지므로 티가 안 납니다."
@@ -106,6 +114,7 @@ groups:
         for: 1h
         labels:
           severity: warning
+          domain: assist
         annotations:
           summary: "서술이 금액을 빠뜨리는 비율 급증"
           description: "금액 결손 가드에 걸리는 비율이 20%를 넘었습니다. 실측 기준선은 30건 중 0~4건입니다."
@@ -120,6 +129,7 @@ groups:
         for: 1h
         labels:
           severity: warning
+          domain: assist
         annotations:
           summary: "장애 원인 분석에서 모델이 1시간째 한 건도 답하지 못함"
           description: "규칙이 기권한 건이 통째로 비고 있습니다. 모델 서버나 가드 임계를 확인하세요."
@@ -133,6 +143,7 @@ groups:
         for: 10m
         labels:
           severity: warning
+          domain: dispute
         annotations:
           summary: "이의제기 대응 기한이 48시간 안으로 들어옴"
           description: "증빙을 제출하지 않은 건이 있고 가장 임박한 기한이 48시간 미만입니다. 넘기면 다툴 수 없습니다."
@@ -144,6 +155,7 @@ groups:
         for: 10m
         labels:
           severity: critical
+          domain: dispute
         annotations:
           summary: "대응 기한이 지난 이의제기가 남아 있음"
           description: "기한을 넘긴 건이 OPEN 으로 남아 있습니다. 사실상 패소이며 대금 회수를 예상해야 합니다."
@@ -158,6 +170,7 @@ groups:
         for: 10m
         labels:
           severity: warning
+          domain: fraud
         annotations:
           summary: "이상거래 심사 적체"
           description: "사람 심사를 1시간 넘게 기다린 이상거래 건이 있습니다. 어드민 심사 큐를 확인하세요."
@@ -171,6 +184,7 @@ groups:
         for: 7d
         labels:
           severity: info
+          domain: security
         annotations:
           summary: "비밀번호 해시 이관 미완료 (레거시 {{ $value }}건)"
           description: "현재 알고리즘으로 옮겨지지 않은 해시가 7일 넘게 남아 있습니다. 휴면 계정으로 보이면 재설정 유도를 검토하세요. 0이 되면 레거시 인코더를 제거할 수 있습니다."
@@ -186,6 +200,7 @@ groups:
         for: 5m
         labels:
           severity: warning
+          domain: payment
         annotations:
           summary: "아웃박스 소비 정체 (최고령 {{ $value }}초)"
           description: "5분 넘게 소비되지 않은 이벤트가 있습니다. 비동기 실행기 스레드 고갈, 리스너 예외 반복, DB 잠금을 확인하세요. 재기동 시에는 republish-outstanding-events-on-restart로 재발행됩니다."
@@ -201,6 +216,7 @@ groups:
         for: 15m
         labels:
           severity: warning
+          domain: payment
         annotations:
           summary: "전역 유입 상한이 지속적으로 걸리는 중 (초당 {{ $value | printf \"%.1f\" }}건 거절)"
           description: "15분 넘게 전역 층에서 거절이 이어집니다. 처리량이 상한 근처에서 평평한지 확인하세요. 평평하면 증설, 한참 낮은데도 거절되면 app.ratelimit.global-per-sec가 낮게 잡힌 것입니다(k6/capacity-knee.js로 재측정)."
@@ -216,6 +232,7 @@ groups:
         for: 10m
         labels:
           severity: warning
+          domain: payment
         annotations:
           summary: "낙관적 락 재시도가 늘고 있음 (초당 {{ $value | printf \"%.1f\" }}회)"
           description: "재시도가 충돌을 흡수해 성공률·에러율에는 안 나타나는 경합입니다. 10분 넘게 이어지면 락 전략(조건부 UPDATE)으로 옮길 때가 된 것입니다(ADR-004의 실측 비교 참고)."
@@ -226,6 +243,7 @@ groups:
         for: 5m
         labels:
           severity: critical
+          domain: payment
         annotations:
           summary: "낙관적 락 재시도 소진 — 사용자에게 실패가 나가는 중"
           description: "재시도 상한을 소진해 STOCK_CONCURRENCY / WALLET_CONCURRENCY 로 실패하고 있습니다. 경합이 재시도로 흡수되는 수준을 넘었습니다."
