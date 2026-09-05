@@ -38,10 +38,13 @@ public class ResidualAcceptanceRecorder {
 
     private final ResidualSuggestionLog suggestions;
     private final MeterRegistry registry;
+    private final SuggestionOutcomeRepository outcomes;
 
-    ResidualAcceptanceRecorder(ResidualSuggestionLog suggestions, MeterRegistry registry) {
+    ResidualAcceptanceRecorder(ResidualSuggestionLog suggestions, MeterRegistry registry,
+                               SuggestionOutcomeRepository outcomes) {
         this.suggestions = suggestions;
         this.registry = registry;
+        this.outcomes = outcomes;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -52,6 +55,7 @@ public class ResidualAcceptanceRecorder {
                 // 화면이 후보를 안 불렀거나 기권했거나 기록이 만료됐다.
                 registry.counter("assist.residual.accepted", "outcome", "no_suggestion",
                         "blind", "-").increment();
+                persist(e, null, SuggestionOutcome.Outcome.NO_SUGGESTION, false, null);
                 return;
             }
             ResidualSuggestionLog.Entry s = entry.get();
@@ -64,10 +68,32 @@ public class ResidualAcceptanceRecorder {
             registry.timer("assist.residual.resolve.latency", "blind", blind)
                     .record(Duration.between(s.at(), e.resolvedAt() == null ? Instant.now() : e.resolvedAt()));
 
+            // 지표만으로는 부족하다. 재시작하면 사라지고 유형별로 안 갈려서,
+            // 자동 확정 조건("그 유형의 실측 오류율")을 계산할 수가 없다.
+            persist(e, s.cause() == null ? null : s.cause().name(),
+                    SuggestionOutcome.Outcome.valueOf(outcome.toUpperCase()), !s.shown(), s.at());
+
             log.info("[residual-accept] recon={} blind={} suggested={} chosen={} outcome={}",
                     e.reconResultId(), blind, s.cause(), e.chosenCause(), outcome);
         } catch (RuntimeException ex) {
             log.warn("[residual-accept] 집계 실패 recon={}", e.reconResultId(), ex);
+        }
+    }
+
+    /**
+     * 행으로 남긴다. <b>집계에 실패해도 확정은 이미 끝났다</b> — 여기서 던지면 되돌릴 것도
+     * 없는데 로그만 시끄러워진다. 같은 대사 건이 두 번 오면 유니크 제약이 막는다.
+     */
+    private void persist(ReconciliationResolvedEvent e, String suggested,
+                         SuggestionOutcome.Outcome outcome, boolean blind, Instant suggestedAt) {
+        try {
+            if (outcomes.existsByReconResultId(e.reconResultId())) {
+                return;
+            }
+            outcomes.save(SuggestionOutcome.of(e.reconResultId(), suggested, e.chosenCause(),
+                    outcome, blind, e.actor(), suggestedAt, e.resolvedAt()));
+        } catch (RuntimeException ex) {
+            log.warn("[residual-accept] 승인 기록 저장 실패 recon={}", e.reconResultId(), ex);
         }
     }
 }
