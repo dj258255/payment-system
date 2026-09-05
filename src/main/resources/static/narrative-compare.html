@@ -41,8 +41,9 @@
   <div class="bar">
     <span class="count" id="count">모은 표본 0건</span>
     <span class="sub" style="margin:0">— 최소 25건, 목표 30건</span>
+    <span class="sub" id="pending" style="margin:0"></span>
     <button id="load">대사 불일치에서 주문 가져오기</button>
-    <button id="next" class="primary" disabled>다음 비교</button>
+    <button id="next" class="primary">다음 비교</button>
   </div>
 
   <details style="margin-bottom:18px">
@@ -74,6 +75,15 @@ let queue = [], current = null;
 const $ = s => document.querySelector(s);
 const stage = $('#stage');
 
+async function refreshPending() {
+  try {
+    const r = await fetch(API + '/narrative/compare/pending');
+    if (!r.ok) return;
+    const n = (await r.json()).pending ?? 0;
+    $('#pending').textContent = n > 0 ? `· 심어 둔 것 ${n}건 남음` : '';
+  } catch (e) { /* 남은 수를 못 세도 고르는 것은 막지 않는다 */ }
+}
+
 async function refreshCount() {
   try {
     const r = await fetch(API + '/narrative/compare/stats');
@@ -100,6 +110,13 @@ $('#load').onclick = async () => {
 };
 
 $('#next').onclick = async () => {
+  // 미리 심어 둔 것이 있으면 그것부터 꺼낸다. 모델 호출을 기다리지 않는다.
+  const pending = await fetch(API + '/narrative/compare/next');
+  if (pending.status === 200) {
+    current = await pending.json();
+    render(current);
+    return;
+  }
   while (queue.length) {
     const orderNo = queue.shift();
     const r = await fetch(`${API}/${encodeURIComponent(orderNo)}/narrative/compare`, { method: 'POST' });
@@ -140,7 +157,9 @@ async function choose(c, pick) {
     box.textContent = '기록 실패 (' + r.status + ')';
   }
   await refreshCount();
+  await refreshPending();
 }
 
 refreshCount();
+refreshPending();
 </script>

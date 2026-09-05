@@ -62,6 +62,25 @@ public class NarrativeComparisonService {
         return Optional.of(new Comparison(saved.getId(), orderNo, textA, textB));
     }
 
+    /**
+     * 미리 만들어 둔 것 중 <b>아직 안 고른</b> 비교 하나를 꺼낸다.
+     *
+     * <p><b>왜 미리 만드나</b>: {@link #open} 은 부를 때마다 모델을 호출한다. 건당 10초 안팎이라
+     * 30건을 고르려면 클릭 사이마다 그만큼 기다린다. 사람이 앉아서 고르는 일에서 그 대기가
+     * 표본이 안 모이는 실제 이유였다. 만들어 두는 일과 고르는 일을 갈랐다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Comparison> nextPending() {
+        return repository.findFirstByChoiceIsNullOrderByIdAsc()
+                .map(p -> new Comparison(p.getId(), p.getOrderNo(), p.getTextA(), p.getTextB()));
+    }
+
+    /** 아직 안 고른 비교가 몇 건 남았나. */
+    @Transactional(readOnly = true)
+    public long pendingCount() {
+        return repository.countByChoiceIsNull();
+    }
+
     /** 고른다. 고르고 나서야 어느 쪽이 무엇이었는지 알려준다. */
     @Transactional
     public Optional<Revealed> choose(long comparisonId, String choice, String reviewer) {
