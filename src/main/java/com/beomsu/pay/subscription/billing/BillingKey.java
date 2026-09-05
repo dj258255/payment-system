@@ -56,7 +56,28 @@ public class BillingKey {
     @Column(nullable = false)
     private Instant createdAt;
 
+    /**
+     * 이 키를 아직 쓸 수 있는가.
+     *
+     * <p><b>왜 상태가 필요한가</b>: 빌링키는 <b>카드번호의 대체물</b>이다. 카드가 재발급되거나
+     * 고객이 구독을 해지하면 그 대체물도 같이 죽어야 한다. 그런데 발급만 하고 폐기가 없으면
+     * <b>해지한 고객의 결제 수단을 계속 들고 있게 된다.</b>
+     *
+     * <p>지우지 않고 상태로 남기는 이유는 이 프로젝트의 다른 자리와 같다 — 지우면 왜 못 쓰게
+     * 됐는지를 나중에 답할 수 없다.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private BillingKeyStatus status = BillingKeyStatus.ACTIVE;
+
+    /** 폐기 사유. 카드가 죽어서인지 고객이 해지해서인지는 대응이 다르다. */
+    @Column(length = 100)
+    private String revokeReason;
+
+    private Instant revokedAt;
+
     private BillingKey(String billingKey, String billingKeyIndex, String customerKey, long userId) {
+        this.status = BillingKeyStatus.ACTIVE;
         this.billingKey = billingKey;
         this.billingKeyIndex = billingKeyIndex;
         this.customerKey = customerKey;
@@ -70,5 +91,22 @@ public class BillingKey {
      */
     public static BillingKey of(String billingKey, String billingKeyIndex, String customerKey, long userId) {
         return new BillingKey(billingKey, billingKeyIndex, customerKey, userId);
+    }
+
+    public boolean isActive() {
+        return status == BillingKeyStatus.ACTIVE;
+    }
+
+    /**
+     * 폐기한다. <b>이미 폐기된 키를 다시 폐기해도 처음 사유를 덮어쓰지 않는다</b> —
+     * 카드가 죽어 폐기된 키를 나중에 해지로 다시 폐기하면, 진짜 이유가 지워진다.
+     */
+    public void revoke(String reason) {
+        if (status == BillingKeyStatus.REVOKED) {
+            return;
+        }
+        this.status = BillingKeyStatus.REVOKED;
+        this.revokeReason = reason;
+        this.revokedAt = Instant.now();
     }
 }
