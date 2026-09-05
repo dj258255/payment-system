@@ -2,6 +2,7 @@ package com.beomsu.pay.assist.narrative;
 
 import com.beomsu.pay.assist.draft.DraftService;
 import com.beomsu.pay.assist.draft.FactPack;
+import com.beomsu.pay.assist.draft.AmountCoverageGuard;
 import com.beomsu.pay.assist.draft.NumericProvenanceGuard;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,7 @@ public class TimelineNarrativeService {
     private final DraftService draftService;
     private final TimelineNarrativePort port;
     private final NumericProvenanceGuard numberGuard;
+    private final AmountCoverageGuard coverageGuard;
     private final MeterRegistry registry;
     private final NarrativeAuditRepository auditRepository;
 
@@ -56,6 +58,14 @@ public class TimelineNarrativeService {
             record(orderNo, "unsourced_figures", null, facts);
             log.info("[narrative] 출처 없는 숫자가 있어 서술을 버림 order={} figures={}",
                     orderNo, unsourced);
+            return Optional.empty();
+        }
+
+        // 반대 방향도 본다 — 지어낸 숫자가 없어도, 있어야 할 금액을 버렸으면 못 쓴다.
+        List<Long> dropped = coverageGuard.missing(raw.get(), facts);
+        if (!dropped.isEmpty()) {
+            record(orderNo, "dropped_amounts", null, facts);
+            log.info("[narrative] 금액을 빠뜨려 서술을 버림 order={} amounts={}", orderNo, dropped);
             return Optional.empty();
         }
 

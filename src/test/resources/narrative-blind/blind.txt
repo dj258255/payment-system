@@ -1,0 +1,214 @@
+# 서술 쌍 비교 — 출처를 가린 표본
+# 각 건에서 A 와 B 중 <운영자가 상황을 파악하기에> 나은 쪽을 고른다.
+# 길다고 좋은 것이 아니고 짧다고 좋은 것도 아니다. 차이를 못 느끼면 TIE.
+
+=== C01 ===
+[A]
+주문번호 ORD-B000은 2026-06-01에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었고, 이후 DONE으로 변경되었습니다. 결제 완료 후 원장에 10,000원이 기록되었습니다. 2026-06-02에는 대사 상태가 AMOUNT_MISMATCH로 변경되어 내부 10,000원과 외부 9,700원의 차이가 발생했습니다.
+
+[B]
+주문 ORD-B000 — 2026-06-01 · ORDER · 주문 생성 10,000원 그다음 2026-06-01 · PAYMENT · 결제 READY → IN_PROGRESS (USER, TOSS_PAYMENTS) 그다음 2026-06-01 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, TOSS_PAYMENTS) 그다음 2026-06-01 · LEDGER · 원장 기록 10,000원 그다음 2026-06-02 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 10,000 / 외부 9,700.
+
+=== C02 ===
+[A]
+주문번호 ORD-B001은 2026-06-04에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었으며, 동일 날 결제 상태가 IN_PROGRESS에서 UNKNOWN으로 변경되었습니다. 결제 처리 중 PG가 무응답으로 인해 결제가 중단되었고, 2026-06-05에 대사 상태가 RECON_EXTERNAL_ONLY로 변경되어 외부에 17,300원이 기록되었으나 내부 기록은 없습니다.
+
+[B]
+주문 ORD-B001 — 2026-06-04 · ORDER · 주문 생성 17,300원 그다음 2026-06-04 · PAYMENT · 결제 READY → IN_PROGRESS (USER, KAKAOPAY) 그다음 2026-06-04 · PAYMENT · 결제 IN_PROGRESS → UNKNOWN (PG 무응답, KAKAOPAY) 그다음 2026-06-05 · RECONCILIATION · 대사 RECON_EXTERNAL_ONLY — 외부 17,300, 내부 기록 없음.
+
+=== C03 ===
+[A]
+주문번호 ORD-B002은 2026-06-07에 24,600원으로 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었고, 이후 DONE으로 변경되었습니다. 결제 완료 후 원장에 24,600원이 기록되었습니다. 2026-06-09에 부분취소 8,200원이 발생했고, 환불 기록이 생성되었습니다. 2026-06-10에 대사가 발생하여 AMOUNT_MISMATCH 상태로 전환되었으며, 내부 금액은 16,400원, 외부 금액은 24,600원이었습니다.
+
+[B]
+주문 ORD-B002 — 2026-06-07 · ORDER · 주문 생성 24,600원 그다음 2026-06-07 · PAYMENT · 결제 READY → IN_PROGRESS (USER, MOCK_PG) 그다음 2026-06-07 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, MOCK_PG) 그다음 2026-06-07 · LEDGER · 원장 기록 24,600원 그다음 2026-06-09 · PAYMENT · 부분취소 8,200원 (USER) 그다음 2026-06-09 · LEDGER · 환불 기록 8,200원 그다음 2026-06-10 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 16,400 / 외부 24,600.
+
+=== C04 ===
+[A]
+주문번호 ORD-B003은 2026-06-10에 주문 생성 후 결제가 READY 상태에서 IN_PROGRESS로 변경되었고, 이후 DONE 상태로 전환되었습니다. 결제 완료 후 원장에 31,900원이 기록되었고, 2026-06-11에 정산 집계가 이루어졌습니다. 2026-06-15에 이의제기 접수가 있었으며, 사유는 미수취였습니다. 2026-06-19에 이의제기 패소로 대금 회수가 진행되었고, 2026-06-20에 대사 AMOUNT_MISMATCH가 발생하여 내부 31,900원과 외부 0원의 차이가 확인되었습니다.
+
+[B]
+주문 ORD-B003 — 2026-06-10 · ORDER · 주문 생성 31,900원 그다음 2026-06-10 · PAYMENT · 결제 READY → IN_PROGRESS (USER, TOSS_PAYMENTS) 그다음 2026-06-10 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, TOSS_PAYMENTS) 그다음 2026-06-10 · LEDGER · 원장 기록 31,900원 그다음 2026-06-11 · SETTLEMENT · 정산 집계 31,900원 그다음 2026-06-15 · DISPUTE · 이의제기 접수 (사유: 미수취) 그다음 2026-06-19 · DISPUTE · 이의제기 패소 — 대금 회수 31,900원 그다음 2026-06-20 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 31,900 / 외부 0.
+
+=== C05 ===
+[A]
+주문 ORD-B004 — 2026-06-13 · ORDER · 주문 생성 39,200원 그다음 2026-06-13 · PAYMENT · 결제 READY → IN_PROGRESS (USER, KAKAOPAY) 그다음 2026-06-13 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, KAKAOPAY) 그다음 2026-06-13 · LEDGER · 원장 기록 39,200원 그다음 2026-06-14 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 39,200 / 외부 37,700.
+
+[B]
+주문번호 ORD-B004는 2026-06-13에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었고, 이후 PG에서 결제가 DONE으로 변경되었습니다. 결제 후 원장에 39,200원이 기록되었습니다. 2026-06-14에 대사 상태가 AMOUNT_MISMATCH로 변경되어 내부 기록과 외부 기록의 금액이 다름을 나타냈습니다.
+
+=== C06 ===
+[A]
+주문 ORD-B005 — 2026-06-16 · ORDER · 주문 생성 46,500원 그다음 2026-06-16 · PAYMENT · 결제 READY → IN_PROGRESS (USER, MOCK_PG) 그다음 2026-06-16 · PAYMENT · 결제 IN_PROGRESS → UNKNOWN (PG 무응답, MOCK_PG) 그다음 2026-06-17 · RECONCILIATION · 대사 RECON_EXTERNAL_ONLY — 외부 46,500, 내부 기록 없음.
+
+[B]
+주문번호 ORD-B005는 2026-06-16에 46,500원으로 주문 생성되었습니다. 같은 날 결제 상태가 READY에서 IN_PROGRESS로 변경되었으나, 이후 IN_PROGRESS에서 UNKNOWN으로 변경되었으며, PG가 무응답 상태였습니다. 2026-06-17에는 대사 상태가 RECON_EXTERNAL_ONLY로 변경되어 외부에 46,500원이 기록되었으나, 내부 기록은 존재하지 않았습니다.
+
+=== C07 ===
+[A]
+주문 ORD-B006 — 2026-06-19 · ORDER · 주문 생성 53,800원 그다음 2026-06-19 · PAYMENT · 결제 READY → IN_PROGRESS (USER, TOSS_PAYMENTS) 그다음 2026-06-19 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, TOSS_PAYMENTS) 그다음 2026-06-19 · LEDGER · 원장 기록 53,800원 그다음 2026-06-21 · PAYMENT · 부분취소 17,933원 (USER) 그다음 2026-06-21 · LEDGER · 환불 기록 17,933원 그다음 2026-06-22 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 35,867 / 외부 53,800.
+
+[B]
+주문번호 ORD-B006은 2026-06-19에 53,800원으로 주문이 생성되었습니다. 같은 날 결제 상태가 READY에서 IN_PROGRESS로 변경되었으며, 이후 DONE으로 전환되었습니다. 결제 완료 후 원장에 53,800원이 기록되었습니다. 2026-06-21에 부분취소가 이루어져 17,933원이 환불되었고, 원장에 해당 금액이 반영되었습니다. 2026-06-22에 대사 절차에서 AMOUNT_MISMATCH가 발생하여 내부 금액은 35,867원, 외부 금액은 53,800원으로 불일치했습니다.
+
+=== C08 ===
+[A]
+주문번호 ORD-B007은 2026-06-22에 61,100원으로 주문 생성 후, KAKAOPAY를 통해 결제가 IN_PROGRESS 상태에서 DONE 상태로 변경되었습니다. 이후 2026-06-22에 원장에 61,100원이 기록되었고, 2026-06-23에 정산 집계가 진행되었습니다. 2026-06-27에 미수취 사유로 이의제기 접수가 되었고, 2026-07-01에 이의제기 패소로 대금이 회수되었습니다. 2026-07-02에 대사 AMOUNT_MISMATCH로 인해 내부 61,100원과 외부 0원의 차이가 발생했습니다.
+
+[B]
+주문 ORD-B007 — 2026-06-22 · ORDER · 주문 생성 61,100원 그다음 2026-06-22 · PAYMENT · 결제 READY → IN_PROGRESS (USER, KAKAOPAY) 그다음 2026-06-22 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, KAKAOPAY) 그다음 2026-06-22 · LEDGER · 원장 기록 61,100원 그다음 2026-06-23 · SETTLEMENT · 정산 집계 61,100원 그다음 2026-06-27 · DISPUTE · 이의제기 접수 (사유: 미수취) 그다음 2026-07-01 · DISPUTE · 이의제기 패소 — 대금 회수 61,100원 그다음 2026-07-02 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 61,100 / 외부 0.
+
+=== C09 ===
+[A]
+주문 ORD-B008 — 2026-06-25 · ORDER · 주문 생성 68,400원 그다음 2026-06-25 · PAYMENT · 결제 READY → IN_PROGRESS (USER, MOCK_PG) 그다음 2026-06-25 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, MOCK_PG) 그다음 2026-06-25 · LEDGER · 원장 기록 68,400원 그다음 2026-06-26 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 68,400 / 외부 67,800.
+
+[B]
+주문번호 ORD-B008은 2026-06-25에 68,400원으로 주문 생성되었습니다. 같은 날 결제 상태가 READY에서 IN_PROGRESS로 변경되었으며, 이후 PG에서 DONE으로 변경되었습니다. 결제 완료 후 원장에 68,400원이 기록되었습니다. 2026-06-26에 대사가 발생하여 AMOUNT_MISMATCH라는 상태가 발생했으며, 내부 금액은 68,400원, 외부 금액은 67,800원으로 확인되었습니다.
+
+=== C10 ===
+[A]
+주문 ORD-B009 — 2026-06-28 · ORDER · 주문 생성 75,700원 그다음 2026-06-28 · PAYMENT · 결제 READY → IN_PROGRESS (USER, TOSS_PAYMENTS) 그다음 2026-06-28 · PAYMENT · 결제 IN_PROGRESS → UNKNOWN (PG 무응답, TOSS_PAYMENTS) 그다음 2026-06-29 · RECONCILIATION · 대사 RECON_EXTERNAL_ONLY — 외부 75,700, 내부 기록 없음.
+
+[B]
+주문번호 ORD-B009는 2026-06-28에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었으나, 이후 IN_PROGRESS에서 UNKNOWN 상태로 전환되었습니다. 결제 처리 중 PG(결제 게이트웨이)에서 응답이 없어 결제 진행이 중단되었고, 2026-06-29에 대사 상태가 RECON_EXTERNAL_ONLY로 변경되어 외부 기록만 남았습니다.
+
+=== C11 ===
+[A]
+주문번호 ORD-B010은 2026-07-01에 83,000원으로 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었으며, PG사(KAKAOPAY)를 통해 결제가 완료됨. 결제 후 원장에 83,000원이 기록됨. 2026-07-03에 사용자가 부분취소 27,666원을 진행하고, 해당 금액이 환불 기록으로 처리됨. 2026-07-04에 대사 상태가 AMOUNT_MISMATCH로 변경되어 내부 잔액 55,334원과 외부 잔액 83,000원 간 불일치가 발생함.
+
+[B]
+주문 ORD-B010 — 2026-07-01 · ORDER · 주문 생성 83,000원 그다음 2026-07-01 · PAYMENT · 결제 READY → IN_PROGRESS (USER, KAKAOPAY) 그다음 2026-07-01 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, KAKAOPAY) 그다음 2026-07-01 · LEDGER · 원장 기록 83,000원 그다음 2026-07-03 · PAYMENT · 부분취소 27,666원 (USER) 그다음 2026-07-03 · LEDGER · 환불 기록 27,666원 그다음 2026-07-04 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 55,334 / 외부 83,000.
+
+=== C12 ===
+[A]
+주문번호 ORD-B011은 2026-07-04에 주문 생성 후 결제가 READY 상태에서 IN_PROGRESS로 변경되었고, 이후 DONE 상태로 전환되었다. 결제 완료 후 원장에 90,300원이 기록되었다. 2026-07-05에 정산 집계가 진행되었으며, 2026-07-09에 이의제기 접수가 있었고, 사유는 미수취였다. 2026-07-13에 이의제기 패소로 대금 회수가 이루어졌으며, 2026-07-14에 대사 AMOUNT_MISMATCH가 발생하여 내부 90,300원, 외부 0원의 차이가 발생하였다.
+
+[B]
+주문 ORD-B011 — 2026-07-04 · ORDER · 주문 생성 90,300원 그다음 2026-07-04 · PAYMENT · 결제 READY → IN_PROGRESS (USER, MOCK_PG) 그다음 2026-07-04 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, MOCK_PG) 그다음 2026-07-04 · LEDGER · 원장 기록 90,300원 그다음 2026-07-05 · SETTLEMENT · 정산 집계 90,300원 그다음 2026-07-09 · DISPUTE · 이의제기 접수 (사유: 미수취) 그다음 2026-07-13 · DISPUTE · 이의제기 패소 — 대금 회수 90,300원 그다음 2026-07-14 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 90,300 / 외부 0.
+
+=== C13 ===
+[A]
+주문 ORD-B012 — 2026-07-07 · ORDER · 주문 생성 97,600원 그다음 2026-07-07 · PAYMENT · 결제 READY → IN_PROGRESS (USER, TOSS_PAYMENTS) 그다음 2026-07-07 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, TOSS_PAYMENTS) 그다음 2026-07-07 · LEDGER · 원장 기록 97,600원 그다음 2026-07-08 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 97,600 / 외부 95,800.
+
+[B]
+주문번호 ORD-B012는 2026-07-07에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었고, 이후 DONE으로 변경되었습니다. 결제 완료 후 원장에 97,600원이 기록되었습니다. 2026-07-08에 대사 상태가 AMOUNT_MISMATCH로 변경되어 내부 기록은 97,600원, 외부 기록은 95,800원으로 불일치했습니다.
+
+=== C14 ===
+[A]
+주문번호 ORD-B013은 2026-07-10에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었으나, 이후 IN_PROGRESS에서 UNKNOWN 상태로 전환되었습니다. 결제 과정에서 PG가 무응답을 보였고, 결제 수단은 KAKAOPAY였습니다. 2026-07-11에는 대사 상태가 RECON_EXTERNAL_ONLY로 변경되어 외부에 104,900원의 내역이 기록되었으나, 내부 기록은 존재하지 않았습니다.
+
+[B]
+주문 ORD-B013 — 2026-07-10 · ORDER · 주문 생성 104,900원 그다음 2026-07-10 · PAYMENT · 결제 READY → IN_PROGRESS (USER, KAKAOPAY) 그다음 2026-07-10 · PAYMENT · 결제 IN_PROGRESS → UNKNOWN (PG 무응답, KAKAOPAY) 그다음 2026-07-11 · RECONCILIATION · 대사 RECON_EXTERNAL_ONLY — 외부 104,900, 내부 기록 없음.
+
+=== C15 ===
+[A]
+주문번호 ORD-B014는 2026-07-13에 112,200원으로 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었고, 이후 DONE으로 전환되었습니다. 결제 완료 후 원장에 112,200원이 기록되었습니다. 2026-07-15에 사용자가 부분취소 37,400원을 진행했고, 해당 금액이 환불 기록으로 처리되었습니다. 2026-07-16에 대사 상태가 AMOUNT_MISMATCH로 변경되어 내부 금액 74,800원과 외부 금액 112,200원이 불일치하는 것으로 확인되었습니다.
+
+[B]
+주문 ORD-B014 — 2026-07-13 · ORDER · 주문 생성 112,200원 그다음 2026-07-13 · PAYMENT · 결제 READY → IN_PROGRESS (USER, MOCK_PG) 그다음 2026-07-13 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, MOCK_PG) 그다음 2026-07-13 · LEDGER · 원장 기록 112,200원 그다음 2026-07-15 · PAYMENT · 부분취소 37,400원 (USER) 그다음 2026-07-15 · LEDGER · 환불 기록 37,400원 그다음 2026-07-16 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 74,800 / 외부 112,200.
+
+=== C16 ===
+[A]
+주문 ORD-B015 — 2026-07-16 · ORDER · 주문 생성 119,500원 그다음 2026-07-16 · PAYMENT · 결제 READY → IN_PROGRESS (USER, TOSS_PAYMENTS) 그다음 2026-07-16 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, TOSS_PAYMENTS) 그다음 2026-07-16 · LEDGER · 원장 기록 119,500원 그다음 2026-07-17 · SETTLEMENT · 정산 집계 119,500원 그다음 2026-07-21 · DISPUTE · 이의제기 접수 (사유: 미수취) 그다음 2026-07-25 · DISPUTE · 이의제기 패소 — 대금 회수 119,500원 그다음 2026-07-26 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 119,500 / 외부 0.
+
+[B]
+주문번호 ORD-B015는 2026-07-16에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었으며, 이후 IN_PROGRESS에서 DONE으로 변경되었습니다. 결제 완료 후 원장에 119,500원이 기록되었고, 2026-07-17에 정산 집계가 진행되었습니다. 2026-07-21에 이의제기 접수가 들어왔으며, 사유는 미수취였습니다. 2026-07-25에 이의제기 패소로 대금 회수가 이루어졌고, 2026-07-26에 대사 AMOUNT_MISMATCH가 발생하여 내부 119,500원과 외부 0원의 차이가 확인되었습니다.
+
+=== C17 ===
+[A]
+주문번호 ORD-B016은 2026-07-19에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었고, 이후 DONE으로 변경되었습니다. 결제 완료 후 원장에 126,800원이 기록되었습니다. 2026-07-20에 대사 절차에서 AMOUNT_MISMATCH가 발생하여 내부 기록 126,800원과 외부 기록 125,900원이 불일치했습니다.
+
+[B]
+주문 ORD-B016 — 2026-07-19 · ORDER · 주문 생성 126,800원 그다음 2026-07-19 · PAYMENT · 결제 READY → IN_PROGRESS (USER, KAKAOPAY) 그다음 2026-07-19 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, KAKAOPAY) 그다음 2026-07-19 · LEDGER · 원장 기록 126,800원 그다음 2026-07-20 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 126,800 / 외부 125,900.
+
+=== C18 ===
+[A]
+주문 ORD-B017 — 2026-07-22 · ORDER · 주문 생성 134,100원 그다음 2026-07-22 · PAYMENT · 결제 READY → IN_PROGRESS (USER, MOCK_PG) 그다음 2026-07-22 · PAYMENT · 결제 IN_PROGRESS → UNKNOWN (PG 무응답, MOCK_PG) 그다음 2026-07-23 · RECONCILIATION · 대사 RECON_EXTERNAL_ONLY — 외부 134,100, 내부 기록 없음.
+
+[B]
+주문번호 ORD-B017은 2026-07-22에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었으나, 이후 IN_PROGRESS에서 UNKNOWN 상태로 전환되었습니다. 결제 처리 중 PG가 무응답으로 인해 결제가 중단되었고, 2026-07-23에 대사 RECON_EXTERNAL_ONLY 상태로 변경되어 외부 기록만 남았습니다.
+
+=== C19 ===
+[A]
+주문번호 ORD-B018은 2026-07-25에 141,400원으로 주문이 생성되었습니다. 같은 날 결제 상태가 READY에서 IN_PROGRESS로 변경되었으며, 이후 IN_PROGRESS에서 DONE으로 변경되었습니다. 결제 완료 후 원장에 141,400원이 기록되었습니다. 2026-07-27에 부분취소가 발생하여 47,133원이 환불되었고, 해당 금액이 원장에 반영되었습니다. 2026-07-28에 대사 상태가 AMOUNT_MISMATCH로 변경되어 내부 금액 94,267원과 외부 금액 141,400원 사이에 차이가 발생했습니다.
+
+[B]
+주문 ORD-B018 — 2026-07-25 · ORDER · 주문 생성 141,400원 그다음 2026-07-25 · PAYMENT · 결제 READY → IN_PROGRESS (USER, TOSS_PAYMENTS) 그다음 2026-07-25 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, TOSS_PAYMENTS) 그다음 2026-07-25 · LEDGER · 원장 기록 141,400원 그다음 2026-07-27 · PAYMENT · 부분취소 47,133원 (USER) 그다음 2026-07-27 · LEDGER · 환불 기록 47,133원 그다음 2026-07-28 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 94,267 / 외부 141,400.
+
+=== C20 ===
+[A]
+주문 ORD-B019 — 2026-07-28 · ORDER · 주문 생성 148,700원 그다음 2026-07-28 · PAYMENT · 결제 READY → IN_PROGRESS (USER, KAKAOPAY) 그다음 2026-07-28 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, KAKAOPAY) 그다음 2026-07-28 · LEDGER · 원장 기록 148,700원 그다음 2026-07-29 · SETTLEMENT · 정산 집계 148,700원 그다음 2026-08-02 · DISPUTE · 이의제기 접수 (사유: 미수취) 그다음 2026-08-06 · DISPUTE · 이의제기 패소 — 대금 회수 148,700원 그다음 2026-08-07 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 148,700 / 외부 0.
+
+[B]
+주문번호 ORD-B019는 2026-07-28에 148,700원으로 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었으며, PG사(KAKAOPAY)를 통해 결제가 DONE으로 처리되었습니다. 이후 원장에 148,700원이 기록되었고, 2026-07-29에 정산 집계가 진행되었습니다. 2026-08-02에 이의제기 접수가 있었고, 사유는 미수취였으나 2026-08-06에 이의제기 패소 처리되어 대금이 회수되었습니다. 2026-08-07에 대사 상태가 AMOUNT_MISMATCH로 변경되었으며, 내부 금액은 148,700원, 외부 금액은 0원이었습니다.
+
+=== C21 ===
+[A]
+주문번호 ORD-B020은 2026-07-31에 156,000원으로 주문 생성되었습니다. 같은 날 결제 상태가 READY에서 IN_PROGRESS로 변경되었으며, 이후 IN_PROGRESS에서 DONE으로 변경되었습니다. 결제 완료 후 2026-07-31에 원장에 156,000원이 기록되었습니다. 2026-08-01에 대사가 발생하여 AMOUNT_MISMATCH 상태로, 내부 금액은 156,000원, 외부 금액은 153,900원이 확인되었습니다.
+
+[B]
+주문 ORD-B020 — 2026-07-31 · ORDER · 주문 생성 156,000원 그다음 2026-07-31 · PAYMENT · 결제 READY → IN_PROGRESS (USER, MOCK_PG) 그다음 2026-07-31 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, MOCK_PG) 그다음 2026-07-31 · LEDGER · 원장 기록 156,000원 그다음 2026-08-01 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 156,000 / 외부 153,900.
+
+=== C22 ===
+[A]
+주문번호 ORD-B021은 2026-08-03에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었으나, 이후 IN_PROGRESS에서 UNKNOWN 상태로 전환되었습니다. 결제 처리 중 PG의 무응답으로 인해 결제 진행이 중단되었고, 2026-08-04에 대사 상태가 RECON_EXTERNAL_ONLY로 변경되어 외부 기록만 존재하는 것으로 확인되었습니다.
+
+[B]
+주문 ORD-B021 — 2026-08-03 · ORDER · 주문 생성 163,300원 그다음 2026-08-03 · PAYMENT · 결제 READY → IN_PROGRESS (USER, TOSS_PAYMENTS) 그다음 2026-08-03 · PAYMENT · 결제 IN_PROGRESS → UNKNOWN (PG 무응답, TOSS_PAYMENTS) 그다음 2026-08-04 · RECONCILIATION · 대사 RECON_EXTERNAL_ONLY — 외부 163,300, 내부 기록 없음.
+
+=== C23 ===
+[A]
+주문번호 ORD-B022는 2026-08-06에 170,600원으로 주문이 생성되었습니다. 같은 날 결제 상태가 READY에서 IN_PROGRESS로 변경되었으며, KAKAOPAY를 통해 결제가 완료되었습니다. 이후 원장에 170,600원이 기록되었습니다. 2026-08-08에 사용자가 부분취소를 진행하여 56,866원이 환불되었고, 원장에 해당 금액이 반영되었습니다. 2026-08-09에 대사가 발생하여 AMOUNT_MISMATCH 상태로 전환되었으며, 내부 계좌는 113,734원, 외부 계좌는 170,600원으로 불일치했습니다.
+
+[B]
+주문 ORD-B022 — 2026-08-06 · ORDER · 주문 생성 170,600원 그다음 2026-08-06 · PAYMENT · 결제 READY → IN_PROGRESS (USER, KAKAOPAY) 그다음 2026-08-06 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, KAKAOPAY) 그다음 2026-08-06 · LEDGER · 원장 기록 170,600원 그다음 2026-08-08 · PAYMENT · 부분취소 56,866원 (USER) 그다음 2026-08-08 · LEDGER · 환불 기록 56,866원 그다음 2026-08-09 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 113,734 / 외부 170,600.
+
+=== C24 ===
+[A]
+주문 ORD-B023 — 2026-08-09 · ORDER · 주문 생성 177,900원 그다음 2026-08-09 · PAYMENT · 결제 READY → IN_PROGRESS (USER, MOCK_PG) 그다음 2026-08-09 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, MOCK_PG) 그다음 2026-08-09 · LEDGER · 원장 기록 177,900원 그다음 2026-08-10 · SETTLEMENT · 정산 집계 177,900원 그다음 2026-08-14 · DISPUTE · 이의제기 접수 (사유: 미수취) 그다음 2026-08-18 · DISPUTE · 이의제기 패소 — 대금 회수 177,900원 그다음 2026-08-19 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 177,900 / 외부 0.
+
+[B]
+주문번호 ORD-B023은 2026-08-09에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었고, 이후 DONE으로 변경되었습니다. 결제 완료 후 원장에 177,900원이 기록되었고, 2026-08-10에 정산 집계가 진행되었습니다. 2026-08-14에 이의제기 접수가 있었고, 사유는 미수취였습니다. 2026-08-18에 이의제기 패소로 대금 회수가 이루어졌으며, 2026-08-19에 대사 AMOUNT_MISMATCH가 발생하여 내부 177,900원과 외부 0원의 차이가 확인되었습니다.
+
+=== C25 ===
+[A]
+주문 ORD-B024 — 2026-08-12 · ORDER · 주문 생성 185,200원 그다음 2026-08-12 · PAYMENT · 결제 READY → IN_PROGRESS (USER, TOSS_PAYMENTS) 그다음 2026-08-12 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, TOSS_PAYMENTS) 그다음 2026-08-12 · LEDGER · 원장 기록 185,200원 그다음 2026-08-13 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 185,200 / 외부 184,000.
+
+[B]
+주문번호 ORD-B024는 2026-08-12에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었고, 이후 DONE으로 변경되었습니다. 결제 완료 후 원장에 185,200원이 기록되었습니다. 2026-08-13에는 대사 상태가 AMOUNT_MISMATCH로 변경되어 내부 기록 185,200원과 외부 기록 184,000원이 불일치했습니다.
+
+=== C26 ===
+[A]
+주문번호 ORD-B025는 2026-08-15에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었으나, 이후 IN_PROGRESS에서 UNKNOWN 상태로 변경되었으며, PG에 응답이 없었습니다. 2026-08-16에 대사 상태가 RECON_EXTERNAL_ONLY로 변경되어 외부에 192,500원이 기록되었으나, 내부 기록은 없었습니다.
+
+[B]
+주문 ORD-B025 — 2026-08-15 · ORDER · 주문 생성 192,500원 그다음 2026-08-15 · PAYMENT · 결제 READY → IN_PROGRESS (USER, KAKAOPAY) 그다음 2026-08-15 · PAYMENT · 결제 IN_PROGRESS → UNKNOWN (PG 무응답, KAKAOPAY) 그다음 2026-08-16 · RECONCILIATION · 대사 RECON_EXTERNAL_ONLY — 외부 192,500, 내부 기록 없음.
+
+=== C27 ===
+[A]
+주문 ORD-B026 — 2026-08-18 · ORDER · 주문 생성 199,800원 그다음 2026-08-18 · PAYMENT · 결제 READY → IN_PROGRESS (USER, MOCK_PG) 그다음 2026-08-18 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, MOCK_PG) 그다음 2026-08-18 · LEDGER · 원장 기록 199,800원 그다음 2026-08-20 · PAYMENT · 부분취소 66,600원 (USER) 그다음 2026-08-20 · LEDGER · 환불 기록 66,600원 그다음 2026-08-21 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 133,200 / 외부 199,800.
+
+[B]
+주문번호 ORD-B026은 2026-08-18에 199,800원으로 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었고, 이후 DONE으로 변경되었습니다. 결제 완료 후 원장에 199,800원이 기록되었습니다. 2026-08-20에 부분취소 66,600원이 발생했고, 환불 기록이 생성되었습니다. 2026-08-21에 대사 상태가 AMOUNT_MISMATCH로 변경되어 내부 잔액 133,200원과 외부 잔액 199,800원이 불일치하는 것으로 확인되었습니다.
+
+=== C28 ===
+[A]
+주문 ORD-B027 — 2026-08-21 · ORDER · 주문 생성 207,100원 그다음 2026-08-21 · PAYMENT · 결제 READY → IN_PROGRESS (USER, TOSS_PAYMENTS) 그다음 2026-08-21 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, TOSS_PAYMENTS) 그다음 2026-08-21 · LEDGER · 원장 기록 207,100원 그다음 2026-08-22 · SETTLEMENT · 정산 집계 207,100원 그다음 2026-08-26 · DISPUTE · 이의제기 접수 (사유: 미수취) 그다음 2026-08-30 · DISPUTE · 이의제기 패소 — 대금 회수 207,100원 그다음 2026-08-31 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 207,100 / 외부 0.
+
+[B]
+주문번호 ORD-B027은 2026-08-21에 207,100원으로 주문이 생성되었습니다. 같은 날 결제 상태가 READY에서 IN_PROGRESS로 변경되었으며, 이후 DONE으로 변경되었습니다. 결제 완료 후 원장에 207,100원이 기록되었고, 2026-08-22에 정산 집계가 진행되었습니다. 2026-08-26에 이의제기 접수가 있었고, 사유는 미수취였습니다. 2026-08-30에 이의제기 패소로 대금 회수 처리가 이루어졌으며, 2026-08-31에 대사가 AMOUNT_MISMATCH로 발생하여 내부 207,100원, 외부 0원으로 기록되었습니다.
+
+=== C29 ===
+[A]
+주문 ORD-B028 — 2026-08-24 · ORDER · 주문 생성 214,400원 그다음 2026-08-24 · PAYMENT · 결제 READY → IN_PROGRESS (USER, KAKAOPAY) 그다음 2026-08-24 · PAYMENT · 결제 IN_PROGRESS → DONE (PG, KAKAOPAY) 그다음 2026-08-24 · LEDGER · 원장 기록 214,400원 그다음 2026-08-25 · RECONCILIATION · 대사 AMOUNT_MISMATCH — 내부 214,400 / 외부 214,100.
+
+[B]
+주문번호 ORD-B028은 2026-08-24에 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었고, 이후 PG로 결제가 완료되었습니다. 같은 날 원장에 214,400원이 기록되었습니다. 2026-08-25에 대사 상태가 AMOUNT_MISMATCH로 변경되어 내부 기록 214,400원과 외부 기록 214,100원이 일치하지 않는 것으로 확인되었습니다.
+
+=== C30 ===
+[A]
+주문번호 ORD-B029는 2026-08-27에 221,700원으로 주문 생성 후 결제 상태가 READY에서 IN_PROGRESS로 변경되었으나, 이후 IN_PROGRESS에서 UNKNOWN으로 전환되었습니다. 결제 처리 중 PG가 무응답으로 인해 결제가 중단된 것으로 나타났습니다. 2026-08-28에 대사 RECON_EXTERNAL_ONLY 상태로 전환되어 외부에 221,700원의 기록이 남았으나, 내부 기록은 존재하지 않았습니다.
+
+[B]
+주문 ORD-B029 — 2026-08-27 · ORDER · 주문 생성 221,700원 그다음 2026-08-27 · PAYMENT · 결제 READY → IN_PROGRESS (USER, MOCK_PG) 그다음 2026-08-27 · PAYMENT · 결제 IN_PROGRESS → UNKNOWN (PG 무응답, MOCK_PG) 그다음 2026-08-28 · RECONCILIATION · 대사 RECON_EXTERNAL_ONLY — 외부 221,700, 내부 기록 없음.
+

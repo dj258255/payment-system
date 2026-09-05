@@ -1,0 +1,1 @@
+2026-09-05T12:41:49.201+09:00  WARN 30306 --- [pay] [nio-8080-exec-3] c.b.pay.payment.web.WebhookController    : 웹훅 서명 검증 실패: 서명 timestamp가 허용 범위를 벗어났습니다(replay 의심)

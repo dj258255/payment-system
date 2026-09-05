@@ -10,6 +10,9 @@ build/
 
 # Logs
 *.log
+# 장애 원인 분석 평가용 코퍼스는 예외다. 실제로 장애를 일으켜 받은 표본이고
+# 이게 없으면 docs/19 의 수치를 저장소에서 재현할 수 없다(IncidentAnalysisEvalTest).
+!src/test/resources/incident-logs/*.log
 
 # Env
 .env

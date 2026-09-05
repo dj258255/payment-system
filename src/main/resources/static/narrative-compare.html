@@ -1,0 +1,146 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>서술 쌍 비교</title>
+<style>
+  :root { --bg:#fff; --fg:#1a1a1a; --line:#e3e3e3; --muted:#6b6b6b; --pick:#0b5fff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16181c; --fg:#e8e8e8; --line:#2e3238; --muted:#9aa0a6; --pick:#5b8cff; }
+  }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.7 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:24px 20px 80px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .bar { display:flex; gap:12px; align-items:center; padding:12px 0; border-bottom:1px solid var(--line);
+         margin-bottom:20px; flex-wrap:wrap; }
+  .count { font-variant-numeric:tabular-nums; font-weight:600; }
+  .pair { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:760px) { .pair { grid-template-columns:1fr; } }
+  .card { border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .card h2 { font-size:13px; color:var(--muted); margin:0 0 10px; font-weight:600; letter-spacing:.04em; }
+  .text { white-space:pre-wrap; min-height:150px; }
+  button { font:inherit; padding:9px 16px; border-radius:8px; border:1px solid var(--line);
+           background:transparent; color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--pick); border-color:var(--pick); color:#fff; font-weight:600; }
+  button:disabled { opacity:.45; cursor:default; }
+  .picks { display:flex; gap:10px; margin-top:16px; }
+  .picks button { flex:1; }
+  .note { color:var(--muted); font-size:13px; margin-top:18px; }
+  .reveal { margin-top:14px; padding:12px; border:1px dashed var(--line); border-radius:8px; font-size:14px; }
+  textarea { width:100%; box-sizing:border-box; min-height:70px; font:13px/1.5 ui-monospace,monospace;
+             background:transparent; color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:10px; }
+  code { font:13px ui-monospace,monospace; }
+</style>
+<div class="wrap">
+  <h1>서술 쌍 비교</h1>
+  <div class="sub">
+    같은 사실에 대한 두 서술을 <b>출처를 가린 채</b> 보여준다. 고른 뒤에만 어느 쪽이 템플릿이고
+    어느 쪽이 모델인지 밝힌다. 제시 순서는 서버가 매번 무작위로 섞는다.
+  </div>
+
+  <div class="bar">
+    <span class="count" id="count">모은 표본 0건</span>
+    <span class="sub" style="margin:0">— 최소 25건, 목표 30건</span>
+    <button id="load">대사 불일치에서 주문 가져오기</button>
+    <button id="next" class="primary" disabled>다음 비교</button>
+  </div>
+
+  <details style="margin-bottom:18px">
+    <summary class="sub" style="cursor:pointer">주문번호를 직접 넣기</summary>
+    <textarea id="manual" placeholder="한 줄에 하나씩"></textarea>
+  </details>
+
+  <div id="stage" class="note">먼저 주문을 가져온 다음 <b>다음 비교</b>를 누른다.</div>
+
+  <template id="tpl">
+    <div class="pair">
+      <div class="card"><h2>A</h2><div class="text" data-a></div></div>
+      <div class="card"><h2>B</h2><div class="text" data-b></div></div>
+    </div>
+    <div class="picks">
+      <button data-pick="A">A 가 낫다</button>
+      <button data-pick="TIE">고르기 어렵다</button>
+      <button data-pick="B">B 가 낫다</button>
+    </div>
+    <div class="reveal" data-reveal hidden></div>
+  </template>
+</div>
+
+<script>
+// 이 페이지는 표본을 모으기만 한다. 기본값을 바꾸는 판단은 표가 25건을 넘긴 뒤 사람이 한다.
+const API = '/api/v1/admin/orders';
+let queue = [], current = null;
+
+const $ = s => document.querySelector(s);
+const stage = $('#stage');
+
+async function refreshCount() {
+  try {
+    const r = await fetch(API + '/narrative/compare/stats');
+    if (!r.ok) return;
+    const s = await r.json();
+    const n = s.total ?? s.count ?? (Array.isArray(s) ? s.length : 0);
+    $('#count').textContent = `모은 표본 ${n}건`;
+  } catch (e) { /* 집계 실패는 비교를 막지 않는다 */ }
+}
+
+$('#load').onclick = async () => {
+  const typed = $('#manual').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (typed.length) {
+    queue = typed;
+  } else {
+    const r = await fetch('/api/v1/admin/reconciliations/mismatches?size=60');
+    if (!r.ok) { stage.textContent = '대사 불일치를 못 가져왔다 (' + r.status + '). 주문번호를 직접 넣어라.'; return; }
+    const rows = await r.json();
+    const list = Array.isArray(rows) ? rows : (rows.content ?? []);
+    queue = [...new Set(list.map(x => x.orderNo).filter(Boolean))];
+  }
+  stage.textContent = `주문 ${queue.length}건을 담았다. 다음 비교를 눌러라.`;
+  $('#next').disabled = queue.length === 0;
+};
+
+$('#next').onclick = async () => {
+  while (queue.length) {
+    const orderNo = queue.shift();
+    const r = await fetch(`${API}/${encodeURIComponent(orderNo)}/narrative/compare`, { method: 'POST' });
+    if (r.status === 204 || !r.ok) continue;          // 비교할 것이 없는 주문은 건너뛴다
+    current = await r.json();
+    render(current);
+    return;
+  }
+  stage.textContent = '남은 주문이 없다. 더 가져오거나 직접 넣어라.';
+  $('#next').disabled = true;
+};
+
+function render(c) {
+  stage.replaceChildren($('#tpl').content.cloneNode(true));
+  stage.querySelector('[data-a]').textContent = c.textA ?? c.a ?? '';
+  stage.querySelector('[data-b]').textContent = c.textB ?? c.b ?? '';
+  stage.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => choose(c, b.dataset.pick));
+}
+
+async function choose(c, pick) {
+  stage.querySelectorAll('[data-pick]').forEach(b => b.disabled = true);
+  const r = await fetch(`${API}/narrative/compare/${c.id}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ choice: pick })
+  });
+  const box = stage.querySelector('[data-reveal]');
+  box.hidden = false;
+  if (r.ok) {
+    const saved = await r.json().catch(() => ({}));
+    const a = saved.sourceA ?? c.sourceA ?? '?', b = saved.sourceB ?? c.sourceB ?? '?';
+    // 문자열을 HTML 로 조립하지 않는다. 출처 이름은 설정에서 오는 값이고(모델 이름),
+    // 이 기능은 모델에 넘기는 텍스트에도 UntrustedText 를 두고 있다. 화면만 예외일 이유가 없다.
+    const bold = t => { const e = document.createElement('b'); e.textContent = t; return e; };
+    box.replaceChildren('기록했다. ', bold(`A = ${a}`), ', ', bold(`B = ${b}`),
+                        '. 고른 것: ', bold(pick));
+  } else {
+    box.textContent = '기록 실패 (' + r.status + ')';
+  }
+  await refreshCount();
+}
+
+refreshCount();
+</script>
