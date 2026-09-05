@@ -63,11 +63,17 @@ class IncidentAnalysisEvalTest {
         }
     }
 
-    private Score run(IncidentAnalysisPort port, Map<IncidentCause, String> cases) {
+    private final EvidenceGroundingGuard grounding = new EvidenceGroundingGuard();
+
+    private Score run(IncidentAnalysisPort port, Map<IncidentCause, String> cases, boolean guard) {
         int correct = 0, abstained = 0, wrong = 0;
         List<String> detail = new ArrayList<>();
         for (var e : cases.entrySet()) {
             Optional<IncidentDiagnosis> out = port.diagnose(e.getValue());
+            // 인용이 원문에 없으면 버린다 — 근거 없는 판단은 기권과 같게 취급한다.
+            if (guard && out.isPresent() && !grounding.grounded(out.get(), e.getValue())) {
+                out = Optional.empty();
+            }
             String got;
             if (out.isEmpty() || out.get().cause() == IncidentCause.UNKNOWN) {
                 abstained++;
@@ -93,14 +99,17 @@ class IncidentAnalysisEvalTest {
 
         System.out.printf("%n╔══ 장애 로그 원인 분석 (실제 로그 %d건) ══%n", cases.size());
         System.out.println("  [규칙 기준선]");
-        Score rule = run(new RuleBasedIncidentAnalyzer(), cases);
-        System.out.println("  [모델]");
-        Score model = run(new OllamaIncidentAnalyzer(
-                "http://localhost:11434", "qwen3:8b", 120), cases);
+        Score rule = run(new RuleBasedIncidentAnalyzer(), cases, false);
+        var ollama = new OllamaIncidentAnalyzer("http://localhost:11434", "qwen3:8b", 120);
+        System.out.println("  [모델 — 가드 없음]");
+        Score raw = run(ollama, cases, false);
+        System.out.println("  [모델 — 근거 대조 가드]");
+        Score guarded = run(ollama, cases, true);
 
         System.out.println();
         System.out.println(rule.line());
-        System.out.println(model.line());
+        System.out.println(raw.line());
+        System.out.println(guarded.line().replace(guarded.name(), guarded.name() + "+가드"));
         System.out.println("╚═══════════════════════════════════════");
 
         // 수치를 통과 조건으로 걸지 않는다 — 재는 테스트다.
