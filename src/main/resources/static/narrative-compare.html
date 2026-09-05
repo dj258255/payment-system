@@ -131,7 +131,11 @@ async function choose(c, pick) {
   if (r.ok) {
     const saved = await r.json().catch(() => ({}));
     const a = saved.sourceA ?? c.sourceA ?? '?', b = saved.sourceB ?? c.sourceB ?? '?';
-    box.innerHTML = `기록했다. <b>A = ${a}</b>, <b>B = ${b}</b>. 고른 것: <b>${pick}</b>`;
+    // 문자열을 HTML 로 조립하지 않는다. 출처 이름은 설정에서 오는 값이고(모델 이름),
+    // 이 기능은 모델에 넘기는 텍스트에도 UntrustedText 를 두고 있다. 화면만 예외일 이유가 없다.
+    const bold = t => { const e = document.createElement('b'); e.textContent = t; return e; };
+    box.replaceChildren('기록했다. ', bold(`A = ${a}`), ', ', bold(`B = ${b}`),
+                        '. 고른 것: ', bold(pick));
   } else {
     box.textContent = '기록 실패 (' + r.status + ')';
   }
