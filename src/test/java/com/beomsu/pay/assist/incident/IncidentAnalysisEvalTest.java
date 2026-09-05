@@ -120,7 +120,8 @@ class IncidentAnalysisEvalTest {
         Score guarded = run(ollama, cases, true);
         // 실제로 켤 후보: 규칙이 먼저 답하고 기권한 자리에만 모델을 부른다.
         System.out.println("  [규칙 우선 + 기권 자리만 모델]");
-        Score first = run(new RuleFirstIncidentAnalyzer(new RuleBasedIncidentAnalyzer(), ollama), cases, false);
+        Score first = run(new RuleFirstIncidentAnalyzer(new RuleBasedIncidentAnalyzer(), ollama,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry()), cases, false);
 
         System.out.println();
         System.out.println(rule.line());

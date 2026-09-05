@@ -177,4 +177,21 @@ class TimelineNarrativeServiceTest {
         assertThat(out.get().source()).isEqualTo("template");
         assertThat(out.get().text()).contains("100,000").contains("97,000");
     }
+
+    @Test
+    @DisplayName("알림이 보는 지표 이름과 태그가 실제로 그렇게 나온다")
+    void emitsMetricNamesTheAlertsWatch() {
+        // monitoring/alert-rules.yml 의 AssistNarrativeAlwaysFallingBack 과
+        // AssistNarrativeDroppedAmountsSpike 가 이 이름을 본다. 한 글자만 달라도
+        // 알림은 영원히 안 울리고, 안 울리는 알림은 잘 도는 알림과 구별되지 않는다.
+        when(port.narrate(any())).thenReturn(Optional.of(
+                "2026-08-31에 대사 상태가 AMOUNT_MISMATCH로 바뀌었습니다."));   // 금액이 없다
+
+        service.narrate("ORD-1");
+
+        assertThat(registry.find("assist.narrative").tag("outcome", "dropped_amounts").counter())
+                .as("dropped_amounts 를 이 이름으로 세야 한다").isNotNull();
+        assertThat(registry.find("assist.narrative").tag("outcome", "fell_back_to_template").counter())
+                .as("fell_back_to_template 을 이 이름으로 세야 한다").isNotNull();
+    }
 }
