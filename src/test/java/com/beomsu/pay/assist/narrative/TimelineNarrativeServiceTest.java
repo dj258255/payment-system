@@ -2,6 +2,7 @@ package com.beomsu.pay.assist.narrative;
 
 import com.beomsu.pay.assist.draft.DraftService;
 import com.beomsu.pay.assist.draft.FactPack;
+import com.beomsu.pay.assist.draft.AmountCoverageGuard;
 import com.beomsu.pay.assist.draft.NumericProvenanceGuard;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -47,8 +48,8 @@ class TimelineNarrativeServiceTest {
         when(port.name()).thenReturn("test-port");
         when(draftService.factsFor(anyString(), any())).thenReturn(FACTS);
         service = new TimelineNarrativeService(
-                draftService, port, new NumericProvenanceGuard(), registry,
-                mock(NarrativeAuditRepository.class));
+                draftService, port, new NumericProvenanceGuard(), new AmountCoverageGuard(),
+                registry, mock(NarrativeAuditRepository.class));
     }
 
     private double counted(String outcome) {
