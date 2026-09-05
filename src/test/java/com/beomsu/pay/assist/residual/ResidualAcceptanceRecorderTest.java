@@ -29,7 +29,7 @@ class ResidualAcceptanceRecorderTest {
     void setUp() {
         log = new ResidualSuggestionLog();
         registry = new SimpleMeterRegistry();
-        recorder = new ResidualAcceptanceRecorder(log, registry);
+        recorder = new ResidualAcceptanceRecorder(log, registry, org.mockito.Mockito.mock(SuggestionOutcomeRepository.class));
     }
 
     private void resolve(long reconId, String chosen) {
