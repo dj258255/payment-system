@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * 서술이 <b>사실 묶음의 금액을 빠뜨렸는지</b> 본다. {@link NumericProvenanceGuard} 와 방향이 반대다.
@@ -43,7 +44,21 @@ public class AmountCoverageGuard {
     }
 
     private boolean mentions(String text, long amount) {
-        return text.contains(NumberFormat.getNumberInstance(Locale.KOREA).format(amount))
-                || text.contains(Long.toString(amount));
+        return standalone(text, NumberFormat.getNumberInstance(Locale.KOREA).format(amount))
+                || standalone(text, Long.toString(amount));
+    }
+
+    /**
+     * 그 숫자가 <b>그 값으로</b> 나오는지 본다. 부분 문자열로 찾으면 가드가 열리는 쪽으로 틀린다 —
+     * {@code contains("17300")} 은 본문에 <b>173000</b> 이 있어도 참이고, {@code "17,300"} 은
+     * <b>117,300</b> 안에서도 잡힌다. 엉뚱한 금액이 결손을 덮어 준다.
+     *
+     * <p>앞은 숫자·쉼표가 아니어야 하고(<b>1</b>17,300 배제), 뒤는 숫자거나 쉼표+숫자가 아니어야
+     * 한다(17300<b>0</b> 과 17,300<b>,000</b> 배제). {@code "외부 17,300, 내부 기록 없음"} 처럼
+     * 쉼표 뒤에 숫자가 안 오는 자리는 통과시킨다 — 자릿수 구분이 아니라 문장부호다.
+     */
+    private boolean standalone(String text, String needle) {
+        return Pattern.compile("(?<![\\d,])" + Pattern.quote(needle) + "(?!\\d|,\\d)")
+                .matcher(text).find();
     }
 }
