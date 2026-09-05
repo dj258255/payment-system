@@ -39,7 +39,7 @@ class RuleFirstMetricNameTest {
     }
 
     private double count(String outcome) {
-        var c = registry.find("assist.incident").tag("outcome", outcome).counter();
+        var c = registry.find(RuleFirstIncidentAnalyzer.METRIC).tag("outcome", outcome).counter();
         return c == null ? 0 : c.count();
     }
 

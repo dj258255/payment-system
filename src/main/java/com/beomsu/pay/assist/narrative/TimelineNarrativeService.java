@@ -28,6 +28,14 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class TimelineNarrativeService {
 
+    /**
+     * 알림이 보는 이름. <b>{@code assist.residual.outcome} 과 규칙을 맞춘다</b> —
+     * 마이크로미터는 {@code assist.narrative} 를 {@code assist_narrative_total} 로 내보내지
+     * {@code assist_narrative_outcome_total} 로 내보내지 않는다. {@code outcome} 이 이름에
+     * 들어가려면 태그가 아니라 이름 자체에 있어야 한다.
+     */
+    public static final String METRIC = "assist.narrative.outcome";
+
     private final DraftService draftService;
     private final TimelineNarrativePort port;
     private final NumericProvenanceGuard numberGuard;
@@ -110,7 +118,7 @@ public class TimelineNarrativeService {
      * <p>기록에 실패해도 서술은 내보낸다. 감사가 기능을 세우면 그건 다른 사고가 된다.
      */
     private void record(String orderNo, String outcome, String output, FactPack facts) {
-        registry.counter("assist.narrative", "outcome", outcome).increment();
+        registry.counter(METRIC, "outcome", outcome).increment();
         try {
             auditRepository.save(NarrativeAudit.of(orderNo, port.name(), outcome, output,
                     facts.facts().size(), facts.complete()));

@@ -53,7 +53,7 @@ class TimelineNarrativeServiceTest {
     }
 
     private double counted(String outcome) {
-        var c = registry.find("assist.narrative").tag("outcome", outcome).counter();
+        var c = registry.find(TimelineNarrativeService.METRIC).tag("outcome", outcome).counter();
         return c == null ? 0 : c.count();
     }
 
@@ -189,9 +189,9 @@ class TimelineNarrativeServiceTest {
 
         service.narrate("ORD-1");
 
-        assertThat(registry.find("assist.narrative").tag("outcome", "dropped_amounts").counter())
+        assertThat(registry.find(TimelineNarrativeService.METRIC).tag("outcome", "dropped_amounts").counter())
                 .as("dropped_amounts 를 이 이름으로 세야 한다").isNotNull();
-        assertThat(registry.find("assist.narrative").tag("outcome", "fell_back_to_template").counter())
+        assertThat(registry.find(TimelineNarrativeService.METRIC).tag("outcome", "fell_back_to_template").counter())
                 .as("fell_back_to_template 을 이 이름으로 세야 한다").isNotNull();
     }
 }
