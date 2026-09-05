@@ -32,6 +32,8 @@ public class TimelineNarrativeService {
     private final TimelineNarrativePort port;
     private final NumericProvenanceGuard numberGuard;
     private final AmountCoverageGuard coverageGuard;
+    /** 모델 서술이 가드에 걸렸을 때 대신 낼 것. 빈 화면보다 낫다. */
+    private final TemplateNarrativeAdapter fallback = new TemplateNarrativeAdapter();
     private final MeterRegistry registry;
     private final NarrativeAuditRepository auditRepository;
 
@@ -47,12 +49,43 @@ public class TimelineNarrativeService {
             return Optional.empty();
         }
 
-        Optional<String> raw = port.narrate(facts);
+        Optional<String> accepted = pass(port, facts, orderNo);
+        if (accepted.isPresent()) {
+            record(orderNo, "narrated", accepted.get(), facts);
+            // 무엇이 쓴 문장인지 함께 낸다 — 사람이 템플릿과 모델을 구별할 수 있어야 한다.
+            return Optional.of(new Narrative(accepted.get(), port.name(), facts.complete()));
+        }
+
+        // 여기부터가 폴백이다. 아래 주석의 이유로, 버렸으면 빈손으로 두지 않는다.
+        if (port instanceof TemplateNarrativeAdapter) {
+            return Optional.empty();   // 이미 템플릿이었으면 더 물러설 곳이 없다
+        }
+        Optional<String> byTemplate = pass(fallback, facts, orderNo);
+        if (byTemplate.isEmpty()) {
+            return Optional.empty();
+        }
+        record(orderNo, "fell_back_to_template", byTemplate.get(), facts);
+        log.info("[narrative] 모델 서술을 버리고 템플릿으로 떨어뜨림 order={}", orderNo);
+        return Optional.of(new Narrative(byTemplate.get(), fallback.name(), facts.complete()));
+    }
+
+    /**
+     * 한 구현의 출력을 가드에 태워 통과한 것만 돌려준다.
+     *
+     * <p><b>왜 폴백을 두나</b>: 가드에 걸린 서술을 버리면 운영자 화면이 <b>빈다</b>. 금액 결손은
+     * 실측에서 30건 중 0~4건으로 간헐적이라, 모델을 켜면 그만큼의 확률로 요약이 통째로 없는
+     * 화면을 보게 된다. 템플릿은 그 자리에서도 늘 뭔가를 낸다.
+     *
+     * <p>그래서 버렸을 때 빈손 대신 템플릿을 준다. 이렇게 두면 모델을 켜는 최악의 경우가
+     * <b>템플릿을 켠 것과 같아진다.</b> 어느 쪽 문장이 더 읽히는지는 아직 못 쟀지만, 못 잰 것이
+     * 위험이 되지는 않는 상태가 된다.
+     */
+    private Optional<String> pass(TimelineNarrativePort candidate, FactPack facts, String orderNo) {
+        Optional<String> raw = candidate.narrate(facts);
         if (raw.isEmpty()) {
             record(orderNo, "abstained", null, facts);
             return Optional.empty();
         }
-
         List<String> unsourced = numberGuard.verify(raw.get(), facts);
         if (!unsourced.isEmpty()) {
             record(orderNo, "unsourced_figures", null, facts);
@@ -60,7 +93,6 @@ public class TimelineNarrativeService {
                     orderNo, unsourced);
             return Optional.empty();
         }
-
         // 반대 방향도 본다 — 지어낸 숫자가 없어도, 있어야 할 금액을 버렸으면 못 쓴다.
         List<Long> dropped = coverageGuard.missing(raw.get(), facts);
         if (!dropped.isEmpty()) {
@@ -68,10 +100,7 @@ public class TimelineNarrativeService {
             log.info("[narrative] 금액을 빠뜨려 서술을 버림 order={} amounts={}", orderNo, dropped);
             return Optional.empty();
         }
-
-        record(orderNo, "narrated", raw.get(), facts);
-        // 무엇이 쓴 문장인지 함께 낸다 — 사람이 템플릿과 모델을 구별할 수 있어야 한다.
-        return Optional.of(new Narrative(raw.get(), port.name(), facts.complete()));
+        return raw;
     }
 
     /**

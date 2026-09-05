@@ -72,23 +72,36 @@ class TimelineNarrativeServiceTest {
     }
 
     @Test
-    @DisplayName("출처 없는 숫자가 하나라도 있으면 문단을 통째로 버린다")
+    @DisplayName("출처 없는 숫자가 있으면 그 문단을 버린다 — 지어낸 값은 화면에 안 나간다")
     void dropsWhenAnyFigureIsUnsourced() {
         // 3,000원은 사실 목록에 없다. 차액을 모델이 <계산>한 값이다.
-        when(port.narrate(FACTS)).thenReturn(Optional.of(
+        when(port.narrate(any())).thenReturn(Optional.of(
                 "결제 100,000원 중 3,000원이 비어 대사가 어긋났다."));
 
-        assertThat(service.narrate("ORD-1")).isEmpty();
+        var out = service.narrate("ORD-1");
+
         assertThat(counted("unsourced_figures")).isEqualTo(1);
+        // 지어낸 값은 어디에도 안 남는다. 그것이 이 가드가 지키는 것이다.
+        assertThat(out).isPresent();
+        assertThat(out.get().text()).doesNotContain("3,000");
+        assertThat(out.get().source()).isEqualTo("template");
     }
 
     @Test
-    @DisplayName("모델이 기권하면 그대로 비운다 — 억지로 만든 문장은 일을 늘린다")
-    void respectsAbstention() {
-        when(port.narrate(FACTS)).thenReturn(Optional.empty());
+    @DisplayName("모델이 기권해도 화면은 안 비운다 — 템플릿은 지어내지 않고 사실을 옮긴다")
+    void fallsBackWhenModelAbstains() {
+        // 이 자리의 판단을 바꿨다. 전에는 기권하면 그대로 비웠고, 근거는 "억지로 만든 문장은
+        // 일을 늘린다"였다. 그 근거는 <모델에게 억지로 쓰게 하는 것>에 대한 것이지, 사실을
+        // 그대로 옮기는 템플릿에는 해당하지 않는다. 운영자에게 빈 화면과 사실 목록 중
+        // 사실 목록이 낫다.
+        when(port.narrate(any())).thenReturn(Optional.empty());
 
-        assertThat(service.narrate("ORD-1")).isEmpty();
+        var out = service.narrate("ORD-1");
+
         assertThat(counted("abstained")).isEqualTo(1);
+        assertThat(out).isPresent();
+        assertThat(out.get().source()).isEqualTo("template");
+        assertThat(out.get().text()).contains("100,000");
     }
 
     @Test
@@ -100,5 +113,51 @@ class TimelineNarrativeServiceTest {
         assertThat(service.narrate("ORD-2")).isEmpty();
         assertThat(counted("no_facts")).isEqualTo(1);
         org.mockito.Mockito.verify(port, org.mockito.Mockito.never()).narrate(any());
+    }
+
+    @Test
+    @DisplayName("모델이 금액을 빠뜨리면 빈손이 아니라 템플릿으로 떨어진다")
+    void fallsBackToTemplateWhenAmountsDropped() {
+        // 금액을 빼먹은 서술. 사실은 다 맞는데 얼마인지가 없다.
+        when(port.narrate(any())).thenReturn(Optional.of(
+                "2026-08-31에 대사 상태가 AMOUNT_MISMATCH로 변경되어 내부와 외부 기록의 금액이 다릅니다."));
+
+        var out = service.narrate("ORD-1");
+
+        assertThat(out).as("화면이 비면 안 된다").isPresent();
+        assertThat(out.get().source()).isEqualTo("template");
+        // 템플릿은 사실을 그대로 옮기므로 금액이 남아 있다.
+        assertThat(out.get().text()).contains("100,000").contains("97,000");
+        assertThat(counted("dropped_amounts")).isEqualTo(1);
+        assertThat(counted("fell_back_to_template")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("모델 서술이 가드를 통과하면 폴백하지 않는다")
+    void keepsModelOutputWhenItPasses() {
+        when(port.narrate(any())).thenReturn(Optional.of(
+                "2026-08-30에 결제 100,000원이 승인됐고, 2026-08-31 대사에서 내부 100,000원과 "
+                        + "외부 97,000원이 어긋났습니다."));
+
+        var out = service.narrate("ORD-1");
+
+        assertThat(out).isPresent();
+        assertThat(out.get().source()).isEqualTo("test-port");
+        assertThat(counted("fell_back_to_template")).isZero();
+        assertThat(counted("narrated")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("이미 템플릿이면 더 물러설 곳이 없다")
+    void doesNotFallBackWhenPortIsAlreadyTemplate() {
+        var templateService = new TimelineNarrativeService(
+                draftService, new TemplateNarrativeAdapter(), new NumericProvenanceGuard(),
+                new AmountCoverageGuard(), registry, mock(NarrativeAuditRepository.class));
+
+        var out = templateService.narrate("ORD-1");
+
+        assertThat(out).isPresent();
+        assertThat(out.get().source()).isEqualTo("template");
+        assertThat(counted("fell_back_to_template")).isZero();
     }
 }
