@@ -143,6 +143,16 @@ app:
     ollama:
       base-url: ${APP_ASSIST_OLLAMA_BASE_URL:http://localhost:11434}
       model: ${APP_ASSIST_OLLAMA_MODEL:qwen3:14b}
+      narrative-model: ${APP_ASSIST_OLLAMA_NARRATIVE_MODEL:qwen3:8b}
+    # 운영자용 타임라인 서술(18 문서). 어드민 화면에서 "이 주문에 무슨 일이 있었나"를
+    # 한 문단으로 돌려준다. 읽기 전용이고 고객에게 나가지 않는다.
+    #
+    # 기본은 template — 모델 없이 사실을 시간순으로 잇기만 한다. 이 문장이 <모델이 넘어야 할
+    # 자>다. 모델 서술이 이것보다 나은지 재지 않으면 "붙였다"만 남는다.
+    #
+    # 분류가 아니라 서술이라 이 자리에는 규칙 대비 개선이 처음부터 존재한다 —
+    # 규칙은 문장을 못 쓴다. 잔여 후보(15 문서)를 끈 이유와 정확히 반대다.
+    narrative-provider: ${APP_ASSIST_NARRATIVE_PROVIDER:template}
     # 규칙 분류기가 <결정적 후보를 못 낸> 건에만 모델이 원인을 제안한다(14 문서).
     # 제안까지만 한다 — resolve 는 사람이 한다.
     #

@@ -230,6 +230,7 @@
 | GET | `/admin/dlq` | DLQ 메시지 조회 |
 | POST | `/admin/dlq/{id}/retry` | DLQ 재처리 |
 | GET | `/admin/compensations?status=MANUAL` | 보상 실패 수동 처리 큐 |
+| GET | `/admin/orders/{orderNo}/narrative` | 이 주문에 무슨 일이 있었나를 **한 문단으로**. 읽기 전용, 못 만들면 **204**. 기본은 모델 없는 템플릿(18 문서) |
 
 ---
 
