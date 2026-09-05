@@ -28,7 +28,8 @@ class WalletServiceTest {
     void setUp() {
         accountRepository = mock(WalletAccountRepository.class);
         transactionRepository = mock(WalletTransactionRepository.class);
-        service = new WalletService(accountRepository, transactionRepository);
+        service = new WalletService(accountRepository, transactionRepository,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     @Test

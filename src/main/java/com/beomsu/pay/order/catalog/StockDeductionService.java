@@ -2,6 +2,7 @@ package com.beomsu.pay.order.catalog;
 
 import com.beomsu.pay.order.internal.OrderException;
 import jakarta.persistence.OptimisticLockException;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class StockDeductionService {
 
     private final StockRepository stockRepository;
+
+    /**
+     * <b>재시도가 관측을 지운다.</b> 낙관적 락 충돌은 재시도가 흡수하므로, 경합이 있어도 끝내
+     * 성공하면 로그도 지표도 아무것도 안 남는다. 최종 결과만 보는 관측은 <b>네 번 만에 성공한
+     * 요청을 건강한 요청으로</b> 읽고, 그 사이 늘어난 지연은 응답 시간 안에 묻힌다.
+     *
+     * <p>그래서 <b>논리적 호출과 실제 시도를 나눠 센다.</b> 이 카운터가 없으면 "경합이 있느냐"에
+     * 답할 방법이 없다 — 실패했을 때만 알게 되고, 그때는 이미 상한을 소진한 뒤다.
+     */
+    private final MeterRegistry meterRegistry;
 
     /** 조건부 UPDATE — 기본 전략. 영향 행 0이면 재고 부족. */
     @Transactional
@@ -79,7 +90,10 @@ public class StockDeductionService {
                 stockRepository.saveAndFlush(stock); // 버전 충돌을 이 시점에 감지
                 return;
             } catch (ObjectOptimisticLockingFailureException | OptimisticLockException e) {
+                // 흡수하기 <전에> 센다. 성공으로 끝나도 경합이 있었다는 사실은 남아야 한다.
+                meterRegistry.counter("stock.deduct.retry", "strategy", "optimistic").increment();
                 if (++attempts >= MAX_RETRY) {
+                    meterRegistry.counter("stock.deduct.exhausted", "strategy", "optimistic").increment();
                     throw new OrderException("STOCK_CONCURRENCY", "재고 차감 경합이 계속됩니다: " + productId);
                 }
             }

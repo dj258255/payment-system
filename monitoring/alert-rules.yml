@@ -138,3 +138,28 @@ groups:
         annotations:
           summary: "전역 유입 상한이 지속적으로 걸리는 중 (초당 {{ $value | printf \"%.1f\" }}건 거절)"
           description: "15분 넘게 전역 층에서 거절이 이어집니다. 처리량이 상한 근처에서 평평한지 확인하세요. 평평하면 증설, 한참 낮은데도 거절되면 app.ratelimit.global-per-sec가 낮게 잡힌 것입니다(k6/capacity-knee.js로 재측정)."
+
+      # 9) 낙관적 락 재시도가 늘고 있다 — <성공한 요청>에는 아무 흔적이 안 남는 자리다.
+      #    재시도가 충돌을 흡수하므로, 최종 결과만 보면 다섯 번 만에 성공한 요청이 한 번에 성공한
+      #    요청과 구별되지 않는다. 늘어난 지연은 응답 시간 안에 묻히고 에러율은 그대로다.
+      #    그래서 <논리적 호출>이 아니라 <실제 시도>를 따로 센다.
+      #    이게 오르면 경합이 실제로 있다는 뜻이고, 소진(exhausted)까지 오르면 사용자가 실패를 본다.
+      #    경보가 아니라 "락 전략을 다시 볼 때가 됐다"는 신호라 warning이다.
+      - alert: OptimisticLockRetryRising
+        expr: sum(rate(stock_deduct_retry_total[5m])) + sum(rate(wallet_mutate_retry_total[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "낙관적 락 재시도가 늘고 있음 (초당 {{ $value | printf \"%.1f\" }}회)"
+          description: "재시도가 충돌을 흡수해 성공률·에러율에는 안 나타나는 경합입니다. 10분 넘게 이어지면 락 전략(조건부 UPDATE)으로 옮길 때가 된 것입니다(ADR-004의 실측 비교 참고)."
+
+      # 10) 재시도를 다 쓰고 실패했다 — 여기서부터는 사용자가 실패를 본다.
+      - alert: OptimisticLockExhausted
+        expr: sum(rate(stock_deduct_exhausted_total[5m])) + sum(rate(wallet_mutate_exhausted_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "낙관적 락 재시도 소진 — 사용자에게 실패가 나가는 중"
+          description: "재시도 상한을 소진해 STOCK_CONCURRENCY / WALLET_CONCURRENCY 로 실패하고 있습니다. 경합이 재시도로 흡수되는 수준을 넘었습니다."
