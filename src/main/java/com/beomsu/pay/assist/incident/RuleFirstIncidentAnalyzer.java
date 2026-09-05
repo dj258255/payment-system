@@ -2,6 +2,7 @@ package com.beomsu.pay.assist.incident;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -35,9 +36,14 @@ public class RuleFirstIncidentAnalyzer implements IncidentAnalysisPort {
     private final EvidenceGroundingGuard grounding = new EvidenceGroundingGuard();
 
     /**
-     * 두 구현을 직접 조립한다. 각자 {@code @ConditionalOnProperty} 로 자기 이름일 때만 빈이
+     * <b>{@code @Autowired} 가 붙은 이유</b>: 아래 테스트용 생성자와 둘이라, 표시가 없으면 스프링이
+     * 어느 쪽을 쓸지 못 정하고 기본 생성자를 찾다 {@code NoSuchMethodException} 으로 죽는다.
+     * 컨텍스트를 띄우지 않는 단위 테스트에서는 안 걸리고 통합 테스트에서만 드러났다.
+     *
+     * <p>두 구현을 직접 조립한다. 각자 {@code @ConditionalOnProperty} 로 자기 이름일 때만 빈이
      * 되므로, {@code rule-first} 에서는 둘 다 빈이 아니다. 주입받을 수 없어 여기서 만든다.
      */
+    @Autowired
     public RuleFirstIncidentAnalyzer(
             @Value("${app.assist.ollama.base-url:http://localhost:11434}") String baseUrl,
             @Value("${app.assist.ollama.incident-model:qwen3:8b}") String model,
