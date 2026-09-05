@@ -59,6 +59,16 @@ public class SubscriptionService {
         String customerKey = UUID.randomUUID().toString();
         // 빌링키는 암호화 저장되므로, 조회·유니크를 위한 블라인드 인덱스를 함께 계산해 넘긴다.
         String billingKeyIndex = blindIndexer.index(billingKey);
+
+        // 이미 폐기된 키로 다시 구독을 만들면, <카드가 죽은 걸 알면서 청구를 예약하는 것>이다.
+        // 첫 청구에서 실패하고 dunning 이 그 실패를 재시도한다. 아는 실패는 미리 막는다.
+        billingKeyRepository.findByBillingKeyIndex(billingKeyIndex).ifPresent(existing -> {
+            if (!existing.isActive()) {
+                throw new SubscriptionException("BILLING_KEY_REVOKED",
+                        "폐기된 빌링키로는 구독을 만들 수 없습니다. 결제 수단을 다시 등록해야 합니다.");
+            }
+        });
+
         billingKeyRepository.save(BillingKey.of(billingKey, billingKeyIndex, customerKey, userId));
 
         LocalDate nextBillingDate = BillingCycle.next(startDate, BillingCycle.anchorOf(startDate), BILLING_PERIOD_MONTHS);
@@ -131,6 +141,13 @@ public class SubscriptionService {
         Subscription s = requireOwned(subscriptionId, userId);
         s.cancel(); // 도메인 가드: CANCELED로의 허용 전이만
         subscriptionRepository.saveAndFlush(s);
+        // 해지했으면 결제 수단도 놓아준다. 안 놓으면 <해지한 고객의 카드 대체물을 계속 보관>한다.
+        // 다만 같은 키를 쓰는 다른 구독이 남아 있으면 폐기하지 않는다 — 남의 결제 수단을 지우는 셈이다.
+        if (!subscriptionRepository.existsByBillingKeyAndStatusIn(s.getBillingKey(),
+                List.of(SubscriptionStatus.ACTIVE, SubscriptionStatus.IN_GRACE_PERIOD,
+                        SubscriptionStatus.ON_HOLD))) {
+            revokeBillingKey(s.getBillingKey(), "구독 해지");
+        }
         return SubscriptionView.from(s);
     }
 
@@ -195,9 +212,25 @@ public class SubscriptionService {
     private void handleHardDecline(Subscription subscription) {
         // hard decline(도난/무효 카드): 재시도하면 카드사에서 가맹점 평판이 하락하므로 재시도 없이 즉시 정지.
         subscription.hold();
+        // 카드가 죽었다. 구독만 세우고 키를 살려 두면 <같은 죽은 키로 다음 구독이 또 실패한다>.
+        // 이 키는 어느 구독에서도 못 쓴다 — 남은 구독이 있는지 보지 않고 바로 폐기하는 이유다.
+        revokeBillingKey(subscription.getBillingKey(), "카드 거절(HARD_DECLINE)");
         int attemptNo = priorSoftDeclines(subscription) + 1;
         dunningAttemptRepository.save(
                 DunningAttempt.of(subscription.getId(), attemptNo, BillingResult.HARD_DECLINE, null));
+    }
+
+    /**
+     * 빌링키를 폐기한다. <b>키를 못 찾아도 조용히 넘어간다</b> — 구독 해지는 이미 끝났고,
+     * 여기서 예외를 던지면 <b>끝난 해지가 롤백된다</b>. 폐기 실패는 해지 실패보다 가볍다.
+     */
+    private void revokeBillingKey(String billingKey, String reason) {
+        billingKeyRepository.findByBillingKeyIndex(blindIndexer.index(billingKey))
+                .ifPresent(key -> {
+                    key.revoke(reason);
+                    billingKeyRepository.saveAndFlush(key);
+                    log.info("빌링키 폐기 reason={}", reason);
+                });
     }
 
     private int priorSoftDeclines(Subscription subscription) {
