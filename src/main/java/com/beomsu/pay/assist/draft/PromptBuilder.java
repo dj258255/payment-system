@@ -121,7 +121,8 @@ public class PromptBuilder {
 
         sb.append("[확인된 사실]\n");
         for (String f : facts.facts()) {
-            sb.append("- ").append(f).append('\n');
+            // 분쟁 사유처럼 남이 쓴 값이 섞여 있다. 줄바꿈으로 목록 구조를 깨지 못하게 눌러 담는다.
+            sb.append("- ").append(UntrustedText.flatten(f)).append('\n');
         }
 
         if (!facts.amounts().isEmpty()) {
