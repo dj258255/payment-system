@@ -89,8 +89,9 @@ async function refreshCount() {
     const r = await fetch(API + '/narrative/compare/stats');
     if (!r.ok) return;
     const s = await r.json();
-    const n = s.total ?? s.count ?? (Array.isArray(s) ? s.length : 0);
-    $('#count').textContent = `모은 표본 ${n}건`;
+    // total 은 사람이 고른 것만 센다. 모델 심판이 고른 것은 승격 기준에 안 든다.
+    const n = s.total ?? 0, m = s.byMachine ?? 0;
+    $('#count').textContent = `사람이 고른 표본 ${n}건` + (m ? ` (모델 심판 ${m}건은 별도)` : '');
   } catch (e) { /* 집계 실패는 비교를 막지 않는다 */ }
 }
 

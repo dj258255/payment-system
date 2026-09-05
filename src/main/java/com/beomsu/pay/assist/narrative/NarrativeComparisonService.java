@@ -90,14 +90,28 @@ public class NarrativeComparisonService {
         });
     }
 
-    /** 집계 — 무엇이 몇 번 선택됐나. 동점은 따로 센다. */
+    /**
+     * 심판 이름이 이 접두사로 시작하면 사람이 아니다. 승격 기준에서 뺀다.
+     *
+     * <p>모델 심판도 이 표에 쓴다 — 나중에 사람이 고른 것과 <b>일치도를 재려면</b> 같은 표에
+     * 있어야 한다. 그런데 섞어서 세면 "사람이 고른 25건"을 셀 수 없다. 그래서 이름으로 가른다.
+     */
+    static final String MACHINE_PREFIX = "judge:";
+
+    /** 집계 — 무엇이 몇 번 선택됐나. 동점은 따로 센다. <b>사람이 고른 것만</b> 승격 기준에 든다. */
     @Transactional(readOnly = true)
     public Stats stats() {
         List<NarrativePreference> chosen = repository.findByChoiceIsNotNull();
-        long ties = chosen.stream().filter(p -> "TIE".equals(p.getChoice())).count();
-        long template = chosen.stream().filter(p -> "template".equals(p.chosenSource())).count();
-        long model = chosen.size() - ties - template;
-        return new Stats(chosen.size(), template, model, ties);
+        List<NarrativePreference> human = chosen.stream().filter(NarrativeComparisonService::byHuman).toList();
+        long ties = human.stream().filter(p -> "TIE".equals(p.getChoice())).count();
+        long template = human.stream().filter(p -> "template".equals(p.chosenSource())).count();
+        long model = human.size() - ties - template;
+        return new Stats(human.size(), template, model, ties, chosen.size() - human.size());
+    }
+
+    private static boolean byHuman(NarrativePreference p) {
+        String r = p.getReviewer();
+        return r == null || !r.startsWith(MACHINE_PREFIX);
     }
 
     /** 사람에게 보이는 것 — <b>출처가 없다</b>. */
@@ -109,11 +123,12 @@ public class NarrativeComparisonService {
     }
 
     /**
-     * @param total    고른 건수
+     * @param total    <b>사람이</b> 고른 건수. 승격 기준(최소 25건)은 이 수를 본다
      * @param template 모델 없는 쪽이 선택된 수
      * @param model    모델 쪽이 선택된 수
      * @param ties     차이 없음
+     * @param byMachine 모델 심판이 고른 건수. 승격에는 안 세고, 사람 표본과 일치도를 잴 때 쓴다
      */
-    public record Stats(long total, long template, long model, long ties) {
+    public record Stats(long total, long template, long model, long ties, long byMachine) {
     }
 }
