@@ -44,7 +44,7 @@ public class OllamaResidualAdapter implements ResidualCausePort {
 
     OllamaResidualAdapter(ResidualPromptBuilder prompts,
                           @Value("${app.assist.ollama.base-url:http://localhost:11434}") String baseUrl,
-                          @Value("${app.assist.ollama.model:qwen3:8b}") String model,
+                          @Value("${app.assist.ollama.model:qwen3:14b}") String model,
                           @Value("${app.assist.ollama.timeout-seconds:60}") long timeoutSeconds) {
         this.prompts = prompts;
         this.model = model;

@@ -31,7 +31,17 @@ public record FactPack(String orderNo,
                        Set<Long> amounts,
                        Set<LocalDate> dates,
                        String causeHint,
-                       boolean complete) {
+                       boolean complete,
+                       boolean internalRecordAbsent) {
+
+    /**
+     * 대사 결과 유형을 모르는 자리(초안 경로 등)를 위한 형태. {@code internalRecordAbsent} 는
+     * <b>false</b> 로 둔다 — "확인되지 않음"을 "없음"으로 읽으면 가드가 헐거워진다.
+     */
+    public FactPack(String orderNo, List<String> facts, Set<Long> amounts, Set<LocalDate> dates,
+                    String causeHint, boolean complete) {
+        this(orderNo, facts, amounts, dates, causeHint, complete, false);
+    }
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
@@ -71,8 +81,15 @@ public record FactPack(String orderNo,
             amounts.addAll(suggestion.figures());
         }
 
+        // 대사 결과 유형을 <구조화된 신호>로 함께 낸다. 문장("내부 없음")을 정규식으로 되뽑으면
+        // 문구를 고칠 때 가드가 조용히 깨진다 — 허용 목록에서 이미 한 번 겪은 실패다.
+        boolean internalRecordAbsent = timeline.entries().stream()
+                .anyMatch(e -> e.source() == TimelineEntry.Source.RECONCILIATION
+                        && "RECON_EXTERNAL_ONLY".equals(e.event()));
+
         return new FactPack(timeline.orderNo(), List.copyOf(facts),
-                Set.copyOf(amounts), Set.copyOf(dates), render(suggestion), timeline.complete());
+                Set.copyOf(amounts), Set.copyOf(dates), render(suggestion), timeline.complete(),
+                internalRecordAbsent);
     }
 
     /** 분류기 제안을 사람이 읽을 한 줄로. 값은 {@code figures} 가 따로 들고 있다. */

@@ -129,6 +129,21 @@ public class ResidualCauseService {
             return Optional.empty();
         }
 
+        // 가드 1-1 — 모델이 낼 수 있는 값을 규칙이 <이미> 냈으면 부르지 않는다.
+        //
+        // 홀드아웃을 정리하다 드러났다. 프롬프트는 켠 유형만 보여주므로 모델의 답은
+        // INTERNAL_RECORD_LOST 아니면 기권 둘뿐이고, 가드 8은 그 값을 대사 결과가
+        // <외부에만 있음>일 때만 통과시킨다. 그런데 그 조건에서는 규칙 분류기가 이미
+        // 같은 값을 낸다("외부에만 존재. 내부에 이 주문의 기록이 없다").
+        //
+        // 즉 지금 켠 범위에서 모델이 할 수 있는 최선은 <규칙에 동의하는 것>뿐이다.
+        // 그 왕복은 값을 만들지 않고 지연과 비용만 만든다.
+        if (rules != null && rules.stream().anyMatch(r -> ENABLED.contains(r.cause()))) {
+            count("rules_already_cover");
+            log.info("[residual] 규칙이 이미 켠 유형을 제안해 모델을 부르지 않음 order={}", orderNo);
+            return Optional.empty();
+        }
+
         FactPack facts = draftService.factsFor(orderNo, reconResultId);
         if (facts.facts().isEmpty()) {
             count("no_facts");
@@ -163,6 +178,22 @@ public class ResidualCauseService {
         if (!ENABLED.contains(s.cause())) {                          // 가드 7
             count("type_not_enabled");
             log.info("[residual] 아직 켜지 않은 유형이라 버림 order={} cause={}", orderNo, s.cause());
+            return Optional.empty();
+        }
+        // 가드 8 — 프롬프트에 적은 판정 기준을 <코드로도> 강제한다.
+        //
+        // 홀드아웃에서 확인했다. "내부 기록 금액이 있으면 이 원인이 아니다"를 프롬프트에 명시했는데도
+        // 내부에만 있는 건(RECON_INTERNAL_ONLY)에서 세 모델이 <45건 중 45건> 모두 INTERNAL_RECORD_LOST 를
+        // 냈다. 방향이 정반대인 오답이다.
+        //
+        // 이 오답은 앞의 가드로 못 막는다. 프롬프트가 켠 유형만 보여주므로 모델이 낼 수 있는 값은
+        // INTERNAL_RECORD_LOST 아니면 기권 둘뿐이고, 그래서 <모든 오답이 켠 유형과 같은 값>이다.
+        // 가드 7(켠 유형인가)도, 가드 4(신뢰도)도 그냥 통과한다 — 그 오답들의 신뢰도는 95~100 이었다.
+        //
+        // 그래서 대사 결과 유형을 직접 본다. 외부에만 있는 건이 아니면 이 원인일 수 없다.
+        if (s.cause() == ResolveCause.INTERNAL_RECORD_LOST && !facts.internalRecordAbsent()) {
+            count("contradicts_recon_result");
+            log.info("[residual] 대사 결과가 <외부에만 있음>이 아니라 버림 order={}", orderNo);
             return Optional.empty();
         }
         if (s.confidence() < minConfidence) {                       // 가드 4

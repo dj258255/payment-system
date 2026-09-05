@@ -142,15 +142,22 @@ app:
     shadow-enabled: ${APP_ASSIST_SHADOW_ENABLED:false}
     ollama:
       base-url: ${APP_ASSIST_OLLAMA_BASE_URL:http://localhost:11434}
-      model: ${APP_ASSIST_OLLAMA_MODEL:qwen3:8b}
+      model: ${APP_ASSIST_OLLAMA_MODEL:qwen3:14b}
     # 규칙 분류기가 <결정적 후보를 못 낸> 건에만 모델이 원인을 제안한다(14 문서).
     # 제안까지만 한다 — resolve 는 사람이 한다.
     #
-    # 켜는 범위는 유형별로 정한다(가드 7). 엔진이 만든 272건에서 유형별로 재니
-    # INTERNAL_RECORD_LOST 는 세 모델 모두 100%, PARTIAL_CANCEL_NOT_REFLECTED 는
-    # 셋 다 0%였다. 그래서 지금 켜진 것은 앞의 하나뿐이고 나머지는 사람에게 간다.
-    # 전체 잔여의 14%를 덮는다. Monzo·Revolut 도 범위를 좁게 잡는다.
-    residual-provider: ${APP_ASSIST_RESIDUAL_PROVIDER:ollama}
+    # <b>기본 off 로 되돌렸다(15 문서).</b> 켠 유형은 INTERNAL_RECORD_LOST 하나였는데,
+    # 홀드아웃을 재고 나서 그 하나마저 모델이 필요 없다는 것이 드러났다.
+    #
+    #   - 프롬프트가 켠 유형만 보여주므로 모델의 답은 그 값 아니면 기권 둘뿐이다
+    #   - 그 값이 통과하는 조건은 대사 결과가 EXTERNAL_ONLY 일 때다(가드 8)
+    #   - 그런데 그 조건에서 규칙 분류기가 이미 같은 값을 낸다
+    #
+    # 즉 모델이 할 수 있는 최선이 <규칙에 동의하는 것>이라, 규칙 대비 얻는 것이 없다.
+    # 후보 모델을 올릴 때 기준이 되는 것은 절대 정확도가 아니라 <기존 방식 대비 개선>인데,
+    # 그 값이 0 이다. 평가 하네스(./gradlew evalTest)와 가드는 남겨 둔다 —
+    # 규칙이 못 가르는 유형을 열 수 있게 되면 그때 다시 켠다.
+    residual-provider: ${APP_ASSIST_RESIDUAL_PROVIDER:template}
     residual:
       # 후보를 만들되 화면에 안 주는 비율. 비교군을 만들기 위해서다.
       # 제안을 보여준 건만 모으면 "제안 덕분"과 "원래 그랬을 것"을 가를 수 없다.

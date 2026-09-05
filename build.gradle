@@ -93,7 +93,7 @@ tasks.named('test') {
     // (@Tag("integration")) 테스트는 제외. 순수 단위 테스트(서킷브레이커 포함) + 경량 슬라이스만 돌아
     // CI가 빠르고 재현 가능하다.
     useJUnitPlatform {
-        excludeTags 'chaos', 'integration'
+        excludeTags 'chaos', 'integration', 'eval'
     }
 
     // ErdDocMatchesSchemaTest는 문서(.md)와 마이그레이션(.sql)을 읽는다. 이 둘을 태스크 입력으로
@@ -120,6 +120,19 @@ tasks.register('chaosTest', Test) {
 tasks.named('test') {
     systemProperty 'corpus.generate', System.getProperty('corpus.generate', 'false')
     systemProperty 'corpus.out', System.getProperty('corpus.out', "$projectDir/build/corpus")
+}
+
+tasks.register('evalTest', Test) {
+    description = '모델 평가(홀드아웃) — 로컬 Ollama 와 모델 3종이 필요하므로 수동 실행'
+    group = 'verification'
+    useJUnitPlatform {
+        includeTags 'eval'
+    }
+    systemProperty 'eval.perFamily', System.getProperty('eval.perFamily', '15')
+    testLogging { showStandardStreams = true }
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    shouldRunAfter('test')
 }
 
 tasks.register('integrationTest', Test) {

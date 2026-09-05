@@ -13,6 +13,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.*;
 
 class FraudServiceTest {
@@ -35,6 +36,10 @@ class FraudServiceTest {
         ReflectionTestUtils.setField(service, "blockThreshold", 100);
         ReflectionTestUtils.setField(service, "reviewThreshold", 60);
         ReflectionTestUtils.setField(service, "challengeThreshold", 40);
+        ReflectionTestUtils.setField(service, "deviceThreshold", 8);
+        ReflectionTestUtils.setField(service, "deviceWeight", 25);
+        ReflectionTestUtils.setField(service, "ipThreshold", 15);
+        ReflectionTestUtils.setField(service, "ipWeight", 20);
     }
 
     private FraudCheckRequest req(long amount) {
@@ -83,6 +88,45 @@ class FraudServiceTest {
 
         assertThat(r.score()).isEqualTo(70);
         assertThat(r.decision()).isEqualTo(FdsDecision.REVIEW);
+    }
+
+    @Test
+    @DisplayName("카드를 바꿔 가며 같은 기기로 두드리면 카드 기준으로는 안 보인다")
+    void deviceVelocityCatchesCardRotation() {
+        // 카드는 매번 새것이라 카드 카운터는 낮다. 기기 카운터만 올라간다.
+        when(velocityCounter.recordAndCount(startsWith("card:"))).thenReturn(1);
+        when(velocityCounter.recordAndCount(startsWith("device:"))).thenReturn(9);
+        when(velocityCounter.recordAndCount(startsWith("ip:"))).thenReturn(3);
+
+        FraudResult r = service.evaluate(req(10_000));
+
+        assertThat(r.score()).isEqualTo(25);
+        assertThat(r.reasons()).anyMatch(s -> s.startsWith("DEVICE_VELOCITY_EXCEEDED"));
+        // 차단이 아니라 <사람이 들여다볼 이유>를 만드는 층이다.
+        assertThat(r.decision()).isEqualTo(FdsDecision.ALLOW);
+    }
+
+    @Test
+    @DisplayName("IP 임계는 가장 느슨하다 — 공용망 뒤에서 남남이 공유하기 때문")
+    void ipThresholdIsLoosest() {
+        when(velocityCounter.recordAndCount(startsWith("card:"))).thenReturn(1);
+        when(velocityCounter.recordAndCount(startsWith("device:"))).thenReturn(1);
+        when(velocityCounter.recordAndCount(startsWith("ip:"))).thenReturn(10);
+
+        // 기기 임계(8)는 넘겼을 값인데 IP 임계(15)는 안 넘는다.
+        assertThat(service.evaluate(req(10_000)).score()).isZero();
+    }
+
+    @Test
+    @DisplayName("기기·IP가 없으면 세지 않는다 — 없는 값을 한 덩어리로 묶으면 남이 걸린다")
+    void nullKeysAreNotCounted() {
+        when(velocityCounter.recordAndCount(anyString())).thenReturn(99);
+
+        FraudResult r = service.evaluate(new FraudCheckRequest(1L, "card-1", null, null, 10_000));
+
+        assertThat(r.reasons()).noneMatch(s -> s.startsWith("DEVICE_") || s.startsWith("IP_"));
+        verify(velocityCounter, never()).recordAndCount(startsWith("device:"));
+        verify(velocityCounter, never()).recordAndCount(startsWith("ip:"));
     }
 
     @Test

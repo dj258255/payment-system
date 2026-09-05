@@ -33,6 +33,14 @@ public class FraudService {
     private int amountWeight;
     @Value("${fds.blacklist.weight:100}")
     private int blacklistWeight;
+    @Value("${fds.velocity.device.threshold:8}")
+    private int deviceThreshold;            // 기기는 재시도가 정상이라 카드보다 느슨하게
+    @Value("${fds.velocity.device.weight:25}")
+    private int deviceWeight;
+    @Value("${fds.velocity.ip.threshold:15}")
+    private int ipThreshold;                // 공용망·NAT 뒤에서 남남이 공유하므로 가장 느슨하게
+    @Value("${fds.velocity.ip.weight:20}")
+    private int ipWeight;
     // 점수 구간 임계 (BLOCK >= 100, REVIEW >= 60, CHALLENGE >= 40)
     @Value("${fds.decision.block:100}")
     private int blockThreshold;
@@ -66,12 +74,19 @@ public class FraudService {
             reasons.add("BLACKLISTED_CARD");
         }
 
-        // 룰 2: velocity — 카드 키 기준 1분 내 시도 횟수
+        // 룰 2: velocity — 카드 기준 1분 내 시도 횟수
         int attempts = velocityCounter.recordAndCount("card:" + req.cardKey());
         if (attempts > velocityThreshold) {
             score += velocityWeight;
             reasons.add("VELOCITY_EXCEEDED(" + attempts + ")");
         }
+
+        // 룰 2-1·2-2: 같은 기기·같은 IP 로 카드를 <바꿔 가며> 두드리는 것은 카드 기준으로는 안 보인다.
+        // 임계를 셋 다 다르게 두는 이유: 카드는 한 사람이 반복해서 쓸 일이 드물지만, 기기는 재시도가
+        // 정상이고, IP 는 공용망·NAT 뒤에서 남남이 공유한다. 같은 숫자를 쓰면 IP 규칙이 정상 사용자를
+        // 계속 건드린다. 가중치도 낮게 둔다 — 이건 차단이 아니라 <사람이 들여다볼 이유>를 만드는 층이다.
+        score += velocityOf("device:", req.deviceId(), deviceThreshold, deviceWeight, "DEVICE", reasons);
+        score += velocityOf("ip:", req.ip(), ipThreshold, ipWeight, "IP", reasons);
 
         // 룰 3: 금액 이상치
         if (req.amount() > amountThreshold) {
@@ -80,6 +95,23 @@ public class FraudService {
         }
 
         return new FraudResult(score, decide(score), reasons);
+    }
+
+    /**
+     * 키가 있을 때만 센다. {@code null} 이면 <b>세지 않는다</b> — 없는 값을 한 덩어리로 묶으면
+     * 서로 무관한 요청이 같은 카운터를 올려 엉뚱한 사람이 걸린다.
+     */
+    private int velocityOf(String prefix, String key, int threshold, int weight,
+                           String reason, List<String> reasons) {
+        if (key == null || key.isBlank()) {
+            return 0;
+        }
+        int attempts = velocityCounter.recordAndCount(prefix + key);
+        if (attempts <= threshold) {
+            return 0;
+        }
+        reasons.add(reason + "_VELOCITY_EXCEEDED(" + attempts + ")");
+        return weight;
     }
 
     private FdsDecision decide(int score) {

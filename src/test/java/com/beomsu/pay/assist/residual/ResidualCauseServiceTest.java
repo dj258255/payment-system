@@ -40,11 +40,21 @@ class ResidualCauseServiceTest {
     private ResidualCauseService service;
     private MeterRegistry registry;
 
+    /** 켠 유형이 성립하는 사실 묶음 — 대사 결과가 <외부에만 있음>이라 가드 8을 통과한다. */
     private static final FactPack FACTS = new FactPack("ORD-1",
-            List.of("2026-08-30 · PAYMENT · 결제 승인 100,000원"),
+            List.of("2026-08-30 · PAYMENT · 결제 승인 100,000원",
+                    "2026-08-30 · RECONCILIATION · 대사 EXTERNAL_ONLY (거래일 2026-08-30) — 내부 없음 / 외부 100,000"),
             Set.of(100_000L, 3_000L),
             Set.of(LocalDate.of(2026, 8, 30)),
-            null, true);
+            null, true, true);
+
+    /** 같은 사실인데 대사 결과가 <내부에만 있음> — 방향이 반대라 이 원인일 수 없다. */
+    private static final FactPack INTERNAL_ONLY_FACTS = new FactPack("ORD-2",
+            List.of("2026-08-30 · PAYMENT · 결제 승인 100,000원",
+                    "2026-08-30 · RECONCILIATION · 대사 INTERNAL_ONLY (거래일 2026-08-30) — 내부 100,000 / 외부 없음"),
+            Set.of(100_000L),
+            Set.of(LocalDate.of(2026, 8, 30)),
+            null, true, false);
 
     @BeforeEach
     void setUp() {
@@ -141,6 +151,21 @@ class ResidualCauseServiceTest {
         assertThat(out).isPresent();
         assertThat(out.get().cause()).isEqualTo(ResolveCause.INTERNAL_RECORD_LOST);
         assertThat(counted("suggested")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("가드 8 — 대사 결과가 <내부에만 있음>이면 같은 답이라도 버린다")
+    void dropsWhenReconResultContradictsCause() {
+        // 홀드아웃에서 세 모델이 이 상황에서 45건 중 45건을 INTERNAL_RECORD_LOST 로 냈다.
+        // 프롬프트에 "내부 기록 금액이 있으면 이 원인이 아니다"라고 적어 뒀는데도 그랬다.
+        when(draftService.factsFor(anyString(), anyLong())).thenReturn(INTERNAL_ONLY_FACTS);
+        modelSays(ResolveCause.INTERNAL_RECORD_LOST, 98, "내부 기록이 없습니다");
+
+        Optional<ResidualSuggestion> out = service.suggest("ORD-2", 2L, List.of());
+
+        // 신뢰도 98 이라 가드 4 는 통과하고, 켠 유형이라 가드 7 도 통과한다. 여기서 막아야 한다.
+        assertThat(out).isEmpty();
+        assertThat(counted("contradicts_recon_result")).isEqualTo(1);
     }
 
     @Test
