@@ -93,7 +93,7 @@ tasks.named('test') {
     // (@Tag("integration")) 테스트는 제외. 순수 단위 테스트(서킷브레이커 포함) + 경량 슬라이스만 돌아
     // CI가 빠르고 재현 가능하다.
     useJUnitPlatform {
-        excludeTags 'chaos', 'integration', 'eval'
+        excludeTags 'chaos', 'integration', 'eval', 'capture'
     }
 
     // ErdDocMatchesSchemaTest는 문서(.md)와 마이그레이션(.sql)을 읽는다. 이 둘을 태스크 입력으로
@@ -129,6 +129,18 @@ tasks.register('evalTest', Test) {
         includeTags 'eval'
     }
     systemProperty 'eval.perFamily', System.getProperty('eval.perFamily', '15')
+    testLogging { showStandardStreams = true }
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    shouldRunAfter('test')
+}
+
+tasks.register('captureTest', Test) {
+    description = '장애 로그 표본 캡처 — 실제로 장애를 일으켜 로그를 받아 적는다. MySQL 컨테이너와 외부 네트워크 필요'
+    group = 'verification'
+    useJUnitPlatform {
+        includeTags 'capture'
+    }
     testLogging { showStandardStreams = true }
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath

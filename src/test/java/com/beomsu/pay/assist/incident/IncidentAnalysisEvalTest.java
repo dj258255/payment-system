@@ -10,9 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,14 +37,29 @@ class IncidentAnalysisEvalTest {
 
     private static final Path DIR = Path.of("src/test/resources/incident-logs");
 
-    /** 파일 이름이 곧 정답이다. 실제로 그 장애를 넣고 받은 로그이기 때문이다. */
-    private static Map<IncidentCause, String> realLogs() {
-        Map<IncidentCause, String> out = new LinkedHashMap<>();
+    /** 한 표본. 파일 이름이 곧 정답이다 — 실제로 그 장애를 넣고 받은 로그이기 때문이다. */
+    private record Sample(IncidentCause cause, String file, String log) {}
+
+    /**
+     * 표본을 읽는다. 파일 이름은 {@code <원인>.log} 또는 {@code <원인>-<번호>.log} 다.
+     *
+     * <p><b>원인 하나에 로그 하나로 묶어 두지 않는다.</b> 처음엔 {@code Map<IncidentCause, String>}
+     * 이라 표본이 원인 수(4건)에 갇혔고, 그 얇은 표본에서 한 건이 결론을 뒤집었다. 같은 원인도
+     * 드러나는 모습이 여러 가지다 — DB 가 느린 것과 커넥션이 고갈된 것은 같은 원인인데 로그가 다르다.
+     */
+    private static List<Sample> realLogs() {
+        List<Sample> out = new ArrayList<>();
         try (var files = Files.list(DIR)) {
-            files.sorted().forEach(p -> {
-                String name = p.getFileName().toString().replace(".log", "");
+            files.filter(f -> f.getFileName().toString().endsWith(".log")).sorted().forEach(p -> {
+                String file = p.getFileName().toString();
+                String name = file.replace(".log", "");
+                int dash = name.lastIndexOf('-');
+                if (dash > 0) {
+                    name = name.substring(0, dash);
+                }
                 try {
-                    out.put(IncidentCause.valueOf(name), Files.readString(p, StandardCharsets.UTF_8));
+                    out.add(new Sample(IncidentCause.valueOf(name), file,
+                            Files.readString(p, StandardCharsets.UTF_8)));
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }
@@ -65,27 +78,27 @@ class IncidentAnalysisEvalTest {
 
     private final EvidenceGroundingGuard grounding = new EvidenceGroundingGuard();
 
-    private Score run(IncidentAnalysisPort port, Map<IncidentCause, String> cases, boolean guard) {
+    private Score run(IncidentAnalysisPort port, List<Sample> cases, boolean guard) {
         int correct = 0, abstained = 0, wrong = 0;
         List<String> detail = new ArrayList<>();
-        for (var e : cases.entrySet()) {
-            Optional<IncidentDiagnosis> out = port.diagnose(e.getValue());
+        for (Sample c : cases) {
+            Optional<IncidentDiagnosis> out = port.diagnose(c.log());
             // 인용이 원문에 없으면 버린다 — 근거 없는 판단은 기권과 같게 취급한다.
-            if (guard && out.isPresent() && !grounding.grounded(out.get(), e.getValue())) {
+            if (guard && out.isPresent() && !grounding.grounded(out.get(), c.log())) {
                 out = Optional.empty();
             }
             String got;
             if (out.isEmpty() || out.get().cause() == IncidentCause.UNKNOWN) {
                 abstained++;
                 got = "기권";
-            } else if (out.get().cause() == e.getKey()) {
+            } else if (out.get().cause() == c.cause()) {
                 correct++;
                 got = "맞음";
             } else {
                 wrong++;
                 got = "틀림(" + out.get().cause() + ")";
             }
-            detail.add("      %-16s → %s".formatted(e.getKey(), got));
+            detail.add("      %-22s → %s".formatted(c.file(), got));
         }
         detail.forEach(System.out::println);
         return new Score(port.name(), correct, abstained, wrong);
@@ -94,7 +107,7 @@ class IncidentAnalysisEvalTest {
     @Test
     @DisplayName("실제로 찍힌 로그에 규칙과 모델을 나란히 태운다")
     void compareAgainstRuleBaseline() {
-        Map<IncidentCause, String> cases = realLogs();
+        List<Sample> cases = realLogs();
         assertThat(cases).as("실제 로그 표본이 있어야 한다").isNotEmpty();
 
         System.out.printf("%n╔══ 장애 로그 원인 분석 (실제 로그 %d건) ══%n", cases.size());
@@ -105,11 +118,15 @@ class IncidentAnalysisEvalTest {
         Score raw = run(ollama, cases, false);
         System.out.println("  [모델 — 근거 대조 가드]");
         Score guarded = run(ollama, cases, true);
+        // 실제로 켤 후보: 규칙이 먼저 답하고 기권한 자리에만 모델을 부른다.
+        System.out.println("  [규칙 우선 + 기권 자리만 모델]");
+        Score first = run(new RuleFirstIncidentAnalyzer(new RuleBasedIncidentAnalyzer(), ollama), cases, false);
 
         System.out.println();
         System.out.println(rule.line());
         System.out.println(raw.line());
         System.out.println(guarded.line().replace(guarded.name(), guarded.name() + "+가드"));
+        System.out.println(first.line());
         System.out.println("╚═══════════════════════════════════════");
 
         // 수치를 통과 조건으로 걸지 않는다 — 재는 테스트다.

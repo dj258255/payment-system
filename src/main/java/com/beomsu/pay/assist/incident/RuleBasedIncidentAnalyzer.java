@@ -56,7 +56,7 @@ public class RuleBasedIncidentAnalyzer implements IncidentAnalysisPort {
             for (String sign : e.getValue()) {
                 int at = lower.indexOf(sign.toLowerCase());
                 if (at >= 0) {
-                    return Optional.of(new IncidentDiagnosis(e.getKey(), lineAt(logs, at)));
+                    return Optional.of(new IncidentDiagnosis(e.getKey(), lineAt(logs, at), IncidentDiagnosis.Source.RULE));
                 }
             }
         }

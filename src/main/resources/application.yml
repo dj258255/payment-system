@@ -137,6 +137,13 @@ app:
     #   anthropic — 외부 API. BYOK(운영자가 자기 키를 넣는다).
     #               생성형 AI 는 아직 금융권 망분리 예외가 아니다 — 켜는 것은 의식적 선택이어야 한다
     draft-provider: ${APP_ASSIST_DRAFT_PROVIDER:template}
+    # 장애 로그 원인 분석. rule | ollama | rule-first
+    #   rule       — 규칙만. 실 로그 12건에서 맞음 7·기권 5·틀림 0. 아는 것만 답한다
+    #   ollama     — 모델만. 맞음 11·기권 0·틀림 1. 규칙이 확실히 답하던 7건까지 오답 위험에 노출된다
+    #   rule-first — 규칙이 먼저 답하고 <기권한 자리에만> 모델. 맞음 11·기권 0·틀림 1
+    # 기본값이 rule-first 인 이유: 규칙이 답한 7건은 모델을 안 거치면서 답을 4건 더 얻는다.
+    # 모델이 낸 답은 IncidentDiagnosis.source() 가 MODEL 로 표시하며 확정은 사람이 한다.
+    incident-provider: ${APP_ASSIST_INCIDENT_PROVIDER:rule-first}
     # 확정 시 초안을 만들어 <기록만> 한다. 사람에게 보여주지 않아 앵커링이 생기지 않는다.
     # 기본 꺼짐 — 확정마다 타임라인 조립(10개 도메인) 비용이 붙는다.
     shadow-enabled: ${APP_ASSIST_SHADOW_ENABLED:false}
