@@ -93,10 +93,24 @@ public class SellerScreeningService {
      * 후보를 늘린 만큼 남에게도 잘 걸린다. 딱 맞을 때만 100 을 주고, 아니면 원래 점수를 쓴다.
      */
     private int score(String ours, String listed) {
-        if (KoreanRomanizer.hasHangul(ours) && KoreanRomanizer.exactMatch(ours, listed) != null) {
+        int edit = matcher.score(ours, listed);
+        if (!KoreanRomanizer.hasHangul(ours)) {
+            return edit;
+        }
+        // ① 후보 중 하나가 <b>정확히</b> 맞으면 우연이 아니다.
+        if (KoreanRomanizer.exactMatch(ours, listed) != null) {
             return 100;
         }
-        return matcher.score(ours, listed);
+        // ② 소리가 같으면 후보에 없는 표기일 수 있다. 같은 박씨가 Park·Bak·Pak·Bahk 를 쓰는데
+        //    <b>이건 오타가 아니라 다 맞는 표기</b>라, 후보를 아무리 늘려도 다 못 담는다.
+        //    다만 <b>확정은 안 한다</b> — 소리를 접을수록 남남도 같은 키를 받고,
+        //    한국인의 절반이 성씨 다섯 개를 공유한다. 사람에게 보낼 만큼만 올린다.
+        for (String cand : KoreanRomanizer.romanize(ours)) {
+            if (PhoneticKey.sounds(cand, listed)) {
+                return Math.max(edit, potentialThreshold);
+            }
+        }
+        return edit;
     }
 
     /** 대조에 쓴 명단의 판. 판정 기록에 남겨 "그때는 통과였다"를 댈 수 있게 한다. */

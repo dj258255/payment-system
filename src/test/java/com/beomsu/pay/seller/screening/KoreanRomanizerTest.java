@@ -101,4 +101,33 @@ class KoreanRomanizerTest {
         assertThat(KoreanRomanizer.romanize("DONGBANG TRADING CO")).isEmpty();
         assertThat(KoreanRomanizer.hasHangul("KIM CHUL SOO")).isFalse();
     }
+
+    @Test
+    @DisplayName("두 글자 성을 한 글자로 자르지 않는다")
+    void twoCharSurname() {
+        var c = KoreanRomanizer.romanize("남궁철수");
+        System.out.printf("%n  남궁철수 → %s%n", c.stream().limit(4).toList());
+        assertThat(c).anyMatch(s -> s.startsWith("NAMGUNG") || s.startsWith("NAMKUNG"));
+        assertThat(c).as("남 + 궁철수 로 자르면 안 된다").noneMatch(s -> s.startsWith("NAM KUNG C"));
+    }
+
+    @Test
+    @DisplayName("성이 뒤에 오는 표기도 만든다 — 명단마다 순서가 다르다")
+    void reversedOrder() {
+        var c = KoreanRomanizer.romanize("김철수");
+        assertThat(c).as("한국식 순서").anyMatch(s -> s.startsWith("KIM"));
+        assertThat(c).as("서양식 순서").anyMatch(s -> s.endsWith("KIM"));
+    }
+
+    @Test
+    @DisplayName("후보에 없는 표기는 소리로 잡는다 — 다만 확정은 안 한다")
+    void phoneticCatchesWhatCandidatesMiss() {
+        // Bahk 은 후보에 없다. 그래도 소리는 같다.
+        boolean inCandidates = KoreanRomanizer.romanize("박창호").stream()
+                .anyMatch(s -> s.replace(" ", "").equalsIgnoreCase("BAHKCHANGHO"));
+        boolean sameSound = KoreanRomanizer.romanize("박창호").stream()
+                .anyMatch(s -> PhoneticKey.sounds(s, "BAHK CHANG HO"));
+        System.out.printf("%n  BAHK CHANG HO — 후보에 있나 %s · 소리가 같나 %s%n", inCandidates, sameSound);
+        assertThat(sameSound).as("후보를 다 못 담으므로 소리가 메꾼다").isTrue();
+    }
 }

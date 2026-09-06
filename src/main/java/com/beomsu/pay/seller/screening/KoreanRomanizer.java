@@ -118,7 +118,40 @@ public final class KoreanRomanizer {
             Map.entry('백', List.of("BAEK", "PAEK", "BAIK")),
             Map.entry('문', List.of("MOON", "MUN")),
             Map.entry('손', List.of("SON", "SOHN")),
-            Map.entry('고', List.of("KO", "GO")));
+            Map.entry('고', List.of("KO", "GO")),
+            Map.entry('배', List.of("BAE", "PAE", "BAY")),
+            Map.entry('양', List.of("YANG")),
+            Map.entry('구', List.of("KOO", "GU", "KU")),
+            Map.entry('성', List.of("SUNG", "SEONG", "SONG")),
+            Map.entry('차', List.of("CHA")),
+            Map.entry('주', List.of("JOO", "JU", "CHU")),
+            Map.entry('우', List.of("WOO", "U", "OO")),
+            Map.entry('민', List.of("MIN")),
+            Map.entry('나', List.of("NA", "RA")),
+            Map.entry('라', List.of("RA", "NA")),
+            Map.entry('심', List.of("SHIM", "SIM")),
+            Map.entry('하', List.of("HA")),
+            Map.entry('곽', List.of("KWAK", "GWAK")),
+            Map.entry('홍', List.of("HONG")),
+            Map.entry('여', List.of("YEO", "YO", "YU")),
+            Map.entry('연', List.of("YEON", "YON")),
+            Map.entry('명', List.of("MYUNG", "MYONG")),
+            Map.entry('진', List.of("JIN", "CHIN")),
+            Map.entry('원', List.of("WON")),
+            Map.entry('천', List.of("CHUN", "CHON", "CHEON")));
+
+    /**
+     * 두 글자 성. 안 다루면 <b>성을 한 글자로 잘라</b> 엉뚱하게 펼친다 —
+     * 남궁철수를 "남" + "궁철수"로 읽는다.
+     */
+    private static final Map<String, List<String>> TWO_CHAR_SURNAME = Map.of(
+            "남궁", List.of("NAMGUNG", "NAMKUNG", "NAM GUNG"),
+            "선우", List.of("SUNWOO", "SEONU", "SUN WOO"),
+            "황보", List.of("HWANGBO", "HWANG BO"),
+            "제갈", List.of("JEGAL", "CHEGAL"),
+            "사공", List.of("SAGONG", "SAKONG"),
+            "독고", List.of("DOKGO", "TOKKO"),
+            "서문", List.of("SEOMUN", "SUHMOON"));
 
     /**
      * 후보 상한.
@@ -148,12 +181,27 @@ public final class KoreanRomanizer {
         String clean = name.replaceAll("[^가-힣]", "");
         if (clean.isEmpty()) return Set.of();
 
-        // 성 한 글자 + 이름 나머지. 두 글자 성은 안 다룬다 — 흔치 않고, 틀리면 엉뚱하게 붙는다.
-        List<String> surnames = SURNAME.getOrDefault(clean.charAt(0), syllable(clean.charAt(0)));
+        // 두 글자 성을 먼저 본다. 안 보면 남궁철수를 "남" + "궁철수"로 잘라 엉뚱하게 펼친다.
+        String head2 = clean.length() >= 3 ? clean.substring(0, 2) : null;
+        List<String> surnames;
+        String rest;
+        if (head2 != null && TWO_CHAR_SURNAME.containsKey(head2)) {
+            surnames = TWO_CHAR_SURNAME.get(head2);
+            rest = clean.substring(2);
+        } else {
+            surnames = SURNAME.getOrDefault(clean.charAt(0), syllable(clean.charAt(0)));
+            rest = clean.substring(1);
+        }
+
         Set<String> out = new LinkedHashSet<>();
         for (String sn : surnames) {
-            for (String given : givenNames(clean.substring(1))) {
+            for (String given : givenNames(rest)) {
+                // 명단은 세 형태를 다 쓴다 — "Jong Un" · "Jong-Un" · 드물게 붙여 쓴 것.
+                // 비교하는 쪽이 구두점을 지우므로 붙인 형태 하나면 셋을 다 덮는다.
                 out.add((sn + " " + given).strip());
+                // <b>성이 뒤에 오는 표기</b>도 만든다. 명단마다 순서가 다르다 —
+                // 서양식으로 적힌 항목에 한국식 순서로만 대조하면 못 찾는다.
+                out.add((given + " " + sn).strip());
                 if (out.size() >= MAX) return out;
             }
         }
