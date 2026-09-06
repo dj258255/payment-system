@@ -1,5 +1,7 @@
 package com.beomsu.pay.escrow;
 
+import org.springframework.data.domain.Pageable;
+
 import com.beomsu.pay.escrow.internal.EscrowStatus;
 import com.beomsu.pay.escrow.internal.EscrowHoldView;
 import com.beomsu.pay.escrow.internal.EscrowHoldRepository;
@@ -158,7 +160,7 @@ class EscrowServiceTest {
     void autoReleaseReleasesDue() {
         EscrowHold h1 = heldHold("ord-1", 10_000);
         EscrowHold h2 = heldHold("ord-2", 20_000);
-        when(repository.findByStatusAndAutoReleaseAtBefore(eq(EscrowStatus.HELD), any()))
+        when(repository.findByStatusAndAutoReleaseAtBefore(eq(EscrowStatus.HELD), any(), any(Pageable.class)))
                 .thenReturn(List.of(h1, h2));
         when(repository.findByOrderNo("ord-1")).thenReturn(Optional.of(h1));
         when(repository.findByOrderNo("ord-2")).thenReturn(Optional.of(h2));
@@ -176,7 +178,7 @@ class EscrowServiceTest {
     void autoReleaseIsolatesFailures() {
         EscrowHold h1 = heldHold("ord-1", 10_000);
         EscrowHold h2 = heldHold("ord-2", 20_000);
-        when(repository.findByStatusAndAutoReleaseAtBefore(eq(EscrowStatus.HELD), any()))
+        when(repository.findByStatusAndAutoReleaseAtBefore(eq(EscrowStatus.HELD), any(), any(Pageable.class)))
                 .thenReturn(List.of(h1, h2));
         // ord-1 재조회에서 예외를 유발 → release가 실패
         when(repository.findByOrderNo("ord-1")).thenThrow(new RuntimeException("DB 오류"));

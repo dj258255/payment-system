@@ -1,5 +1,7 @@
 package com.beomsu.pay.payment.va;
 
+import org.springframework.data.domain.Pageable;
+
 import com.beomsu.pay.payment.pg.PgClient;
 import com.beomsu.pay.payment.pg.PgPaymentStatus;
 import com.beomsu.pay.payment.pg.PgQueryResult;
@@ -67,7 +69,7 @@ class VirtualAccountServiceTest {
     @DisplayName("expireOverdue: 만료 대상이 조회 NOT_FOUND면 EXPIRED")
     void expireOverdueWhenPgNotFound() {
         VirtualAccount va = waiting("pk-3");
-        when(repository.findByStatusAndDueDateBefore(eq(VaStatus.WAITING_FOR_DEPOSIT), any(Instant.class)))
+        when(repository.findByStatusAndDueDateBefore(eq(VaStatus.WAITING_FOR_DEPOSIT), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(va));
         when(pg.query("pk-3")).thenReturn(new PgQueryResult(PgPaymentStatus.NOT_FOUND, null));
 
@@ -82,7 +84,7 @@ class VirtualAccountServiceTest {
     @DisplayName("expireOverdue: 만료 대상인데 조회 APPROVED면(레이스) EXPIRED 아니라 DONE")
     void expireOverdueRaceResolvesToDone() {
         VirtualAccount va = waiting("pk-4");
-        when(repository.findByStatusAndDueDateBefore(eq(VaStatus.WAITING_FOR_DEPOSIT), any(Instant.class)))
+        when(repository.findByStatusAndDueDateBefore(eq(VaStatus.WAITING_FOR_DEPOSIT), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(va));
         when(pg.query("pk-4")).thenReturn(new PgQueryResult(PgPaymentStatus.APPROVED, "VIRTUAL_ACCOUNT"));
 

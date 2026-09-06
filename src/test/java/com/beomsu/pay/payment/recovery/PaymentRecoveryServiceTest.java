@@ -1,5 +1,7 @@
 package com.beomsu.pay.payment.recovery;
 
+import org.springframework.data.domain.Pageable;
+
 import com.beomsu.pay.payment.PaymentStatus;
 import com.beomsu.pay.payment.internal.PaymentRepository;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
@@ -41,7 +43,7 @@ class PaymentRecoveryServiceTest {
         Payment p = Payment.initiate("order-1", Money.krw(10_000));
         p.startApproval(paymentKey);
         p.markUnknown("PG 응답 타임아웃");
-        when(repository.findByStatusAndRequestedAtBefore(eq(PaymentStatus.UNKNOWN), any(Instant.class)))
+        when(repository.findByStatusAndRequestedAtBefore(eq(PaymentStatus.UNKNOWN), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(p));
         return p;
     }

@@ -1,5 +1,11 @@
 package com.beomsu.pay.reconciliation.internal;
 
+import static org.mockito.ArgumentMatchers.eq;
+
+import static org.mockito.ArgumentMatchers.any;
+
+import org.springframework.data.domain.Pageable;
+
 import com.beomsu.pay.reconciliation.internal.ReconciliationService;
 import com.beomsu.pay.reconciliation.internal.ReconciliationResultRepository;
 import com.beomsu.pay.reconciliation.internal.ReconciliationResult;
@@ -46,7 +52,7 @@ class ReconciliationServiceTest {
     void reconcileIsScopedToOneTradeDate() {
         LocalDate target = LocalDate.of(2026, 7, 5);
         // 그 날짜의 내부 기록만 조회된다. 지난 날짜(7/4)는 이 조회에 애초에 들어오지 않는다.
-        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+        when(internalRecords.findByTradeDate( eq(target), any(Pageable.class))).thenReturn(List.of(
                 InternalRecord.of("today-1", 1000, Instant.parse("2026-07-05T05:00:00Z"))));
 
         List<ReconciliationResult> reconciled =
@@ -55,14 +61,14 @@ class ReconciliationServiceTest {
         assertThat(reconciled).hasSize(1);
         assertThat(reconciled.get(0).getResult()).isEqualTo(ReconResultType.MATCHED);
         verify(internalRecords, never()).findAll();
-        verify(internalRecords).findByTradeDate(target);
+        verify(internalRecords).findByTradeDate( eq(target), any(Pageable.class));
     }
 
     @Test
     @DisplayName("같은 거래일을 다시 대사하면 이전 판정을 갈아끼운다 — 두 번 눌러도 예외 큐가 안 늘어난다")
     void rerunReplacesPreviousResultsForThatDate() {
         LocalDate target = LocalDate.of(2026, 7, 5);
-        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+        when(internalRecords.findByTradeDate( eq(target), any(Pageable.class))).thenReturn(List.of(
                 InternalRecord.of("A", 1000, Instant.parse("2026-07-05T05:00:00Z"))));
 
         service.reconcile(target, List.of(ExternalRecord.of("A", 1000)));
@@ -74,7 +80,7 @@ class ReconciliationServiceTest {
     @DisplayName("대사 매칭 엔진: 4분류를 정확히 낸다 (MATCHED/AMOUNT_MISMATCH/INTERNAL_ONLY/EXTERNAL_ONLY)")
     void reconcileClassifiesFourCases() {
         // 내부 {A:1000, B:2000, C:3000}
-        when(internalRecords.findByTradeDate(LocalDate.of(2026, 7, 5))).thenReturn(List.of(
+        when(internalRecords.findByTradeDate( eq(LocalDate.of(2026, 7, 5)), any(Pageable.class))).thenReturn(List.of(
                 InternalRecord.of("A", 1000, Instant.parse("2026-07-05T05:00:00Z")),
                 InternalRecord.of("B", 2000, Instant.parse("2026-07-05T05:00:00Z")),
                 InternalRecord.of("C", 3000, Instant.parse("2026-07-05T05:00:00Z"))));
@@ -124,7 +130,7 @@ class ReconciliationServiceTest {
     @Test
     @DisplayName("매칭 엔진은 결정적: 같은 입력이면 결과 순서·내용이 동일하다")
     void reconcileIsDeterministic() {
-        when(internalRecords.findByTradeDate(LocalDate.of(2026, 7, 5))).thenReturn(List.of(
+        when(internalRecords.findByTradeDate( eq(LocalDate.of(2026, 7, 5)), any(Pageable.class))).thenReturn(List.of(
                 InternalRecord.of("B", 2000, Instant.parse("2026-07-05T05:00:00Z")),
                 InternalRecord.of("A", 1000, Instant.parse("2026-07-05T05:00:00Z"))));
         List<ExternalRecord> external = List.of(
@@ -167,7 +173,7 @@ class ReconciliationServiceTest {
     void multipleExternalRowsForSameOrderAreSummed() {
         LocalDate target = LocalDate.of(2026, 8, 30);
         // 내부는 부분취소 후 잔여 7,000
-        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+        when(internalRecords.findByTradeDate( eq(target), any(Pageable.class))).thenReturn(List.of(
                 InternalRecord.of("ord-1", 7_000, Instant.parse("2026-08-30T05:00:00Z"))));
 
         // PG 파일은 승인 10,000과 환불 -3,000을 <별도 행>으로 준다.
@@ -187,7 +193,7 @@ class ReconciliationServiceTest {
     @DisplayName("합산 결과가 내부와 다르면 그때는 진짜 불일치다")
     void summedRowsStillDetectRealMismatch() {
         LocalDate target = LocalDate.of(2026, 8, 30);
-        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+        when(internalRecords.findByTradeDate( eq(target), any(Pageable.class))).thenReturn(List.of(
                 InternalRecord.of("ord-1", 10_000, Instant.parse("2026-08-30T05:00:00Z"))));
 
         List<ReconciliationResult> reconciled = service.reconcile(target, List.of(
@@ -202,7 +208,7 @@ class ReconciliationServiceTest {
     @DisplayName("같은 거래 식별자가 두 번 오면 중복이다 — 합산하면 금액이 부풀어 불일치를 감춘다")
     void duplicateTransactionIdIsDropped() {
         LocalDate target = LocalDate.of(2026, 8, 30);
-        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+        when(internalRecords.findByTradeDate( eq(target), any(Pageable.class))).thenReturn(List.of(
                 InternalRecord.of("ord-1", 10_000, Instant.parse("2026-08-30T05:00:00Z"))));
 
         // 같은 psp-1이 두 번 실렸다. Uber가 실제로 겪은 형태 — 합산하면 20,000이 되어
@@ -222,7 +228,7 @@ class ReconciliationServiceTest {
     @DisplayName("거래 식별자가 없는 파일은 중복을 가려낼 수 없다 — 합산만 한다")
     void withoutTransactionIdCannotDetectDuplicates() {
         LocalDate target = LocalDate.of(2026, 8, 30);
-        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+        when(internalRecords.findByTradeDate( eq(target), any(Pageable.class))).thenReturn(List.of(
                 InternalRecord.of("ord-1", 10_000, Instant.parse("2026-08-30T05:00:00Z"))));
 
         // 식별자가 없으면 이 둘이 "환불 별도 행"인지 "중복"인지 구분할 방법이 없다.
@@ -293,7 +299,7 @@ class ReconciliationServiceTest {
     @DisplayName("같은 거래일에 승인과 취소가 다 있으면 합산된다")
     void sameDayApprovalAndCancellationAreSummed() {
         LocalDate target = LocalDate.of(2026, 8, 30);
-        when(internalRecords.findByTradeDate(target)).thenReturn(List.of(
+        when(internalRecords.findByTradeDate( eq(target), any(Pageable.class))).thenReturn(List.of(
                 InternalRecord.of("ord-1", 10_000, Instant.parse("2026-08-30T05:00:00Z")),
                 InternalRecord.canceled("ord-1", 3_000, 1, Instant.parse("2026-08-30T09:00:00Z"))));
 

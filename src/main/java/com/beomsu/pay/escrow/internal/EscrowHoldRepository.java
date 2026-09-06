@@ -1,5 +1,6 @@
 package com.beomsu.pay.escrow.internal;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.Instant;
@@ -14,5 +15,5 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, Long> {
     Optional<EscrowHold> findByOrderNo(String orderNo);
 
     /** 자동 구매확정 도래분 — 주어진 상태이면서 autoReleaseAt이 임계 시각 이전인 홀드. */
-    List<EscrowHold> findByStatusAndAutoReleaseAtBefore(EscrowStatus status, Instant threshold);
+    List<EscrowHold> findByStatusAndAutoReleaseAtBefore(EscrowStatus status, Instant threshold, Pageable page);
 }
