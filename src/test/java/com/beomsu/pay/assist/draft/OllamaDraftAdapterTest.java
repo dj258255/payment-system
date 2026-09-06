@@ -61,7 +61,7 @@ class OllamaDraftAdapterTest {
     }
 
     private OllamaDraftAdapter adapter() {
-        return new OllamaDraftAdapter(new PromptBuilder(new CustomerGlossary(), new DraftExamples()),
+        return new OllamaDraftAdapter(new PromptBuilder(new CustomerGlossary(), new DraftExamples(), "current"),
                 "http://127.0.0.1:" + port, "stub-model", 5);
     }
 

@@ -20,10 +20,15 @@ public class PromptBuilder {
 
     private final CustomerGlossary glossary;
     private final DraftExamples examples;
+    /** {@code app.assist.prompt-layout=rearranged} 일 때만 켠다. 기본은 지금 배치. */
+    private final boolean rearranged;
 
-    PromptBuilder(CustomerGlossary glossary, DraftExamples examples) {
+    PromptBuilder(CustomerGlossary glossary, DraftExamples examples,
+                  @org.springframework.beans.factory.annotation.Value(
+                          "${app.assist.prompt-layout:current}") String layout) {
         this.glossary = glossary;
         this.examples = examples;
+        this.rearranged = "rearranged".equals(layout);
     }
 
 
@@ -62,8 +67,42 @@ public class PromptBuilder {
         // "청구된 금액에는 변동이 없습니다"로 끝나 있어서, 모델이 기록조차 없는 건에도
         // 그 꼴을 복사했다(13 문서 실험 9). 늘리지 않고 바꾸는 것이 요점이다 —
         // 지시를 더할 때마다 나빠졌다.
+        return rearranged ? rearranged(facts) : current(facts);
+    }
+
+    /** 지금까지의 배치. 글로서리가 가운데 온다. */
+    String current(FactPack facts) {
         return SYSTEM + "\n" + glossary.asPromptSection() + "\n" + examples.forCase(facts);
     }
+
+    /**
+     * <b>재배치 — 지시를 앞으로, 사전을 뒤로, 핵심을 끝에서 반복.</b>
+     *
+     * <p>지시를 더하지 않는다. 순서만 바꾼다. 실험 6에서 지시를 두 줄 더했을 때
+     * 용어 누출이 0% → 25% 로 깨졌다. 늘리는 것은 이미 해 봤고 나빠졌다.
+     *
+     * <p>이것이 낫다는 <b>가설</b>이지 처방이 아니다. 같은 모델·같은 설정에서
+     * 두 배치를 직접 비교해야 안다(13 문서 실험 7).
+     */
+    String rearranged(FactPack facts) {
+        return HEAD + "\n" + SYSTEM + "\n" + examples.forCase(facts) + "\n"
+                + glossary.asPromptSection() + "\n" + TAIL;
+    }
+
+    /** 맨 앞 — 어기면 초안이 폐기되는 것만. */
+    private static final String HEAD = """
+            당신은 결제사 고객센터 상담원을 돕는 보조자입니다. 아래 셋을 어기면 초안은 폐기됩니다.
+
+            (가) [확인된 사실] 밖의 내용을 쓰지 마십시오.
+            (나) 금액과 날짜는 [인용해도 되는 금액]·[인용해도 되는 날짜] 의 값만 쓰십시오. 계산하지 마십시오.
+            (다) 대문자 영문 코드를 그대로 쓰지 마십시오. 아래 [용어 바꿔 쓰기] 대로 우리말로 풉니다.
+            """;
+
+    /** 맨 끝 — 가장 신선한 자리에서 (가)(나)(다)를 다시 세운다. */
+    private static final String TAIL = """
+            다시 확인하십시오. 사실 밖의 내용 없음, 목록 밖의 숫자 없음, 대문자 영문 코드 없음.
+            한국어 존댓말 5문장 이내로, 무엇이 문제인지부터 씁니다.
+            """;
 
     /**
      * 수정 프롬프트 — <b>짧게, 목표 하나만.</b>

@@ -132,6 +132,9 @@ tasks.register('evalTest', Test) {
         includeTags 'eval'
     }
     systemProperty 'eval.perFamily', System.getProperty('eval.perFamily', '15')
+    // Gradle 은 명령행 -D 를 테스트 JVM 에 자동으로 넘기지 않는다. 넘길 것을 여기 적는다.
+    systemProperty 'eval.dump', System.getProperty('eval.dump', 'false')
+    systemProperty 'eval.model', System.getProperty('eval.model', 'qwen3:8b')
     testLogging { showStandardStreams = true }
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath

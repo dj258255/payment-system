@@ -67,7 +67,7 @@ class AnthropicDraftAdapterTest {
 
     /** 규제가 잠시 풀렸다고 가정한 구성. 키는 <b>테스트용 더미</b>다. */
     private AnthropicDraftAdapter adapter() {
-        return new AnthropicDraftAdapter(new PromptBuilder(new CustomerGlossary(), new DraftExamples()),
+        return new AnthropicDraftAdapter(new PromptBuilder(new CustomerGlossary(), new DraftExamples(), "current"),
                 "test-key-not-real", "http://127.0.0.1:" + port, "claude-sonnet-5", 600);
     }
 
@@ -91,7 +91,7 @@ class AnthropicDraftAdapterTest {
     @DisplayName("키가 없으면 기동을 막는다 — 호출 시점에 실패하면 초안이 조용히 비어 나간다")
     void refusesToStartWithoutKey() {
         assertThatThrownBy(() -> new AnthropicDraftAdapter(
-                new PromptBuilder(new CustomerGlossary(), new DraftExamples()),
+                new PromptBuilder(new CustomerGlossary(), new DraftExamples(), "current"),
                 "  ", "http://127.0.0.1:" + port, "claude-sonnet-5", 600))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("console.anthropic.com")
