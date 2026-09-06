@@ -1,5 +1,6 @@
 package com.beomsu.pay.payment.webhook;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.Instant;
@@ -13,5 +14,5 @@ interface WebhookEventRepository extends JpaRepository<WebhookEvent, Long> {
     Optional<WebhookEvent> findByExternalEventId(String externalEventId);
 
     /** 재시도 시각이 지난 보류 건. 결제 행이 생겼는지 다시 확인할 대상이다. */
-    List<WebhookEvent> findByStatusAndNextRetryAtLessThanEqual(WebhookEventStatus status, Instant at);
+    List<WebhookEvent> findByStatusAndNextRetryAtLessThanEqual(WebhookEventStatus status, Instant at, Pageable page);
 }

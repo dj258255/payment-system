@@ -1,5 +1,7 @@
 package com.beomsu.pay.order.recovery;
 
+import org.springframework.data.domain.Pageable;
+
 import com.beomsu.pay.order.internal.OrderStatus;
 import com.beomsu.pay.order.internal.OrderRepository;
 import com.beomsu.pay.order.internal.OrderItem;
@@ -37,7 +39,7 @@ class OrderExpiryServiceTest {
     void expiresEachTargetAndFlushes() {
         Order o1 = pendingOrder();
         Order o2 = pendingOrder();
-        when(orderRepository.findByStatusAndExpiresAtBefore(eq(OrderStatus.PENDING_PAYMENT), any(Instant.class)))
+        when(orderRepository.findByStatusAndExpiresAtBefore(eq(OrderStatus.PENDING_PAYMENT), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(o1, o2));
 
         int processed = service.expireOverdue(Instant.now());
@@ -57,7 +59,7 @@ class OrderExpiryServiceTest {
         Order bad = mock(Order.class);
         when(bad.getOrderNo()).thenReturn("ord-bad");
         doThrow(new IllegalStateException("전이 불가")).when(bad).markExpired();
-        when(orderRepository.findByStatusAndExpiresAtBefore(eq(OrderStatus.PENDING_PAYMENT), any(Instant.class)))
+        when(orderRepository.findByStatusAndExpiresAtBefore(eq(OrderStatus.PENDING_PAYMENT), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(bad, ok));
 
         int processed = service.expireOverdue(Instant.now());
@@ -71,7 +73,7 @@ class OrderExpiryServiceTest {
     @Test
     @DisplayName("만료 대상이 없으면 0을 반환하고 아무것도 저장하지 않는다")
     void noTargetsNoWork() {
-        when(orderRepository.findByStatusAndExpiresAtBefore(eq(OrderStatus.PENDING_PAYMENT), any(Instant.class)))
+        when(orderRepository.findByStatusAndExpiresAtBefore(eq(OrderStatus.PENDING_PAYMENT), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of());
 
         assertThat(service.expireOverdue(Instant.now())).isZero();

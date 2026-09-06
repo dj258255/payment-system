@@ -1,5 +1,9 @@
 package com.beomsu.pay.order.recovery;
 
+import static org.mockito.ArgumentMatchers.any;
+
+import org.springframework.data.domain.Pageable;
+
 import com.beomsu.pay.order.internal.OrderStatus;
 import com.beomsu.pay.order.internal.OrderRepository;
 import com.beomsu.pay.order.internal.OrderItem;
@@ -50,7 +54,7 @@ class CheckoutRecoveryServiceTest {
     @DisplayName("멈춘 주문(카드 결제 DONE으로 확정): 카드금액·포인트분을 도출해 settle을 재실행한다")
     void recoversStuckOrderWithResolvedCardPayment() {
         Order order = stuckOrder(20_000);
-        when(orderRepository.findByStatusAndUpdatedAtBefore(eq(OrderStatus.PAYMENT_IN_PROGRESS), any(Instant.class)))
+        when(orderRepository.findByStatusAndUpdatedAtBefore(eq(OrderStatus.PAYMENT_IN_PROGRESS), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(order));
         // 카드 14,000 결제가 PG 조회로 DONE 확정됨 → 포인트분은 20,000-14,000=6,000
         when(paymentService.resolveStuckPayment(order.getOrderNo())).thenReturn(Optional.of(
@@ -67,7 +71,7 @@ class CheckoutRecoveryServiceTest {
     @DisplayName("멈춘 전액 포인트 주문(카드 결제 없음): outcome=null, cardAmount=0으로 settle 재실행")
     void recoversStuckFullPointOrder() {
         Order order = stuckOrder(20_000);
-        when(orderRepository.findByStatusAndUpdatedAtBefore(eq(OrderStatus.PAYMENT_IN_PROGRESS), any(Instant.class)))
+        when(orderRepository.findByStatusAndUpdatedAtBefore(eq(OrderStatus.PAYMENT_IN_PROGRESS), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(order));
         when(paymentService.resolveStuckPayment(order.getOrderNo())).thenReturn(Optional.empty());
 
@@ -82,7 +86,7 @@ class CheckoutRecoveryServiceTest {
     void perItemFailureIsolated() {
         Order bad = stuckOrder(10_000);
         Order good = stuckOrder(20_000);
-        when(orderRepository.findByStatusAndUpdatedAtBefore(eq(OrderStatus.PAYMENT_IN_PROGRESS), any(Instant.class)))
+        when(orderRepository.findByStatusAndUpdatedAtBefore(eq(OrderStatus.PAYMENT_IN_PROGRESS), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(bad, good));
         when(paymentService.resolveStuckPayment(bad.getOrderNo())).thenThrow(new RuntimeException("PG 조회 실패"));
         when(paymentService.resolveStuckPayment(good.getOrderNo())).thenReturn(Optional.empty());

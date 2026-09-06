@@ -41,7 +41,7 @@ public class WebhookPendingScheduler {
     public void retryPending() {
         List<WebhookEvent> pending =
                 repository.findByStatusAndNextRetryAtLessThanEqual(
-                        WebhookEventStatus.PENDING_PAYMENT, Instant.now());
+                        WebhookEventStatus.PENDING_PAYMENT, Instant.now(), chunk());
         for (WebhookEvent event : pending) {
             if (event.getRetryCount() >= maxRetry) {
                 event.markFailed("결제 행이 끝내 생기지 않음 — 재시도 " + event.getRetryCount() + "회 소진");
@@ -56,5 +56,23 @@ public class WebhookPendingScheduler {
                 log.warn("웹훅 보류 재처리 실패 webhookEventId={} : {}", event.getId(), e.getMessage());
             }
         }
+    }
+
+    /**
+     * 배치 한 번이 읽는 상한. 남은 것은 다음 주기가 가져간다.
+     *
+     * <p><b>필드에 기본값을 둔다.</b> {@code @Value} 는 스프링이 만들어 줄 때만 채워지는데,
+     * 단위 테스트는 이 서비스를 직접 생성한다. 초기값이 없으면 0 이 되어 페이지 크기가
+     * 0 이라고 터진다 — 실제로 그렇게 깨졌다.
+     */
+    @org.springframework.beans.factory.annotation.Value("${app.batch.read-chunk-size:500}")
+    private int readChunkSize = 500;
+
+    /**
+     * <b>설정이 0 이나 음수여도 배치를 죽이지 않는다.</b> 잘못된 설정 하나로 돈을 다루는
+     * 배치가 멈추는 것보다, 기본값으로 도는 편이 낫다.
+     */
+    private org.springframework.data.domain.Pageable chunk() {
+        return org.springframework.data.domain.PageRequest.of(0, readChunkSize > 0 ? readChunkSize : 500);
     }
 }

@@ -21,7 +21,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Instant> findOldestUnknownRequestedAt();
 
     /** 복구 배치용: 특정 상태로 일정 시각 이전부터 머문 결제(미확정 방치 건). */
-    List<Payment> findByStatusAndRequestedAtBefore(PaymentStatus status, Instant threshold);
+    List<Payment> findByStatusAndRequestedAtBefore(PaymentStatus status, Instant threshold, Pageable page);
 
     /** 어드민 관측용 — 상태별 결제 페이지(운영이 UNKNOWN 미확정 건을 조회). 전건 로딩 방지 위해 페이지 단위. */
     Page<Payment> findByStatus(PaymentStatus status, Pageable pageable);

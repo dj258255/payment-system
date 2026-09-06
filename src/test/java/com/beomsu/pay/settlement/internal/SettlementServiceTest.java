@@ -1,5 +1,11 @@
 package com.beomsu.pay.settlement.internal;
 
+import static org.mockito.ArgumentMatchers.eq;
+
+import static org.mockito.ArgumentMatchers.any;
+
+import org.springframework.data.domain.Pageable;
+
 import com.beomsu.pay.settlement.internal.SettlementService;
 import com.beomsu.pay.settlement.internal.SettlementRepository;
 import com.beomsu.pay.settlement.internal.SettlementItemStatus;
@@ -128,7 +134,7 @@ class SettlementServiceTest {
 
         // 릴리스일 배치가 이 항목을 집계 대상으로 조회한다(승인일이 아니라).
         when(settlementRepository.existsBySettlementDateAndCurrency(releaseDate, "KRW")).thenReturn(false);
-        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, releaseDate))
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual( eq(SettlementItemStatus.CONFIRMED), eq(releaseDate), any(Pageable.class)))
                 .thenReturn(List.of(item));
         when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -157,7 +163,7 @@ class SettlementServiceTest {
         when(settlementRepository.existsFor(eq(DATE), eq("KRW"), any())).thenReturn(false);
         SettlementItem item1 = confirmedItem(1L, "order-1", 40_000);
         SettlementItem item2 = confirmedItem(2L, "order-2", 60_000);
-        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual( eq(SettlementItemStatus.CONFIRMED), eq(DATE), any(Pageable.class)))
                 .thenReturn(List.of(item1, item2));
         when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -187,7 +193,7 @@ class SettlementServiceTest {
     void settleFeeModelExactValues() {
         when(settlementRepository.existsFor(eq(DATE), eq("KRW"), any())).thenReturn(false);
         SettlementItem item = confirmedItem(1L, "order-1", 100_000);
-        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual( eq(SettlementItemStatus.CONFIRMED), eq(DATE), any(Pageable.class)))
                 .thenReturn(List.of(item));
         when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -204,16 +210,16 @@ class SettlementServiceTest {
     void settleQueriesOnlyConfirmed() {
         when(settlementRepository.existsFor(eq(DATE), eq("KRW"), any())).thenReturn(false);
         SettlementItem confirmed = confirmedItem(1L, "order-1", 10_000);
-        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual( eq(SettlementItemStatus.CONFIRMED), eq(DATE), any(Pageable.class)))
                 .thenReturn(List.of(confirmed));
         when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.settle(DATE);
 
         // 배치는 CONFIRMED 상태만 조회 대상으로 삼는다(보류 실현)
-        verify(itemRepository).findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE);
+        verify(itemRepository).findByStatusAndConfirmedDateLessThanEqual( eq(SettlementItemStatus.CONFIRMED), eq(DATE), any(Pageable.class));
         verify(itemRepository, never())
-                .findByStatusAndConfirmedDateLessThanEqual(eq(SettlementItemStatus.PENDING_CONFIRMATION), any());
+                .findByStatusAndConfirmedDateLessThanEqual(eq(SettlementItemStatus.PENDING_CONFIRMATION), any(), any(Pageable.class));
     }
 
     @Test
@@ -223,7 +229,7 @@ class SettlementServiceTest {
         // 알아야 그 판매자의 정산이 이미 있는지 볼 수 있으므로, 항목 조회가 먼저다.
         // 전에는 날짜만 보고 조회 없이 건너뛰었는데, 그러면 <b>나중에 등록된 판매자의 정산이
         // 영영 안 나간다.</b> 재실행 때 조회 한 번이 더 도는 것이 그 대가다.
-        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual( eq(SettlementItemStatus.CONFIRMED), eq(DATE), any(Pageable.class)))
                 .thenReturn(List.of(confirmedItem(1L, "ORD-1", 10_000L)));
         when(settlementRepository.existsFor(DATE, "KRW", null)).thenReturn(true);
 
@@ -239,7 +245,7 @@ class SettlementServiceTest {
         SettlementItem platform = confirmedItem(1L, "ORD-1", 10_000L);     // sellerId null
         SettlementItem bySeller = SettlementItem.of(2L, "ORD-2", 20_000L, DATE, 7L);
         bySeller.confirm(DATE);
-        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual( eq(SettlementItemStatus.CONFIRMED), eq(DATE), any(Pageable.class)))
                 .thenReturn(List.of(platform, bySeller));
         // 플랫폼 직판은 이미 정산됐고, 판매자 7 은 아직이다
         when(settlementRepository.existsFor(DATE, "KRW", null)).thenReturn(true);
@@ -256,7 +262,7 @@ class SettlementServiceTest {
     @DisplayName("집계 대상 CONFIRMED 항목이 없으면 빈 정산을 만들지 않는다")
     void noItemsProducesNoSettlement() {
         when(settlementRepository.existsFor(eq(DATE), eq("KRW"), any())).thenReturn(false);
-        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual( eq(SettlementItemStatus.CONFIRMED), eq(DATE), any(Pageable.class)))
                 .thenReturn(List.of());
 
         Settlement settlement = service.settle(DATE);

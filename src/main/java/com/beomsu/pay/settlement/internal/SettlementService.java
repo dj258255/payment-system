@@ -191,7 +191,7 @@ public class SettlementService {
         // 그 날짜 <이하>의 미정산 재고를 전부 본다. 날짜가 정확히 맞는 것만 모으면,
         // 그 날짜 정산이 만들어진 뒤 늦게 확정된 항목이 영영 집계되지 않는다.
         List<SettlementItem> all = itemRepository
-                .findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, date);
+                .findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, date, chunk());
         if (all.isEmpty()) {
             return null; // 집계할 대상 없음 → 빈 정산을 만들지 않는다
         }
@@ -308,5 +308,23 @@ public class SettlementService {
      */
     private long calculateFee(long gross) {
         return Math.multiplyExact(gross, feeBps) / 10000;
+    }
+
+    /**
+     * 배치 한 번이 읽는 상한. 남은 것은 다음 주기가 가져간다.
+     *
+     * <p><b>필드에 기본값을 둔다.</b> {@code @Value} 는 스프링이 만들어 줄 때만 채워지는데,
+     * 단위 테스트는 이 서비스를 직접 생성한다. 초기값이 없으면 0 이 되어 페이지 크기가
+     * 0 이라고 터진다 — 실제로 그렇게 깨졌다.
+     */
+    @org.springframework.beans.factory.annotation.Value("${app.batch.read-chunk-size:500}")
+    private int readChunkSize = 500;
+
+    /**
+     * <b>설정이 0 이나 음수여도 배치를 죽이지 않는다.</b> 잘못된 설정 하나로 돈을 다루는
+     * 배치가 멈추는 것보다, 기본값으로 도는 편이 낫다.
+     */
+    private org.springframework.data.domain.Pageable chunk() {
+        return org.springframework.data.domain.PageRequest.of(0, readChunkSize > 0 ? readChunkSize : 500);
     }
 }

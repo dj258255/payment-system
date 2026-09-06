@@ -1,5 +1,11 @@
 package com.beomsu.pay.reconciliation;
 
+import static org.mockito.ArgumentMatchers.eq;
+
+import static org.mockito.ArgumentMatchers.any;
+
+import org.springframework.data.domain.Pageable;
+
 import com.beomsu.pay.reconciliation.internal.ReconciliationService;
 import com.beomsu.pay.reconciliation.internal.ReconciliationResultRepository;
 import com.beomsu.pay.reconciliation.internal.ReconciliationResult;
@@ -90,7 +96,7 @@ class ResidualCorpusGenerator {
                     String expected = seed(orderNo, amount, kind, variant, internal, external);
                     states.put(orderNo, stateFor(orderNo, amount, kind, variant));
 
-                    when(internalRepo.findByTradeDate(D)).thenReturn(internal);
+                    when(internalRepo.findByTradeDate( eq(D), any(Pageable.class))).thenReturn(internal);
                     List<ReconciliationResult> out = service.reconcile(D, external);
 
                     for (ReconciliationResult r : out) {

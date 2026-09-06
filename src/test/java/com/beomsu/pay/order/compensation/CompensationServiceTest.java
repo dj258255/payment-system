@@ -1,5 +1,9 @@
 package com.beomsu.pay.order.compensation;
 
+import static org.mockito.ArgumentMatchers.any;
+
+import org.springframework.data.domain.Pageable;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,7 +46,7 @@ class CompensationServiceTest {
     void processPendingAttemptsEachDueTask() {
         CompensationTask t1 = taskWithId(1L);
         CompensationTask t2 = taskWithId(2L);
-        when(repository.findByStatusAndNextAttemptAtBefore(eq(CompensationStatus.PENDING), any(Instant.class)))
+        when(repository.findByStatusAndNextAttemptAtBefore(eq(CompensationStatus.PENDING), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(t1, t2));
 
         int success = service.processPending();
@@ -58,7 +62,7 @@ class CompensationServiceTest {
     void processPendingIsolatesFailure() {
         CompensationTask t1 = taskWithId(1L);
         CompensationTask t2 = taskWithId(2L);
-        when(repository.findByStatusAndNextAttemptAtBefore(eq(CompensationStatus.PENDING), any(Instant.class)))
+        when(repository.findByStatusAndNextAttemptAtBefore(eq(CompensationStatus.PENDING), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(t1, t2));
         doThrow(new RuntimeException("PG down")).when(executor).attempt(1L); // 첫 건 실패
 

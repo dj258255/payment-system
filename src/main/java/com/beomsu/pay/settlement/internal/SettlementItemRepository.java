@@ -1,5 +1,6 @@
 package com.beomsu.pay.settlement.internal;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDate;
@@ -32,5 +33,5 @@ public interface SettlementItemRepository extends JpaRepository<SettlementItem, 
      * <p>그래서 <b>{@code <=}</b> 로 본다. 늦게 확정된 항목은 다음 실행이 쓸어 담는다.
      */
     List<SettlementItem> findByStatusAndConfirmedDateLessThanEqual(
-            SettlementItemStatus status, LocalDate confirmedDate);
+            SettlementItemStatus status, LocalDate confirmedDate, Pageable page);
 }
