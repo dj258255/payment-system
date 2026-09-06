@@ -420,3 +420,30 @@ spring:
     events:
       externalization:
         enabled: true              # @Externalized 이벤트를 Kafka로 발행(Outbox가 유실 방지, at-least-once)
+
+  # 제재 스크리닝. 기본 꺼짐 — 켜면 외부 명단을 받아 온다.
+  #
+  # UN 통합 명단만 쓴다. 공개 제재 목록 중 <기계가 읽히고 라이선스 제약이 없으면서>
+  # 생년월일·국적까지 주는 것이 UN 과 OFAC 둘인데, 한국은 UN 안보리 결의 지정자를
+  # 자동 반영하므로 국내 서비스에도 그대로 의미가 있다.
+  # 국내 금융위 고시는 기계가 읽을 수 있는 공개 배포를 못 찾아 안 쓴다.
+  #
+  # PEP(주요직위자)는 넣지 않았다. 정부가 배포하는 공식 명단이 없고, 공개 데이터는
+  # 상업 이용에 별도 라이선스가 필요하다. 포트로만 열어 두고 비워 뒀다.
+  screening:
+    # 몇 점부터 사람에게 보내나. 낮추면 오탐이, 올리면 미탐이 는다.
+    potential-threshold: ${APP_SCREENING_THRESHOLD:80}
+    list:
+      un:
+        enabled: ${APP_SCREENING_UN_ENABLED:false}
+        url: ${APP_SCREENING_UN_URL:https://scsanctions.un.org/resources/xml/en/consolidated.xml}
+        # 하루 한 번. OFAC 은 갱신 주기를 정해 두지 않아 <갱신될 때마다 즉시>가 이상적이지만
+        # 매일 한 번이 업계에서 모범관행으로 다뤄지는 하한선이다.
+        cron: ${APP_SCREENING_UN_CRON:0 0 5 * * *}
+        timeout-seconds: 30
+    # 명단 갱신을 따라 기존 판매자를 다시 훑는다.
+    # 온보딩 때 한 번 보고 마는 것은 안 보는 것과 크게 다르지 않다 — 어제 통과한 판매자가
+    # 오늘 지정될 수 있다.
+    rescreen:
+      enabled: ${APP_SCREENING_RESCREEN_ENABLED:false}
+      cron: ${APP_SCREENING_RESCREEN_CRON:0 30 5 * * *}

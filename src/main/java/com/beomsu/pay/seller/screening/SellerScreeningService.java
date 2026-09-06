@@ -58,8 +58,7 @@ public class SellerScreeningService {
 
         var best = list.get().entries().stream()
                 .map(e -> new Scored(e, SecondaryIdentifiers.adjust(
-                        matcher.score(name, e.name()), ours,
-                        SecondaryIdentifiers.of(null, e.country()))))
+                        matcher.score(name, e.name()), ours, e.identifiers())))
                 .max(Comparator.comparingInt(Scored::score))
                 .orElseThrow();
 
@@ -81,6 +80,11 @@ public class SellerScreeningService {
                 verdict == ScreeningVerdict.CLEAR ? null : best.entry().name(),
                 best.score(),
                 verdict == ScreeningVerdict.CLEAR ? "임계 아래" : "사람이 확인해야 한다");
+    }
+
+    /** 대조에 쓴 명단의 판. 판정 기록에 남겨 "그때는 통과였다"를 댈 수 있게 한다. */
+    public String listVersion() {
+        return list.map(SanctionsList::version).orElse("no-list");
     }
 
     private record Scored(SanctionsList.Entry entry, int score) {}

@@ -27,8 +27,14 @@ public record SecondaryIdentifiers(String birthDate, String nationality) {
     private static final int DOB_MATCH = 10;
     private static final int NATIONALITY_MATCH = 5;
 
+    /**
+     * 국적은 <b>두 글자 코드로 맞춰서</b> 담는다. 우리는 {@code KR} 로 들고 있는데
+     * 명단은 {@code Democratic Republic of the Congo} 처럼 이름으로 준다 —
+     * 그대로 두면 항상 불일치가 되어 <b>맞는 사람의 점수를 깎는다.</b>
+     * 못 알아보는 나라는 {@code null} 이 되고, 그때는 국적을 안 본다.
+     */
     public static SecondaryIdentifiers of(String birthDate, String nationality) {
-        return new SecondaryIdentifiers(blankToNull(birthDate), blankToNull(nationality));
+        return new SecondaryIdentifiers(blankToNull(birthDate), CountryNames.toCode(nationality));
     }
 
     public static SecondaryIdentifiers unknown() {
@@ -44,7 +50,7 @@ public record SecondaryIdentifiers(String birthDate, String nationality) {
      */
     public static int adjust(int nameScore, SecondaryIdentifiers ours, SecondaryIdentifiers theirs) {
         int score = nameScore;
-        score += compare(ours.birthDate(), theirs.birthDate(), DOB_MATCH, DOB_MISMATCH);
+        score += compareBirthDate(ours.birthDate(), theirs.birthDate());
         score += compare(ours.nationality(), theirs.nationality(), NATIONALITY_MATCH, NATIONALITY_MISMATCH);
         return Math.max(0, Math.min(100, score));
     }
@@ -53,6 +59,30 @@ public record SecondaryIdentifiers(String birthDate, String nationality) {
     private static int compare(String a, String b, int onMatch, int onMismatch) {
         if (a == null || b == null) return 0;
         return a.equalsIgnoreCase(b) ? onMatch : onMismatch;
+    }
+
+    /**
+     * 생년월일은 <b>겹치는 자리까지만</b> 본다.
+     *
+     * <p>실제 UN 명단을 받아 세어 보니 <b>연월일이 다 있는 항목이 0건</b>이었다.
+     * {@code TYPE_OF_DATE} 가 EXACT 인 751건 중 263건이 <b>연도만</b> 주고 나머지는 아예 없다.
+     * 전체 날짜를 맞대려던 처음 설계는 실제 데이터에서 <b>한 번도 발동하지 않는다.</b>
+     *
+     * <p>그래서 둘 다 가진 만큼만 비교한다 — 명단이 {@code 1971} 을 주고 우리가
+     * {@code 1971-04-02} 를 알면 <b>연도만</b> 맞대고, 그 이상은 모르는 것으로 둔다.
+     * 연도만 맞은 것을 전체가 맞은 것처럼 세면 <b>같은 해에 태어난 남을 끌어올린다.</b>
+     */
+    private static int compareBirthDate(String ours, String theirs) {
+        if (ours == null || theirs == null) return 0;
+        String a = ours.strip(), b = theirs.strip();
+        int n = Math.min(a.length(), b.length());
+        // 연도(4)만 겹치면 연도만, 연월(7)까지 겹치면 거기까지 본다
+        int cut = n >= 10 ? 10 : n >= 7 ? 7 : n >= 4 ? 4 : 0;
+        if (cut == 0) return 0;
+        boolean same = a.regionMatches(true, 0, b, 0, cut);
+        if (!same) return DOB_MISMATCH;
+        // 겹치는 자리가 짧을수록 약한 증거다. 연도만 맞은 것은 전체가 맞은 것과 다르다.
+        return cut >= 10 ? DOB_MATCH : cut >= 7 ? DOB_MATCH / 2 : DOB_MATCH / 4;
     }
 
     private static String blankToNull(String s) {

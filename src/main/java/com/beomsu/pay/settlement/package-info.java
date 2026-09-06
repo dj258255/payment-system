@@ -11,7 +11,7 @@
  * (escrow는 settlement를 모른다), escrow가 {shared, payment}만 의존하므로 순환이 없다.
  */
 @org.springframework.modulith.ApplicationModule(
-        allowedDependencies = { "shared", "payment", "escrow" }
+        allowedDependencies = { "shared", "payment", "escrow", "seller" }
 )
 package com.beomsu.pay.settlement;
 
