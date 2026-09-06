@@ -156,6 +156,7 @@ tasks.register('integrationTest', Test) {
     useJUnitPlatform {
         includeTags 'integration'
     }
+    testLogging { showStandardStreams = true }   // 실측 수치를 콘솔로 봐야 한다
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     shouldRunAfter('test')
