@@ -135,7 +135,7 @@ _wait_infra_external() {
 
 # ── 3. 한 회차 실행 ─────────────────────────────────────────────────────
 run_one() {
-  local name="$1" script="$2" ratelimit="$3" extra_env="$4"
+  local name="$1" script="$2" ratelimit="$3" extra_env="$4" prehook="${5:-}"
 
   if [[ "$INFRA" == "external" ]]; then
     # 볼륨을 지울 수 없으니 스키마를 비우는 것으로 대신한다. 목적은 같다 —
@@ -229,6 +229,12 @@ run_one() {
   ok "[$name] 앱 기동 확인 — PID $APP_PID (시작: $started_at)"
   echo "$name: pid=$APP_PID started=$started_at" >> "$RUN_DIR/process.txt"
 
+  # 조회 부하는 읽을 것이 있어야 한다. 앱이 떠서 Flyway 가 돈 뒤, k6 전에 채운다.
+  if [[ -n "$prehook" ]]; then
+    log "[$name] 사전 시드 — $prehook"
+    "$prehook" | tee -a "$RUN_DIR/$name-seed.log" || die "[$name] 시드 실패"
+  fi
+
   log "[$name] k6 실행 — $script"
   # p(99) 는 k6 기본 통계에 없다. 명시하지 않으면 리포트의 p99 칸이 비고,
   # 꼬리 지연을 못 본다 — 무릎을 판단할 때 정작 필요한 값이다.
@@ -253,6 +259,77 @@ run_one() {
   return 0
 }
 
+
+# ── 조회 부하용 시드 ────────────────────────────────────────────────────
+# 조회 경로를 재려면 읽을 것이 있어야 한다. 두 단계로 넣는다.
+#   (1) 결정적 이메일로 계정을 만든다 — k6 는 같은 이메일로 로그인만 한다
+#   (2) 그 계정들 앞으로 주문을 SQL 로 대량 삽입한다
+#
+# API 로 30만 건을 만들 수는 없어서 SQL 로 넣는다. 대신 <컬럼 구성은 실제 스키마 그대로>이고
+# 인덱스도 마이그레이션이 만든 것을 그대로 쓴다 — 재는 대상은 조회지 삽입이 아니다.
+#
+# 사용자를 라운드로빈으로 흩뿌리는 것이 중요하다. 한 사용자의 주문을 연속으로 넣으면
+# id 가 뭉쳐서 인덱스 없이도 빨리 찾아진다 — 실제와 다르고, 측정이 좋게 나오도록 속이는 셈이 된다.
+READ_ACCOUNTS="${BENCH_READ_ACCOUNTS:-40}"
+READ_USERS="${BENCH_READ_USERS:-10000}"        # 주문을 나눠 가질 전체 사용자 수
+READ_ORDERS_PER_USER="${BENCH_READ_ORDERS:-30}" # 1인당 주문 수 — LIMIT 50 을 못 채우는 흔한 사용자
+
+mysql_run() {
+  if [[ "$INFRA" == "docker" ]]; then
+    docker compose exec -T mysql mysql -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" -N -B -e "$1"
+  else
+    mysql -h "$DB_HOST" -P "$DB_PORT" -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" -N -B -e "$1"
+  fi
+}
+
+seed_read_load() {
+  local pw="k6-load-only-1234"
+  echo "  계정 $READ_ACCOUNTS 개 가입"
+  for i in $(seq 0 $((READ_ACCOUNTS - 1))); do
+    curl -sf -X POST http://localhost:8080/api/v1/members/signup \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"k6-read-$i@load.test\",\"password\":\"$pw\"}" >/dev/null 2>&1 || true
+  done
+
+  local ids
+  ids="$(mysql_run "SELECT id FROM members WHERE email LIKE 'k6-read-%@load.test' ORDER BY id" | tr '\n' ',' | sed 's/,$//')"
+  [[ -n "$ids" ]] || { echo "  가입된 계정을 못 찾았다"; return 1; }
+  local n_acc; n_acc="$(echo "$ids" | tr ',' '\n' | grep -c .)"
+  echo "  계정 $n_acc 개 확인"
+
+  local existing
+  existing="$(mysql_run "SELECT COUNT(*) FROM orders WHERE order_no LIKE 'K6READ-%'")"
+  if [[ "$existing" -ge $((READ_USERS * READ_ORDERS_PER_USER)) ]]; then
+    echo "  주문 $existing 건이 이미 있다 — 시드 건너뜀"
+    return 0
+  fi
+
+  echo "  주문 $((READ_USERS * READ_ORDERS_PER_USER)) 건 삽입 (사용자 $READ_USERS × $READ_ORDERS_PER_USER)"
+  # 반드시 한 번의 mysql 호출로 끝낸다. TEMPORARY 테이블은 세션이 끝나면 사라져서,
+  # 라운드마다 mysql 을 새로 부르면 앞 세션이 만든 테이블이 없다(여기서 한 번 실패했다).
+  #
+  # 라운드를 CROSS JOIN 으로 펼치고 ORDER BY round, seq 로 넣는 것이 핵심이다.
+  # 사용자별로 몰아 넣으면 한 사람의 주문 id 가 뭉쳐서 인덱스 없이도 금방 찾아진다 —
+  # 실제 주문 순서와 다르고, 측정이 좋게 나오도록 데이터를 고르는 셈이 된다.
+  mysql_run "
+    SET SESSION cte_max_recursion_depth = 100000000;
+    CREATE TEMPORARY TABLE k6_users (seq INT PRIMARY KEY, user_id BIGINT);
+    INSERT INTO k6_users (seq, user_id)
+      WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x < $READ_USERS)
+      SELECT x, IF(x <= $n_acc, ELT((x - 1) % $n_acc + 1, $ids), 1000000 + x) FROM n;
+    CREATE TEMPORARY TABLE k6_rounds (r INT PRIMARY KEY);
+    INSERT INTO k6_rounds (r)
+      WITH RECURSIVE m(y) AS (SELECT 1 UNION ALL SELECT y+1 FROM m WHERE y < $READ_ORDERS_PER_USER)
+      SELECT y FROM m;
+    INSERT INTO orders (user_id, order_no, status, total_amount, currency, version, created_at, updated_at, expires_at)
+      SELECT u.user_id, CONCAT('K6READ-', r.r, '-', u.seq), 'PAID', 10000, 'KRW', 0, NOW(6), NOW(6), NOW(6)
+      FROM k6_rounds r CROSS JOIN k6_users u
+      ORDER BY r.r, u.seq;
+    ANALYZE TABLE orders;
+  " >/dev/null || return 1
+  echo "  주문 총 $(mysql_run "SELECT COUNT(*) FROM orders") 건"
+}
+
 # ── 4. 프로파일 ─────────────────────────────────────────────────────────
 # capacity: 제어를 끄고 서버가 어디서 꺾이는지(무릎)를 본다 — 열린 루프
 # spike   : 제어를 켜고 넘치는 부하가 어떻게 버려지는지를 본다
@@ -262,12 +339,14 @@ case "$PROFILE" in
   capacity) run_one capacity k6/capacity-knee.js      false "" ;;
   spike)    run_one spike    k6/spike-multi-account.js true  "" ;;
   checkout) run_one checkout k6/checkout-load.js      false "" ;;
+  # read: 조회 경로가 어디서 꺾이는지 본다. 이 저장소의 부하 측정이 전부 쓰기 경로였다.
+  read)     run_one read     k6/read-capacity.js       false "" seed_read_load ;;
   all)
     run_one capacity k6/capacity-knee.js      false ""
     run_one spike    k6/spike-multi-account.js true  ""
     run_one checkout k6/checkout-load.js      false ""
     ;;
-  *) die "알 수 없는 프로파일: $PROFILE (smoke|capacity|spike|checkout|all)" ;;
+  *) die "알 수 없는 프로파일: $PROFILE (smoke|capacity|spike|checkout|read|all)" ;;
 esac
 
 # ── 5. 요약 ─────────────────────────────────────────────────────────────
