@@ -80,6 +80,16 @@ class IncidentAnalysisEvalTest {
 
     private final EvidenceGroundingGuard grounding = new EvidenceGroundingGuard();
 
+    /**
+     * 표본이 바뀌었는지 한 줄로 나타낸다. 회귀가 났을 때 <b>모델이 나빠진 것과 표본이 바뀐
+     * 것을 구별</b>해야 하는데, 파일 이름만 봐서는 안에 든 내용이 바뀐 것을 모른다.
+     */
+    private static String fingerprint(List<Sample> cases) {
+        String joined = cases.stream().map(c -> c.file() + ":" + c.log().length())
+                .sorted().reduce("", (a, b) -> a + "|" + b);
+        return Integer.toHexString(joined.hashCode());
+    }
+
     private Score run(IncidentAnalysisPort port, List<Sample> cases, boolean guard) {
         int correct = 0, abstained = 0, wrong = 0;
         List<String> detail = new ArrayList<>();
@@ -140,7 +150,10 @@ class IncidentAnalysisEvalTest {
                 "rule.correct", (double) rule.correct(),
                 "model.correct", (double) raw.correct(),
                 "ruleFirst.correct", (double) first.correct(),
-                "ruleFirst.wrong", (double) -first.wrong()));   // 틀림은 적을수록 좋으므로 부호를 뒤집는다
+                "ruleFirst.wrong", (double) -first.wrong()),   // 틀림은 적을수록 좋으므로 부호를 뒤집는다
+                Map.of("model", ollama.name(),
+                       "samples", String.valueOf(cases.size()),
+                       "corpusFingerprint", fingerprint(cases)));
         assertThat(regressed)
                 .as("지난 기준선보다 나빠졌다. 모델·프롬프트·표본 중 무엇이 바뀌었는지 확인하고,"
                         + " 바뀐 것이 맞다면 EvalBaseline.accept 로 기준선을 갱신한다:%n%s", regressed)
