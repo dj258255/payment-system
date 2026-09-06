@@ -1,5 +1,6 @@
 package com.beomsu.pay.assist.incident;
 
+import com.beomsu.pay.assist.EvalBaseline;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -130,7 +132,20 @@ class IncidentAnalysisEvalTest {
         System.out.println(first.line());
         System.out.println("╚═══════════════════════════════════════");
 
-        // 수치를 통과 조건으로 걸지 않는다 — 재는 테스트다.
+        // <b>절대 수치를 통과 조건으로 걸지 않는다.</b> 모델 정확도에 임계를 걸면 표본이 바뀔
+        // 때마다 테스트가 깨진다. 대신 <b>회귀</b>를 본다 — 지난번보다 나빠졌으면 표본 탓이
+        // 아니라 무언가 바뀐 것이다. 켤 때 잰 값이 시간이 지나 사실이 아니게 되는 것이
+        // LLM 을 운영에 올린 뒤 가장 잡기 어려운 문제로 꼽힌다.
+        String regressed = EvalBaseline.compare("incident-analysis", Map.of(
+                "rule.correct", (double) rule.correct(),
+                "model.correct", (double) raw.correct(),
+                "ruleFirst.correct", (double) first.correct(),
+                "ruleFirst.wrong", (double) -first.wrong()));   // 틀림은 적을수록 좋으므로 부호를 뒤집는다
+        assertThat(regressed)
+                .as("지난 기준선보다 나빠졌다. 모델·프롬프트·표본 중 무엇이 바뀌었는지 확인하고,"
+                        + " 바뀐 것이 맞다면 EvalBaseline.accept 로 기준선을 갱신한다:%n%s", regressed)
+                .isEmpty();
+
         assertThat(rule.name()).isEqualTo("rule");
     }
 }

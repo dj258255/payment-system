@@ -1,0 +1,10 @@
+{
+  "recordedAt" : "2026-09-06T00:11:23.363441Z",
+  "note" : "회귀 감지용 기준선. 나빠지면 evalTest 가 알린다. 바뀐 것이 맞다고 판단하면 EvalBaseline.accept 로 갱신한다",
+  "metrics" : {
+    "model.correct" : 11.0,
+    "ruleFirst.wrong" : -1.0,
+    "ruleFirst.correct" : 11.0,
+    "rule.correct" : 7.0
+  }
+}
