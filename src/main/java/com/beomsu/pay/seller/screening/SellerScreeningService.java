@@ -57,8 +57,7 @@ public class SellerScreeningService {
         }
 
         var best = list.get().entries().stream()
-                .map(e -> new Scored(e, SecondaryIdentifiers.adjust(
-                        matcher.score(name, e.name()), ours, e.identifiers())))
+                .map(e -> new Scored(e, SecondaryIdentifiers.adjust(score(name, e.name()), ours, e.identifiers())))
                 .max(Comparator.comparingInt(Scored::score))
                 .orElseThrow();
 
@@ -80,6 +79,24 @@ public class SellerScreeningService {
                 verdict == ScreeningVerdict.CLEAR ? null : best.entry().name(),
                 best.score(),
                 verdict == ScreeningVerdict.CLEAR ? "임계 아래" : "사람이 확인해야 한다");
+    }
+
+    /**
+     * 이름 점수. <b>한글이면 로마자 후보로 펼쳐 정확 일치를 먼저 본다.</b>
+     *
+     * <p>제재 명단에 한글이 한 건도 없다(UN 통합 명단 실측 0건). 한국 관련 79건은 전부
+     * {@code RI JE-SON}·{@code PAK CHANG HO} 같은 로마자다. 한글을 그대로 맞대면
+     * <b>어느 것에도 안 걸린다</b> — 우리 판매자는 한글로 들어오는데 대조할 표기가 없다.
+     *
+     * <p>펼친 뒤 <b>점수를 올리는 게 아니라 정확 일치만</b> 본다. 점수로 재 봤더니
+     * 김철수가 67 → 100점이 되는 동시에 <b>김철순도 92점</b>이 됐다 —
+     * 후보를 늘린 만큼 남에게도 잘 걸린다. 딱 맞을 때만 100 을 주고, 아니면 원래 점수를 쓴다.
+     */
+    private int score(String ours, String listed) {
+        if (KoreanRomanizer.hasHangul(ours) && KoreanRomanizer.exactMatch(ours, listed) != null) {
+            return 100;
+        }
+        return matcher.score(ours, listed);
     }
 
     /** 대조에 쓴 명단의 판. 판정 기록에 남겨 "그때는 통과였다"를 댈 수 있게 한다. */
