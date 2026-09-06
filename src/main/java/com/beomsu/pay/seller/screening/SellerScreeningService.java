@@ -35,6 +35,21 @@ public class SellerScreeningService {
 
     /** @param name 대조할 이름. 법인명과 대표자명을 각각 따로 부른다 */
     public Result screen(String name) {
+        return screen(name, SecondaryIdentifiers.unknown());
+    }
+
+    /**
+     * 이름에 <b>2차 식별자</b>를 함께 대조한다.
+     *
+     * <p>이름만 보면 <b>같은 사람의 다른 로마자 표기와 아예 다른 사람이 같은 점수</b>를 받는다.
+     * 실제 제재 스크리닝이 생년월일·국적으로 후보를 좁히는 층을 따로 두는 이유다.
+     * 우리가 모르거나 명단이 안 주면 <b>이름 점수를 그대로 둔다</b> —
+     * 모르는 것을 "안 맞았다"로 읽으면 제재 대상이 조용히 통과한다.
+     *
+     * @param name 대조할 이름
+     * @param ours 우리가 아는 대상의 생년월일·국적. 모르면 {@link SecondaryIdentifiers#unknown()}
+     */
+    public Result screen(String name, SecondaryIdentifiers ours) {
         if (list.isEmpty() || list.get().entries().isEmpty()) {
             // 명단이 안 꽂혔다. <b>통과로 처리하지 않는다</b> — 안 본 것과 통과는 다르다.
             count("no_list");
@@ -42,7 +57,9 @@ public class SellerScreeningService {
         }
 
         var best = list.get().entries().stream()
-                .map(e -> new Scored(e, matcher.score(name, e.name())))
+                .map(e -> new Scored(e, SecondaryIdentifiers.adjust(
+                        matcher.score(name, e.name()), ours,
+                        SecondaryIdentifiers.of(null, e.country()))))
                 .max(Comparator.comparingInt(Scored::score))
                 .orElseThrow();
 
