@@ -56,6 +56,8 @@ public class SettlementService {
     private final SettlementRepository settlementRepository;
     private final SettlementAdjustmentRepository adjustmentRepository;
     private final MeterRegistry meterRegistry;
+    /** 이 판매자에게 돈을 내보내도 되는가. 판매자 모듈이 답한다 — 정산이 심사 규칙을 알 필요는 없다. */
+    private final com.beomsu.pay.seller.SellerPayoutGate payoutGate;
 
     /**
      * 이 시스템이 만드는 정산의 통화.
@@ -76,12 +78,14 @@ public class SettlementService {
                              SettlementRepository settlementRepository,
                              SettlementAdjustmentRepository adjustmentRepository,
                              MeterRegistry meterRegistry,
+                             com.beomsu.pay.seller.SellerPayoutGate payoutGate,
                              @Value("${app.settlement.fee-bps:270}") long feeBps,
                              @Value("${app.settlement.payout-business-days:2}") int payoutDays) {
         this.itemRepository = itemRepository;
         this.settlementRepository = settlementRepository;
         this.adjustmentRepository = adjustmentRepository;
         this.meterRegistry = meterRegistry;
+        this.payoutGate = payoutGate;
         this.feeBps = feeBps;
         this.payoutDays = payoutDays;
     }
@@ -230,6 +234,11 @@ public class SettlementService {
             return null;
         }
 
+        // <b>집계는 하되 지급을 막는다.</b> 여기서 집계까지 건너뛰면 나중에 심사가 풀렸을 때
+        // 그 날짜 매출이 영영 안 잡힌다 — 이 집계 키는 이미 한 번 조용히 틀려 지급이 통째로
+        // 빠졌던 자리다. 그래서 정산은 만들고 지급 가능 여부만 표시한다.
+        var gate = payoutGate.check(sellerId);
+
         long gross = 0L;
         for (SettlementItem item : items) {
             gross = Math.addExact(gross, item.getAmount()); // 오버플로 시 즉시 실패
@@ -249,6 +258,15 @@ public class SettlementService {
             settlementRepository.saveAndFlush(settlement);
         }
         items.forEach(item -> item.markSettled(settlement.getId()));
+
+        // 금액이 다 정해진 뒤에 막는다. 앞에서 막으면 조정 반영이 안 돌아 <b>금액이 틀린 채로</b>
+        // 보류된다 — 나중에 풀었을 때 그 금액이 그대로 나간다.
+        if (!gate.allowed()) {
+            settlement.holdPayout(gate.reason());
+            settlementRepository.saveAndFlush(settlement);
+            meterRegistry.counter("settlement.payout.held").increment();
+            log.warn("[payout-gate] 지급 보류 date={} sellerId={} 이유={}", date, sellerId, gate.reason());
+        }
         return settlement;
     }
 

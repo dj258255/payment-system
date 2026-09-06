@@ -51,8 +51,16 @@ class SettlementServiceTest {
         adjustmentRepository = mock(SettlementAdjustmentRepository.class);
         meterRegistry = new SimpleMeterRegistry();
         // feeBps=270(2.7%), payoutDays=2 — application.yml 기본값과 동일하게 주입.
+        // 판매자 지급 게이트는 기본 통과로 둔다. 이 테스트가 보는 것은 집계와 금액이지
+        // 심사가 아니다. 심사가 막는 경로는 SettlementPayoutHoldTest 가 따로 본다.
+        var alwaysAllow = new com.beomsu.pay.seller.SellerPayoutGate(null) {
+            @Override
+            public Decision check(Long sellerId) {
+                return new Decision(true, "테스트: 심사 통과로 둔다");
+            }
+        };
         service = new SettlementService(itemRepository, settlementRepository,
-                adjustmentRepository, meterRegistry, 270L, 2);
+                adjustmentRepository, meterRegistry, alwaysAllow, 270L, 2);
     }
 
     /** CONFIRMED 상태의 항목을 만든다(승인·구매확정이 같은 날 DATE인 경우 — confirmedDate=DATE). */

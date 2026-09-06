@@ -88,6 +88,10 @@ public class Settlement {
     /** 지급 확정 시각(nullable) — 어드민이 지급을 확정한 순간. 미확정이면 null. */
     private Instant paidOutAt;
 
+    /** 지급을 막은 이유. 안 막았으면 null. */
+    @Column(length = 200)
+    private String payoutHoldReason;
+
     /**
      * 회수 조정을 반영해 금액을 다시 쓴다. <b>생성 직후, 지급 전에만</b> 부른다.
      *
@@ -158,11 +162,38 @@ public class Settlement {
      *         (원장도 멱등하지만, 일어나지 않은 사건을 알리지 않는 것이 맞다).
      */
     public boolean markPaidOut() {
+        // <b>보류와 이미 지급됨을 구별한다.</b> 둘 다 false 로 돌려주면 화면이 "이미 지급됐다"로
+        // 읽어 사람이 심사가 걸린 것을 모른 채 넘어간다. 막힌 이유는 말해 줘야 한다.
+        if (this.status == SettlementStatus.PAYOUT_HELD) {
+            throw new IllegalStateException("지급이 보류된 정산이다 id=" + id + " 이유=" + payoutHoldReason);
+        }
         if (this.status == SettlementStatus.CREATED) {
             this.status = SettlementStatus.PAID_OUT;
             this.paidOutAt = Instant.now();
             return true;
         }
         return false;
+    }
+
+    /**
+     * 판매자 심사에 걸려 지급을 막는다. <b>집계는 그대로 두고 상태만 바꾼다.</b>
+     *
+     * @param reason 왜 막았는지. 화면에 그대로 나가므로 사람이 읽을 말이어야 한다
+     */
+    public void holdPayout(String reason) {
+        if (this.status == SettlementStatus.PAID_OUT) {
+            throw new IllegalStateException("이미 지급된 정산은 못 막는다 id=" + id);
+        }
+        this.status = SettlementStatus.PAYOUT_HELD;
+        this.payoutHoldReason = reason;
+    }
+
+    /** 심사가 풀렸다. 사람이 확인하고 되돌린다. */
+    public void releasePayoutHold() {
+        if (this.status != SettlementStatus.PAYOUT_HELD) {
+            throw new IllegalStateException("보류 상태가 아니다 id=" + id + " status=" + status);
+        }
+        this.status = SettlementStatus.CREATED;
+        this.payoutHoldReason = null;
     }
 }
