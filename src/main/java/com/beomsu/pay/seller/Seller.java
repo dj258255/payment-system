@@ -41,7 +41,9 @@ public class Seller {
     @Column(nullable = false, length = 100)
     private String representativeName;
 
-    @Column(nullable = false, length = 2)
+    /** V36 이 CHAR(2) 로 만들어 뒀다. 길이가 늘 2 라 고정 길이가 맞고, 컬럼 정의를 여기 적어 둬야
+     *  ddl-auto=validate 가 varchar 로 기대하지 않는다. */
+    @Column(nullable = false, length = 2, columnDefinition = "char(2)")
     private String countryCode;
 
     /** 대표자 생년월일. 동명이인을 가르는 2차 식별자다. 모르면 null. */
