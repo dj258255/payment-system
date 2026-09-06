@@ -46,15 +46,27 @@ public final class EvalBaseline {
      * @return 회귀한 지표의 설명. 비어 있으면 회귀 없음
      */
     public static String compare(String name, Map<String, Double> metrics) {
+        return compare(name, metrics, Map.of());
+    }
+
+    /**
+     * @param context 무엇이 이 수치를 냈는지. 모델 이름·표본 수·프롬프트 지문 같은 것.
+     *                <b>회귀가 났을 때 무엇이 바뀌었는지 짚으려면 이게 있어야 한다.</b>
+     *                수치만 남기면 "나빠졌다"까지만 알고 왜인지는 매번 다시 조사하게 된다
+     */
+    public static String compare(String name, Map<String, Double> metrics, Map<String, String> context) {
         Path file = DIR.resolve(name + ".json");
         try {
             if (!Files.exists(file)) {
-                write(file, metrics);
+                write(file, metrics, context);
                 return "";   // 첫 실행 — 기준선을 만들고 통과시킨다
             }
             Map<?, ?> saved = MAPPER.readValue(Files.readString(file), Map.class);
             @SuppressWarnings("unchecked")
             Map<String, Object> before = (Map<String, Object>) saved.get("metrics");
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> beforeCtx = (Map<String, Object>) saved.get("context");
 
             StringBuilder regressed = new StringBuilder();
             for (var e : metrics.entrySet()) {
@@ -69,6 +81,17 @@ public final class EvalBaseline {
                     regressed.append("    %s: %.3f → %.3f%n".formatted(e.getKey(), was, now));
                 }
             }
+            if (regressed.isEmpty()) {
+                return "";
+            }
+            // 무엇이 바뀌었는지 같이 낸다. 이게 없으면 "나빠졌다"까지만 알고
+            // 원인은 매번 처음부터 조사하게 된다.
+            for (var e : context.entrySet()) {
+                Object was = beforeCtx == null ? null : beforeCtx.get(e.getKey());
+                if (was != null && !was.equals(e.getValue())) {
+                    regressed.append("    (바뀜) %s: %s → %s%n".formatted(e.getKey(), was, e.getValue()));
+                }
+            }
             return regressed.toString();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -76,20 +99,22 @@ public final class EvalBaseline {
     }
 
     /** 기준선을 새 값으로 덮는다. <b>회귀를 확인하고 받아들이기로 했을 때만</b> 부른다. */
-    public static void accept(String name, Map<String, Double> metrics) {
+    public static void accept(String name, Map<String, Double> metrics, Map<String, String> context) {
         try {
-            write(DIR.resolve(name + ".json"), metrics);
+            write(DIR.resolve(name + ".json"), metrics, context);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
 
-    private static void write(Path file, Map<String, Double> metrics) throws IOException {
+    private static void write(Path file, Map<String, Double> metrics,
+                              Map<String, String> context) throws IOException {
         Files.createDirectories(file.getParent());
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("recordedAt", Instant.now().toString());
         doc.put("note", "회귀 감지용 기준선. 나빠지면 evalTest 가 알린다. "
                 + "바뀐 것이 맞다고 판단하면 EvalBaseline.accept 로 갱신한다");
+        doc.put("context", context);
         doc.put("metrics", metrics);
         Files.writeString(file, MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(doc));
     }
