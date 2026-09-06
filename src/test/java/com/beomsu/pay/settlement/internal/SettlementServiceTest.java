@@ -154,7 +154,7 @@ class SettlementServiceTest {
     @Test
     @DisplayName("정산 배치: CONFIRMED만 합계 → 2.7% 수수료+부가세(내림) → net 저장 + 항목 SETTLED")
     void settleAggregatesFeeAndMarksItems() {
-        when(settlementRepository.existsBySettlementDateAndCurrency(DATE, "KRW")).thenReturn(false);
+        when(settlementRepository.existsFor(eq(DATE), eq("KRW"), any())).thenReturn(false);
         SettlementItem item1 = confirmedItem(1L, "order-1", 40_000);
         SettlementItem item2 = confirmedItem(2L, "order-2", 60_000);
         when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
@@ -185,7 +185,7 @@ class SettlementServiceTest {
     @Test
     @DisplayName("수수료 검산: gross=100,000 → fee 2700, feeVat 270, net 97030")
     void settleFeeModelExactValues() {
-        when(settlementRepository.existsBySettlementDateAndCurrency(DATE, "KRW")).thenReturn(false);
+        when(settlementRepository.existsFor(eq(DATE), eq("KRW"), any())).thenReturn(false);
         SettlementItem item = confirmedItem(1L, "order-1", 100_000);
         when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
                 .thenReturn(List.of(item));
@@ -202,7 +202,7 @@ class SettlementServiceTest {
     @Test
     @DisplayName("정산 배치는 CONFIRMED만 조회한다 — PENDING_CONFIRMATION(구매확정 전)은 집계 제외")
     void settleQueriesOnlyConfirmed() {
-        when(settlementRepository.existsBySettlementDateAndCurrency(DATE, "KRW")).thenReturn(false);
+        when(settlementRepository.existsFor(eq(DATE), eq("KRW"), any())).thenReturn(false);
         SettlementItem confirmed = confirmedItem(1L, "order-1", 10_000);
         when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
                 .thenReturn(List.of(confirmed));
@@ -217,21 +217,45 @@ class SettlementServiceTest {
     }
 
     @Test
-    @DisplayName("이미 정산된 날짜 재실행: 아무 것도 하지 않는다 (배치 멱등)")
+    @DisplayName("이미 정산된 날짜 재실행: 정산을 새로 만들지 않는다 (배치 멱등)")
     void idempotentOnAlreadySettledDate() {
-        when(settlementRepository.existsBySettlementDateAndCurrency(DATE, "KRW")).thenReturn(true);
+        // 판매자별 멱등으로 바뀌면서 순서가 바뀌었다. 어떤 판매자에게 미정산 항목이 있는지
+        // 알아야 그 판매자의 정산이 이미 있는지 볼 수 있으므로, 항목 조회가 먼저다.
+        // 전에는 날짜만 보고 조회 없이 건너뛰었는데, 그러면 <b>나중에 등록된 판매자의 정산이
+        // 영영 안 나간다.</b> 재실행 때 조회 한 번이 더 도는 것이 그 대가다.
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
+                .thenReturn(List.of(confirmedItem(1L, "ORD-1", 10_000L)));
+        when(settlementRepository.existsFor(DATE, "KRW", null)).thenReturn(true);
 
         Settlement settlement = service.settle(DATE);
 
         assertThat(settlement).isNull();
-        verify(itemRepository, never()).findByStatusAndConfirmedDateLessThanEqual(any(), any());
         verify(settlementRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("판매자가 다르면 정산이 따로 난다 — 한쪽이 이미 정산돼도 다른 쪽은 나간다")
+    void settlesPerSellerIndependently() {
+        SettlementItem platform = confirmedItem(1L, "ORD-1", 10_000L);     // sellerId null
+        SettlementItem bySeller = SettlementItem.of(2L, "ORD-2", 20_000L, DATE, 7L);
+        bySeller.confirm(DATE);
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
+                .thenReturn(List.of(platform, bySeller));
+        // 플랫폼 직판은 이미 정산됐고, 판매자 7 은 아직이다
+        when(settlementRepository.existsFor(DATE, "KRW", null)).thenReturn(true);
+        when(settlementRepository.existsFor(DATE, "KRW", 7L)).thenReturn(false);
+        when(settlementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.settle(DATE);
+
+        // 판매자 7 것만 저장된다. 날짜만 보고 건너뛰면 이게 안 나간다.
+        verify(settlementRepository).save(argThat(x -> x.getGrossAmount() == 20_000L));
     }
 
     @Test
     @DisplayName("집계 대상 CONFIRMED 항목이 없으면 빈 정산을 만들지 않는다")
     void noItemsProducesNoSettlement() {
-        when(settlementRepository.existsBySettlementDateAndCurrency(DATE, "KRW")).thenReturn(false);
+        when(settlementRepository.existsFor(eq(DATE), eq("KRW"), any())).thenReturn(false);
         when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, DATE))
                 .thenReturn(List.of());
 

@@ -22,7 +22,8 @@ import java.time.LocalDate;
 @Entity
 @Table(name = "settlements",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_settlement_date_currency", columnNames = {"settlementDate", "currency"}))
+                name = "uk_settlement_date_currency_seller",
+                columnNames = {"settlementDate", "currency", "seller_id"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Settlement {
@@ -42,6 +43,17 @@ public class Settlement {
      */
     @Column(nullable = false, length = 3)
     private String currency;
+
+    /**
+     * 정산을 받을 판매자. <b>{@code null} 이면 플랫폼 직판</b>이다.
+     *
+     * <p><b>유니크 키에 들어 있다.</b> 같은 날 같은 통화라도 판매자가 다르면 정산이 따로 난다.
+     * 그런데 MySQL 유니크 인덱스는 {@code NULL} 을 서로 다른 값으로 취급하므로, 플랫폼 직판
+     * 정산이 같은 날짜에 여러 개 생기는 것을 <b>제약만으로는 못 막는다.</b> 집계 쪽 존재 검사가
+     * {@code null} 을 하나의 묶음으로 다뤄 함께 지킨다.
+     */
+    @Column(name = "seller_id")
+    private Long sellerId;
 
     /** 거래 총액 */
     @Column(nullable = false)
@@ -111,6 +123,13 @@ public class Settlement {
      */
     public static Settlement of(LocalDate settlementDate, String currency, long grossAmount, long feeAmount,
                                 long feeVatAmount, int itemCount, LocalDate payoutDate) {
+        return of(settlementDate, currency, grossAmount, feeAmount, feeVatAmount, itemCount,
+                payoutDate, null);
+    }
+
+    /** @param sellerId 정산을 받을 판매자. {@code null} 이면 플랫폼 직판 */
+    public static Settlement of(LocalDate settlementDate, String currency, long grossAmount, long feeAmount,
+                                long feeVatAmount, int itemCount, LocalDate payoutDate, Long sellerId) {
         if (grossAmount < 0 || feeAmount < 0 || feeVatAmount < 0) {
             throw new IllegalArgumentException("금액은 음수일 수 없습니다: gross=%d, fee=%d, feeVat=%d"
                     .formatted(grossAmount, feeAmount, feeVatAmount));
@@ -120,6 +139,7 @@ public class Settlement {
                     .formatted(grossAmount, feeAmount, feeVatAmount));
         }
         Settlement settlement = new Settlement(settlementDate, currency, grossAmount, feeAmount, feeVatAmount, itemCount, payoutDate);
+        settlement.sellerId = sellerId;
         if (settlement.netAmount != grossAmount - feeAmount - feeVatAmount) {
             throw new IllegalStateException("정산 불변식 위반: net(%d) ≠ gross(%d) - fee(%d) - feeVat(%d)"
                     .formatted(settlement.netAmount, grossAmount, feeAmount, feeVatAmount));

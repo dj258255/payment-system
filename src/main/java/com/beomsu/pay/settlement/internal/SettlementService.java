@@ -14,6 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.Map;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Optional;
 
 /**
@@ -184,17 +188,46 @@ public class SettlementService {
      */
     @Transactional
     public Settlement settle(LocalDate date) {
-        if (settlementRepository.existsBySettlementDateAndCurrency(date, SETTLEMENT_CURRENCY)) {
-            log.info("정산 재실행 감지 → 건너뜀 date={}", date);
-            return null; // 멱등: 이미 그 날짜 정산이 존재
-        }
-
         // 그 날짜 <이하>의 미정산 재고를 전부 본다. 날짜가 정확히 맞는 것만 모으면,
         // 그 날짜 정산이 만들어진 뒤 늦게 확정된 항목이 영영 집계되지 않는다.
-        List<SettlementItem> items = itemRepository
+        List<SettlementItem> all = itemRepository
                 .findByStatusAndConfirmedDateLessThanEqual(SettlementItemStatus.CONFIRMED, date);
-        if (items.isEmpty()) {
+        if (all.isEmpty()) {
             return null; // 집계할 대상 없음 → 빈 정산을 만들지 않는다
+        }
+
+        // <b>판매자별로 가른다.</b> 정산은 누군가에게 하는 것이고, 받는 쪽이 다르면 다른 정산이다.
+        // sellerId 가 null 인 묶음은 플랫폼 직판이다.
+        //
+        // <b>Collectors.groupingBy 를 못 쓴다.</b> HashMap 은 null 키를 허용하지만 groupingBy 가
+        // 맵에 넣기 전에 키를 검사해 거부한다(element cannot be mapped to a null key).
+        // 처음에 그걸 모르고 썼다가 기존 정산 테스트가 전부 깨졌다. 손으로 모은다.
+        Map<Long, List<SettlementItem>> bySeller = new HashMap<>();
+        for (SettlementItem item : all) {
+            bySeller.computeIfAbsent(item.getSellerId(), k -> new ArrayList<>()).add(item);
+        }
+
+        Settlement first = null;
+        for (Map.Entry<Long, List<SettlementItem>> e : bySeller.entrySet()) {
+            Settlement made = settleOne(date, e.getKey(), e.getValue());
+            if (first == null) {
+                first = made;
+            }
+        }
+        return first;
+    }
+
+    /**
+     * 판매자 하나의 정산.
+     *
+     * <p><b>멱등 검사가 판매자별이어야 한다.</b> 날짜만 보고 건너뛰면 나중에 등록된 판매자의
+     * 정산이 영영 안 나간다. 이 키는 이미 한 번 조용히 틀려서 지급이 통째로 빠진 적이 있는
+     * 자리라, 판매자를 더하면서 검사도 같이 옮겼다.
+     */
+    private Settlement settleOne(LocalDate date, Long sellerId, List<SettlementItem> items) {
+        if (settlementRepository.existsFor(date, SETTLEMENT_CURRENCY, sellerId)) {
+            log.info("정산 재실행 감지 → 건너뜀 date={} sellerId={}", date, sellerId);
+            return null;
         }
 
         long gross = 0L;
@@ -207,7 +240,8 @@ public class SettlementService {
 
         // 회수 대기분을 먼저 반영한다 — 총액이 정해진 뒤에 수수료를 계산해야 맞다.
         Settlement settlement = settlementRepository.save(
-                Settlement.of(date, SETTLEMENT_CURRENCY, gross, fee, feeVat, items.size(), payoutDate));
+                Settlement.of(date, SETTLEMENT_CURRENCY, gross, fee, feeVat, items.size(),
+                        payoutDate, sellerId));
         long adjustedGross = applyPendingAdjustments(gross, settlement);
         if (adjustedGross != gross) {
             long adjFee = calculateFee(adjustedGross);
