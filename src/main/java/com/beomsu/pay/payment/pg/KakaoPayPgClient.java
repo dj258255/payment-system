@@ -101,7 +101,15 @@ public class KakaoPayPgClient implements PgClient {
             }
             return classify(res.getBody());
         } catch (ResourceAccessException e) {
-            // 요청이 카카오페이에 <닿지 못했다>. 이것만 다음 PG 로 넘겨도 되는 경우다.
+            // 연결조차 못 맺었으면 요청 바이트가 나가지 않았다 → 다른 PG 로 넘겨도 안전하다는 신호.
+            // 읽기 타임아웃처럼 전송 뒤에 끊긴 경우는 승인이 났을 수 있으므로 그대로 던져 미확정으로 남긴다.
+            //
+            // 이 구분을 <주석으로만> 적어 두고 구현하지 않았었다. 토스 어댑터는 감싸는데 여기는
+            // 그냥 던져서, 진짜 연결 실패조차 넘김 대상이 안 됐다. 넘기면 안 되는 쪽으로 틀린
+            // 것이라 사고는 안 나지만, 그래서 더 안 찾힌다 — 아무 증상이 없다.
+            if (PgUnreachableException.isConnectFailure(e)) {
+                throw new PgUnreachableException("카카오페이에 연결하지 못함 order=" + command.orderNo(), e);
+            }
             throw e;
         }
     }
