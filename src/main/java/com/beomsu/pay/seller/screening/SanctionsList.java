@@ -14,8 +14,23 @@ import java.util.List;
  */
 public interface SanctionsList {
 
-    /** 명단 항목 하나. */
-    record Entry(String name, String program, String country) {}
+    /**
+     * 명단 항목 하나.
+     *
+     * <p><b>이름 말고도 받는다.</b> 처음엔 이름·프로그램·국가만 들었는데, 그래서 동명이인을
+     * 가를 재료가 없었다. UN 목록은 생년월일·출생지·별칭·문서번호를 이미 구조화해 준다.
+     *
+     * @param birthDate 생년월일. 목록이 안 주면 {@code null} 이고, 그때는 이름 점수를 안 건드린다
+     */
+    record Entry(String name, String program, String country, String birthDate) {
+        public Entry(String name, String program, String country) {
+            this(name, program, country, null);
+        }
+        /** 이 항목이 주는 2차 식별자. */
+        public SecondaryIdentifiers identifiers() {
+            return SecondaryIdentifiers.of(birthDate, country);
+        }
+    }
 
     List<Entry> entries();
 

@@ -125,4 +125,30 @@ class SecondaryIdentifierTest {
         System.out.printf("%n  임계 80 기준 오판  이름만 %d/4 → 식별자 포함 %d/4%n", wrongBefore, wrongAfter);
         assertThat(wrongAfter).isLessThan(wrongBefore);
     }
+
+    /**
+     * 실제 명단은 <b>전체 날짜를 안 준다.</b> UN 통합 명단을 받아 세어 보니 EXACT 751건 중
+     * 연월일이 다 있는 것은 <b>0건</b>이고 263건이 연도만 준다. 그래서 겹치는 자리까지만 본다.
+     */
+    @Test
+    @DisplayName("명단이 연도만 주면 연도만 맞댄다 — 그게 실제 데이터가 주는 전부다")
+    void partialBirthDateComparesOverlapOnly() {
+        var ours = SecondaryIdentifiers.of("1971-04-02", "KP");
+        var listYearOnly = SecondaryIdentifiers.of("1971", "KP");
+        var listOtherYear = SecondaryIdentifiers.of("1985", "KP");
+
+        int base = 70;
+        int same = SecondaryIdentifiers.adjust(base, ours, listYearOnly);
+        int diff = SecondaryIdentifiers.adjust(base, ours, listOtherYear);
+
+        System.out.printf("%n  이름 %d점 · 명단이 연도만 줄 때%n", base);
+        System.out.printf("    연도 같음  %d점%n", same);
+        System.out.printf("    연도 다름  %d점%n", diff);
+
+        assertThat(same).as("연도가 맞으면 올라간다").isGreaterThan(base);
+        assertThat(diff).as("연도가 다르면 떨어진다").isLessThan(base);
+        assertThat(same - base)
+                .as("연도만 맞은 것은 전체가 맞은 것보다 약한 증거다")
+                .isLessThan(SecondaryIdentifiers.adjust(base, ours, SecondaryIdentifiers.of("1971-04-02", "KP")) - base);
+    }
 }
