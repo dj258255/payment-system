@@ -68,13 +68,17 @@ class BlindReviewSeedTest {
     @Test
     @DisplayName("심은 표본은 블라인드 답 전까지 공개 상태가 아니다")
     void seededSamplesStayBlind() {
-        List<String> unrevealed = reconciliation.listMismatches(PageRequest.of(0, 3))
+        String reviewer = System.getProperty("seed.reviewer", "admin");
+
+        // <새 리뷰어로 start 하지 않는다.> 그러면 확인하려고 부른 것이 표본에 행을 남긴다.
+        // 방금 심은 그 행들을 그대로 본다.
+        List<String> stages = reconciliation.listMismatches(PageRequest.of(0, 3))
                 .stream()
                 .filter(v -> v.orderNo() != null)
-                .map(v -> service.start(v.id(), v.orderNo(), "seed-check").stage())
+                .map(v -> service.start(v.id(), v.orderNo(), reviewer).stage())
                 .toList();
 
-        assertThat(unrevealed)
+        assertThat(stages)
                 .as("심어도 1단계부터 시작해야 한다. 아니면 표본이 조용히 오염된다")
                 .allMatch(s -> s.equals("BLIND"));
     }
