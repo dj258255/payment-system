@@ -47,10 +47,17 @@ public class CheckoutRecoveryService {
     @Value("${app.checkout.recovery.stuck-after-minutes:10}")
     private long stuckAfterMinutes;
 
-    /** 멈춘 체크아웃을 스캔해 완결/롤백한다. 반환값은 처리한 건수. */
+    /**
+     * 멈춘 체크아웃을 스캔해 완결/롤백한다. 반환값은 처리한 건수.
+     *
+     * <p><b>영영 못 고치는 건이 큐를 막지 않게</b> 오래된 순으로 고르고, 실패한 건은 시도
+     * 시각을 남겨 뒤로 보낸다. 계속 실패하는 건은 여기서 조용히 사라지지 않고
+     * <b>"미확정 결제가 가장 오래 방치된 시간"</b> 지표에서 계속 늙는다. 막힌 것을 아는 일은
+     * 그 지표가 하고, 이 배치는 다른 건의 차례를 지킨다.
+     */
     public int recoverStuckCheckouts() {
         Instant threshold = Instant.now().minus(Duration.ofMinutes(stuckAfterMinutes));
-        List<Order> stuck = orderRepository.findByStatusAndUpdatedAtBefore(
+        List<Order> stuck = orderRepository.findByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
                 OrderStatus.PAYMENT_IN_PROGRESS, threshold, chunk());
 
         int recovered = 0;
@@ -59,7 +66,11 @@ public class CheckoutRecoveryService {
                 resolveNow(order);
                 recovered++;
             } catch (Exception e) {
-                // 한 건 실패가 배치를 멈추지 않게 격리 — 다음 주기에 재시도.
+                // 한 건 실패가 배치를 멈추지 않게 격리한다. 그리고 <시도했다는 사실을 남긴다>.
+                // 이걸 안 남기면 그 건이 다음 회차에도 같은 앞자리를 잡는다. 상한이 있는 조회라
+                // 앞의 100건이 계속 실패하면 101번째는 영영 차례가 안 온다. 남기면 임계 시간을
+                // 다시 채워야 해서 유예가 생기고, 오래된 순 정렬에서 뒤로 밀린다.
+                markAttempted(order);   // CheckoutTx 를 통해 별도 트랜잭션으로 남긴다
                 log.warn("멈춘 체크아웃 복구 실패 orderNo={} : {}", order.getOrderNo(), e.getMessage());
             }
         }
@@ -67,6 +78,18 @@ public class CheckoutRecoveryService {
             log.info("멈춘 체크아웃 복구 완료 recovered={}", recovered);
         }
         return recovered;
+    }
+
+    /**
+     * 시도했다는 사실만 남긴다. <b>이것 때문에 배치를 멈추지 않는다</b> — 기록에 실패해도
+     * 삼키고 다음 건으로 간다. 다음 건의 차례를 지키자고 시작한 일이다.
+     */
+    private void markAttempted(Order order) {
+        try {
+            checkoutTx.markRecoveryAttempted(order.getId());
+        } catch (Exception e) {
+            log.warn("복구 시도 기록 실패 orderNo={} : {}", order.getOrderNo(), e.getMessage());
+        }
     }
 
     /**

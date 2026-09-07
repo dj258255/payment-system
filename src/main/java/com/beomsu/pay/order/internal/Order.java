@@ -161,6 +161,19 @@ public class Order {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * 복구를 시도했다는 사실만 남긴다. <b>상태는 안 바꾼다.</b>
+     *
+     * <p>복구 배치는 "이 시간 이상 머문 주문"을 <b>updatedAt 으로</b> 고른다. 그래서 시도가
+     * 실패해도 이 값을 안 건드리면 그 주문이 <b>다음 회차에도 같은 앞자리를 차지</b>한다.
+     * 상한이 100건인데 앞의 100건이 계속 실패하면 101번째는 영영 차례가 안 온다.
+     * 실패를 여기 적어 두면 두 가지가 같이 해결된다 — 다음 시도까지 유예가 생기고
+     * (다시 임계 시간을 채워야 한다), 정렬에서 뒤로 밀려 다른 건에 차례가 간다.
+     */
+    public void markRecoveryAttempted() {
+        this.updatedAt = Instant.now();
+    }
+
     public Money totalAsMoney() {
         return Money.krw(totalAmount);
     }

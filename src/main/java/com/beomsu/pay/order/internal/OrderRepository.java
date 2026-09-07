@@ -20,5 +20,12 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findByStatusAndExpiresAtBefore(OrderStatus status, Instant now, Pageable page);
 
     /** 멈춘 사가 복구용: 특정 상태로 이 시각 이전부터 머물러 있는 주문(마지막 갱신 기준). */
-    List<Order> findByStatusAndUpdatedAtBefore(OrderStatus status, Instant threshold, Pageable page);
+    /**
+     * 멈춘 체크아웃을 고른다. <b>오래 머문 것부터</b> 준다.
+     *
+     * <p>정렬이 없으면 순서가 DB 마음이라, 실패가 반복되는 건이 앞자리를 계속 잡을 수 있다.
+     * 오래된 순으로 주고 실패한 건은 {@code markRecoveryAttempted} 로 뒤로 보낸다.
+     */
+    List<Order> findByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
+            OrderStatus status, Instant threshold, Pageable page);
 }

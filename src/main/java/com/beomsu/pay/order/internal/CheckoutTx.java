@@ -54,6 +54,25 @@ public class CheckoutTx {
      * 실패로 커밋된 차감이 고아가 되는 창을 없앤다. 월렛 잔액이 부족하면 여기서 예외가 나 이 tx 전체가
      * 롤백되고(월렛은 아직 안 건드림), 보상은 {@link #settle}의 거절/재고부족 분기가 orderNo 멱등 환불로 한다.
      */
+    /**
+     * 복구를 시도했다는 사실만 <b>따로 커밋한다.</b> 상태는 안 바꾼다.
+     *
+     * <p>복구가 던지면 그 트랜잭션은 롤백되므로, 같은 트랜잭션에 적으면 이 기록도 같이
+     * 사라진다. {@code REQUIRES_NEW} 로 떼어 남긴다.
+     *
+     * <p>왜 남기나: 복구 배치는 "이 시간 이상 머문 주문"을 {@code updatedAt} 으로 고르고
+     * 한 번에 읽는 수에 상한이 있다. 실패한 건을 그대로 두면 <b>다음 회차에도 같은 앞자리를
+     * 잡아</b> 상한 밖의 건이 영영 차례를 못 받는다. 여기 적으면 임계 시간을 다시 채워야
+     * 해서 유예가 생기고, 오래된 순 정렬에서 뒤로 밀린다.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void markRecoveryAttempted(Long orderId) {
+        orderRepository.findById(orderId).ifPresent(o -> {
+            o.markRecoveryAttempted();
+            orderRepository.saveAndFlush(o);
+        });
+    }
+
     @Transactional
     public Reservation reserve(String orderNo, String paymentKey, Money cardAmount,
                                long pointAmount, long walletAmount, long authenticatedUserId) {
