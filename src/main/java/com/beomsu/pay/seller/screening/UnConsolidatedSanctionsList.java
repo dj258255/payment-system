@@ -47,14 +47,17 @@ public class UnConsolidatedSanctionsList implements SanctionsList {
 
     private final String url;
     private final Duration timeout;
+    private final long staleAfterHours;
     private final AtomicReference<Snapshot> snapshot =
             new AtomicReference<>(new Snapshot(List.of(), "not-loaded"));
 
     public UnConsolidatedSanctionsList(
             @Value("${app.screening.list.un.url:https://scsanctions.un.org/resources/xml/en/consolidated.xml}") String url,
-            @Value("${app.screening.list.un.timeout-seconds:30}") long timeoutSeconds) {
+            @Value("${app.screening.list.un.timeout-seconds:30}") long timeoutSeconds,
+            @Value("${app.screening.list.un.stale-after-hours:48}") long staleAfterHours) {
         this.url = url;
         this.timeout = Duration.ofSeconds(timeoutSeconds);
+        this.staleAfterHours = staleAfterHours;
     }
 
     @Override
@@ -65,6 +68,20 @@ public class UnConsolidatedSanctionsList implements SanctionsList {
     @Override
     public String version() {
         return snapshot.get().version();
+    }
+
+    /**
+     * 지금 들고 있는 명단이 <b>며칠 된 것인가.</b> 못 받으면 직전 판을 그대로 쓰는데,
+     * 그것이 30일 전 것이어도 계속 통과시키면 <b>"명단을 보고 있다"가 거짓이 된다.</b>
+     * 값을 밖으로 내서 알림이 재게 한다.
+     */
+    public long ageHours() {
+        return java.time.Duration.between(snapshot.get().fetchedAt(), java.time.Instant.now()).toHours();
+    }
+
+    /** 이 시간을 넘으면 사람이 봐야 한다. 지급을 막지는 않는다 — 막으면 전면 중단이다. */
+    public boolean stale() {
+        return ageHours() > staleAfterHours;
     }
 
     /**
@@ -95,8 +112,15 @@ public class UnConsolidatedSanctionsList implements SanctionsList {
     /** 실패하면 직전 판을 그대로 쓴다. 비우면 지급이 통째로 멈춘다. */
     private void keepPrevious(String why) {
         var cur = snapshot.get();
-        log.warn("[screening] UN 명단을 못 받았다 — 직전 판을 그대로 쓴다 ({}), version={} entries={}",
-                why, cur.version(), cur.entries().size());
+        long age = ageHours();
+        // 낡은 정도를 같이 적는다. "못 받았다"만 남기면 <얼마나 오래 못 받았는지>가 안 남는다.
+        if (age > staleAfterHours) {
+            log.error("[screening] UN 명단을 {}시간째 못 받았다 — 사람이 봐야 한다 ({}), version={} entries={}",
+                    age, why, cur.version(), cur.entries().size());
+        } else {
+            log.warn("[screening] UN 명단을 못 받았다 — 직전 판을 그대로 쓴다 ({}), {}시간 됨, version={} entries={}",
+                    why, age, cur.version(), cur.entries().size());
+        }
     }
 
     /**
@@ -203,5 +227,7 @@ public class UnConsolidatedSanctionsList implements SanctionsList {
         return v.isEmpty() ? null : v;
     }
 
-    record Snapshot(List<Entry> entries, String version) {}
+    record Snapshot(List<Entry> entries, String version, java.time.Instant fetchedAt) {
+        Snapshot(List<Entry> entries, String version) { this(entries, version, java.time.Instant.now()); }
+    }
 }

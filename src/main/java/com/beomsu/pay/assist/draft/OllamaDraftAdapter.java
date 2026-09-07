@@ -43,7 +43,7 @@ public class OllamaDraftAdapter implements DraftPort {
     OllamaDraftAdapter(PromptBuilder prompts,
                        @Value("${app.assist.ollama.base-url:http://localhost:11434}") String baseUrl,
                        @Value("${app.assist.ollama.model:qwen3:8b}") String model,
-                       @Value("${app.assist.ollama.timeout-seconds:60}") long timeoutSeconds) {
+                       @Value("${app.assist.ollama.draft-timeout-seconds:${app.assist.ollama.timeout-seconds:60}}") long timeoutSeconds) {
         this.prompts = prompts;
         this.model = model;
         // 타임아웃을 명시한다. 로컬 모델은 첫 호출에서 가중치를 올리느라 오래 걸리는데,

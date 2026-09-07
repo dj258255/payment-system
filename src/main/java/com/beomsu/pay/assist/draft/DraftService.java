@@ -33,6 +33,8 @@ public class DraftService {
     private final NumericProvenanceGuard numberGuard;
     private final CustomerGlossary glossary;
     private final DraftRubric rubric;
+    /** 금액 결손은 <b>루브릭이 안 보던 자리</b>다. 초안에 빠진 금액을 되묻는 근거로 쓴다. */
+    private final AmountCoverageGuard coverageGuard;
     /** 심판은 선택이다 — 켜지 않으면 없다. 켜면 호출이 한 번 더 는다. */
     private final java.util.Optional<DraftJudge> judge;
 
@@ -108,10 +110,18 @@ public class DraftService {
      */
     private String reviseIfWorthIt(FactPack facts, String original) {
         DraftRubric.Score before = rubric.score(original, facts);
-        if (before.failed().isEmpty()) {
+        // 루브릭은 <분류기 근거의 첫 금액> 하나만 본다. 사실 목록에 있는 나머지 금액이
+        // 통째로 빠져도 통과한다. 실측에서 12건 중 8건이 이 자리였다(13 문서 실험 8).
+        List<String> issues = new java.util.ArrayList<>(before.failed());
+        List<Long> missing = coverageGuard.missing(original, facts);
+        for (Long a : missing) {
+            issues.add("금액 " + java.text.NumberFormat.getNumberInstance(java.util.Locale.KOREA).format(a)
+                    + "원이 초안에 없다");
+        }
+        if (issues.isEmpty()) {
             return original;
         }
-        Optional<String> revised = draftPort.revise(facts, original, before.failed());
+        Optional<String> revised = draftPort.revise(facts, original, issues);
         if (revised.isEmpty() || revised.get().isBlank()) {
             return original;
         }
@@ -121,13 +131,19 @@ public class DraftService {
             return original;
         }
         DraftRubric.Score after = rubric.score(revised.get(), facts);
-        if (after.passed() > before.passed()) {
-            log.info("수정으로 개선 order={} {}/{} -> {}/{}", facts.orderNo(),
-                    before.passed(), before.total(), after.passed(), after.total());
+        int missingAfter = coverageGuard.missing(revised.get(), facts).size();
+        // <절대 나빠지지 않는다>: 루브릭이 오르거나, 루브릭이 같은데 빠진 금액이 줄었을 때만 바꾼다
+        boolean better = after.passed() > before.passed()
+                || (after.passed() == before.passed() && missingAfter < missing.size());
+        if (better) {
+            log.info("수정으로 개선 order={} 루브릭 {}/{} -> {}/{} · 빠진 금액 {} -> {}",
+                    facts.orderNo(), before.passed(), before.total(),
+                    after.passed(), after.total(), missing.size(), missingAfter);
             return revised.get();
         }
-        log.info("수정이 나아지지 않아 원본 유지 order={} {}/{} -> {}/{}", facts.orderNo(),
-                before.passed(), before.total(), after.passed(), after.total());
+        log.info("수정이 나아지지 않아 원본 유지 order={} 루브릭 {}/{} -> {}/{} · 빠진 금액 {} -> {}",
+                facts.orderNo(), before.passed(), before.total(),
+                after.passed(), after.total(), missing.size(), missingAfter);
         return original;
     }
 
