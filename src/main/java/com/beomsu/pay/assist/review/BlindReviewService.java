@@ -1,9 +1,6 @@
 package com.beomsu.pay.assist.review;
 
 import com.beomsu.pay.reconciliation.cause.ClassifierAccuracyMetrics;
-import com.beomsu.pay.assist.draft.FactPack;
-import com.beomsu.pay.assist.draft.DraftService;
-import com.beomsu.pay.assist.draft.CsDraft;
 import com.beomsu.pay.assist.draft.CsDraft;
 import com.beomsu.pay.assist.draft.DraftService;
 import com.beomsu.pay.assist.draft.FactPack;
@@ -15,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 블라인드 리뷰 — 초안이 <b>쓸 만한지</b>를 재는 유일한 경로 (ADR-014).
@@ -85,26 +83,76 @@ public class BlindReviewService {
     public BlindReviewView reveal(long reviewId) {
         BlindReview review = find(reviewId);
         if (!review.revealed()) {
-            CsDraft draft = draftService.draftFor(review.getOrderNo(), review.getReconResultId());
-            if (draft.text() == null) {
-                // 초안이 없는 것도 결과다. 빈 문자열로 고정해 "초안이 없었다"를 표본에 남긴다 —
-                // 여기서 예외를 던지면 그 케이스가 통계에서 조용히 빠진다.
-                review.reveal("", draft.source());
-                log.info("[blind] 초안 없음 review={} source={} rejected={}",
-                        reviewId, draft.source(), draft.rejected());
-            } else {
-                review.reveal(draft.text(), draft.source());
+            // 미리 심어 둔 표본이면 그대로 쓴다. 여기서 다시 뽑으면 모델이 다르게 써서
+            // 심을 때 정한 A/B 배정과 어긋난다.
+            if (!review.preloaded()) {
+                fixDrafts(review);
             }
+            review.markRevealed();
             repository.save(review);
         }
         return toView(review);
     }
 
-    /** 3단계 — 초안을 발송 가능하게 고친 결과. */
+    /**
+     * 초안 둘을 고정한다. <b>공개는 아니다.</b>
+     *
+     * <p>미리 심는 경로(`BlindReviewSeedTest`)와 그 자리에서 만드는 경로가 같은 코드를 쓴다.
+     * 갈라 두면 한쪽만 고쳐져서 심은 표본과 그때 만든 표본이 다른 규칙으로 생긴다.
+     */
     @Transactional
-    public BlindReviewView submitEdited(long reviewId, String edited) {
+    public void fixDrafts(BlindReview review) {
+        CsDraft model = draftService.draftFor(review.getOrderNo(), review.getReconResultId());
+        CsDraft base = draftService.baselineFor(review.getOrderNo(), review.getReconResultId());
+        // 초안이 없는 것도 결과다. 빈 문자열로 고정해 "초안이 없었다"를 표본에 남긴다.
+        // 여기서 예외를 던지면 그 케이스가 통계에서 조용히 빠진다.
+        if (model.text() == null) {
+            log.info("[blind] 초안 없음 review={} source={} rejected={}",
+                    review.getId(), model.source(), model.rejected());
+        }
+        review.preload(text(model), model.source(), text(base), base.source(),
+                ThreadLocalRandom.current().nextBoolean());
+    }
+
+    /** 표본 심기 — 초안만 고정해 둔다. 사람은 나중에 답만 쓴다. */
+    @Transactional
+    public int preloadAll(long reconResultId, String orderNo, String reviewer) {
+        BlindReview review = repository.findByReconResultIdAndReviewer(reconResultId, reviewer)
+                .orElseGet(() -> repository.save(BlindReview.start(reconResultId, orderNo, reviewer)));
+        if (review.preloaded()) {
+            return 0;
+        }
+        fixDrafts(review);
+        repository.save(review);
+        return 1;
+    }
+
+    private static String text(CsDraft d) {
+        return d.text() == null ? "" : d.text();
+    }
+
+    /** 3단계 — 먼저 보여준 초안의 수정본. */
+    @Transactional
+    public BlindReviewView submitFirst(long reviewId, String edited) {
         BlindReview review = find(reviewId);
-        review.submitEdited(edited);
+        // 화면은 A/B 로만 부른다. 어느 쪽이 모델인지는 서버만 안다.
+        if (review.isBaselineFirst()) {
+            review.submitEditedBaseline(edited);
+        } else {
+            review.submitEdited(edited);
+        }
+        return toView(repository.save(review));
+    }
+
+    /** 3단계 — 나중에 보여준 초안의 수정본. */
+    @Transactional
+    public BlindReviewView submitSecond(long reviewId, String edited) {
+        BlindReview review = find(reviewId);
+        if (review.isBaselineFirst()) {
+            review.submitEdited(edited);
+        } else {
+            review.submitEditedBaseline(edited);
+        }
         return toView(repository.save(review));
     }
 
@@ -118,8 +166,7 @@ public class BlindReviewService {
     public BlindReviewStats stats() {
         List<BlindReview> done = repository.findByEditedAtIsNotNull();
         if (done.isEmpty()) {
-            return new BlindReviewStats(0, 0, 0, 0, 0,
-                    List.of("표본이 없습니다. 리뷰를 3단계까지 마쳐야 집계됩니다."));
+            return BlindReviewStats.empty();
         }
         List<Double> edits = new ArrayList<>();
         List<Double> diverge = new ArrayList<>();
@@ -132,14 +179,36 @@ public class BlindReviewService {
             if (e < AS_IS) asIs++;
             if (e >= REWRITE) rewritten++;
         }
+
+        // 쌍 비교는 <둘 다 고친> 건에서만 낸다. 한쪽만 있는 건을 섞으면 두 중앙값이
+        // 서로 다른 표본에서 나와, 차이가 방식 차이인지 표본 차이인지 갈리지 않는다.
+        List<Double> pairModel = new ArrayList<>();
+        List<Double> pairBase = new ArrayList<>();
+        for (BlindReview r : done) {
+            if (!r.pairDone()) continue;
+            pairModel.add(TextDistance.editRatio(r.getModelDraft(), r.getEditedDraft()));
+            pairBase.add(TextDistance.editRatio(r.getBaselineDraft(), r.getEditedBaseline()));
+        }
+
         List<String> caveat = new ArrayList<>();
         caveat.add("편집률은 <표현이 얼마나 다른가>를 재지 <내용이 맞는가>를 재지 않는다.");
         caveat.add("리뷰어는 상담원이 아니라 개발자다. 실제 상담 기준과 다를 수 있다.");
         if (done.size() < 20) {
             caveat.add("표본 " + done.size() + "건은 통계로 쓰기에 적다. 경향만 본다.");
         }
+        if (pairModel.isEmpty()) {
+            caveat.add("쌍 비교 표본이 없다. 활성화 조건 1번(편집률이 템플릿보다 낮을 것)은 "
+                    + "초안 둘을 다 고친 건에서만 나온다.");
+        } else if (pairModel.size() < done.size()) {
+            caveat.add("쌍 비교는 " + pairModel.size() + "건에서만 냈다"
+                    + "(나머지는 한쪽만 고쳐 짝이 없다).");
+        }
         return new BlindReviewStats(done.size(), median(edits), median(diverge),
-                asIs, rewritten, List.copyOf(caveat));
+                asIs, rewritten,
+                pairModel.size(),
+                pairModel.isEmpty() ? null : median(pairModel),
+                pairBase.isEmpty() ? null : median(pairBase),
+                List.copyOf(caveat));
     }
 
     private static double median(List<Double> xs) {
@@ -153,18 +222,26 @@ public class BlindReviewService {
         return repository.findById(id).orElseThrow(() -> BlindReviewException.notFound(id));
     }
 
-    /** 단계에 따라 보여줄 것을 고른다. 초안은 공개 전까지 <b>응답에 실리지 않는다.</b> */
+    /**
+     * 단계에 따라 보여줄 것을 고른다. 초안은 공개 전까지 <b>응답에 실리지 않는다.</b>
+     *
+     * <p>공개 뒤에도 <b>어느 쪽이 모델인지는 안 내보낸다.</b> A/B 로만 준다.
+     */
     private BlindReviewView toView(BlindReview r) {
-        String stage = r.editDone() ? "DONE" : r.revealed() ? "REVEALED" : "BLIND";
+        String stage = r.pairDone() ? "DONE" : r.revealed() ? "REVEALED" : "BLIND";
 
         // 사실은 1단계에서 필요하고, 그 뒤에도 대조에 쓴다. 초안과 달리 감출 이유가 없다.
         FactPack facts = draftService.factsFor(r.getOrderNo(), r.getReconResultId());
 
+        boolean baseFirst = r.isBaselineFirst();
+        String a = null, b = null, ea = null, eb = null;
+        if (r.revealed()) {                                  // ← 공개 전에는 전부 null
+            a  = baseFirst ? r.getBaselineDraft()  : r.getModelDraft();
+            b  = baseFirst ? r.getModelDraft()     : r.getBaselineDraft();
+            ea = baseFirst ? r.getEditedBaseline() : r.getEditedDraft();
+            eb = baseFirst ? r.getEditedDraft()    : r.getEditedBaseline();
+        }
         return new BlindReviewView(r.getId(), r.getReconResultId(), r.getOrderNo(), stage,
-                facts.facts(), facts.causeHint(),
-                r.getBlindReply(),
-                r.revealed() ? r.getModelDraft() : null,     // ← 공개 전에는 null
-                r.getModelSource(),
-                r.getEditedDraft());
+                facts.facts(), facts.causeHint(), r.getBlindReply(), a, b, ea, eb);
     }
 }

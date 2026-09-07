@@ -41,9 +41,24 @@ public class BlindReview {
     private String modelSource;
     private Instant revealedAt;
 
+    /** 대조군. 지금 쓰고 있는 템플릿 초안을 <b>같은 사실에서 같은 시점에</b> 고정한다. */
+    @Column(columnDefinition = "TEXT")
+    private String baselineDraft;
+    private String baselineSource;
+
+    /**
+     * 표시 순서. 항상 같은 쪽을 먼저 보여주면 <b>먼저 본 것</b>에 기준이 생겨,
+     * 뒤에 온 초안은 그 문장과 얼마나 다른지로 읽힌다. 공개 시점에 뽑아 고정한다.
+     */
+    private boolean baselineFirst;
+
     @Column(columnDefinition = "TEXT")
     private String editedDraft;
     private Instant editedAt;
+
+    @Column(columnDefinition = "TEXT")
+    private String editedBaseline;
+    private Instant baselineEditedAt;
 
     private Instant createdAt;
 
@@ -71,30 +86,77 @@ public class BlindReview {
         this.blindAt = Instant.now();
     }
 
-    /** 2단계 — 모델 초안 공개. <b>1단계 전에는 못 부른다.</b> */
-    void reveal(String draft, String source) {
+    /**
+     * 초안 <b>둘</b>을 고정한다. <b>공개하지는 않는다.</b>
+     *
+     * <p>고정과 공개를 가르는 이유: 초안을 만드는 데 건당 10초 안팎이 든다. 그 자리에서
+     * 만들면 리뷰어가 답을 제출할 때마다 그만큼 기다리고, <b>그 대기가 표본이 0건이던
+     * 실제 이유</b>였다(쌍 비교에서 이미 겪었다). 미리 심어 두고 사람은 쓰기만 한다.
+     *
+     * <p>모델 초안과 템플릿 초안을 같이 고정한다. 활성화 조건이
+     * "편집률 중앙값이 <b>템플릿보다</b> 낮을 것"이라, 둘을 같은 사례에서 재야 한다.
+     * 회차를 나눠 재면 두 번째 회차는 리뷰어가 이미 답을 아는 상태다.
+     */
+    void preload(String draft, String source, String baseline, String baselineSource,
+                 boolean baselineFirst) {
+        if (revealedAt != null) {
+            return;              // 이미 사람이 본 것은 안 바꾼다
+        }
+        this.modelDraft = draft;
+        this.modelSource = source;
+        this.baselineDraft = baseline;
+        this.baselineSource = baselineSource;
+        this.baselineFirst = baselineFirst;
+    }
+
+    /**
+     * 2단계 — 고정해 둔 초안을 공개한다. <b>1단계 전에는 못 부른다.</b>
+     *
+     * <p><b>공개 여부는 초안이 있느냐가 아니라 이 시각으로 가른다.</b> 초안 존재로 가르면
+     * 표본을 미리 심는 순간 <b>블라인드 답을 쓰기 전에 공개 상태</b>가 되어 실험의 전제가
+     * 조용히 깨진다. 화면은 그대로 도는데 표본만 무의미해지는 종류의 사고다.
+     */
+    void markRevealed() {
         if (blindReply == null) {
             throw BlindReviewException.outOfOrder(
                     "블라인드 답변을 먼저 제출해야 합니다. 초안을 먼저 보면 표본이 오염됩니다.");
         }
-        if (modelDraft != null) {
+        if (revealedAt != null) {
             return;              // 멱등 — 이미 본 것을 그대로 돌려준다
         }
-        this.modelDraft = draft;
-        this.modelSource = source;
+        if (modelDraft == null) {
+            throw BlindReviewException.invalid("공개할 초안이 없습니다. 먼저 고정해야 합니다.");
+        }
         this.revealedAt = Instant.now();
     }
 
+    /** 초안이 고정돼 있나. 공개와 다른 상태다. */
+    public boolean preloaded() { return modelDraft != null; }
+
     /** 3단계 — 모델 초안을 발송 가능하게 고친 결과. */
     void submitEdited(String edited) {
-        if (modelDraft == null) {
-            throw BlindReviewException.outOfOrder("초안을 공개하기 전에는 수정본을 받을 수 없습니다.");
-        }
+        requireRevealed();
         this.editedDraft = edited == null ? "" : edited.trim();
         this.editedAt = Instant.now();
     }
 
+    /** 3단계 — 템플릿 초안 쪽. 리뷰어는 어느 쪽이 어느 것인지 모른 채 고친다. */
+    void submitEditedBaseline(String edited) {
+        requireRevealed();
+        this.editedBaseline = edited == null ? "" : edited.trim();
+        this.baselineEditedAt = Instant.now();
+    }
+
+    private void requireRevealed() {
+        if (revealedAt == null) {
+            throw BlindReviewException.outOfOrder("초안을 공개하기 전에는 수정본을 받을 수 없습니다.");
+        }
+    }
+
     public boolean blindDone()  { return blindReply != null; }
-    public boolean revealed()   { return modelDraft != null; }
+    public boolean revealed()   { return revealedAt != null; }
     public boolean editDone()   { return editedAt != null; }
+    public boolean baselineEditDone() { return baselineEditedAt != null; }
+    /** 둘 다 고쳐야 쌍 비교 표본이 된다. 한쪽만 있으면 짝이 없어 중앙값을 못 맞댄다. */
+    public boolean pairDone()   { return editDone() && baselineEditDone(); }
 }

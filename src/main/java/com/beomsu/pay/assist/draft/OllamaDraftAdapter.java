@@ -2,6 +2,7 @@ package com.beomsu.pay.assist.draft;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Primary;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -34,6 +35,8 @@ import java.util.Optional;
 @Slf4j
 @Component
 @ConditionalOnProperty(name = "app.assist.draft-provider", havingValue = "ollama")
+// 템플릿 어댑터는 대조군으로 항상 떠 있다. 켜졌을 때 DraftPort 주입이 이쪽으로 오게 한다.
+@Primary
 public class OllamaDraftAdapter implements DraftPort {
 
     private final RestClient client;

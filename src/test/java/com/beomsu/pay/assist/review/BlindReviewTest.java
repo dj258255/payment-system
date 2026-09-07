@@ -19,10 +19,17 @@ class BlindReviewTest {
         return BlindReview.start(1L, "ORD-1", "beomsu");
     }
 
+    /** 고정하고 공개까지. 운영 경로가 둘을 이어 부른다. */
+    private BlindReview revealed(BlindReview r, String model, String baseline) {
+        r.preload(model, "ollama", baseline, "template", false);
+        r.markRevealed();
+        return r;
+    }
+
     @Test
     @DisplayName("블라인드 답변 전에는 초안을 공개할 수 없다")
     void cannotRevealBeforeBlindReply() {
-        assertThatThrownBy(() -> review().reveal("모델 초안", "ollama"))
+        assertThatThrownBy(() -> revealed(review(), "모델 초안", "템플릿 초안"))
                 .isInstanceOf(BlindReviewException.class)
                 .hasMessageContaining("먼저 제출");
     }
@@ -49,12 +56,33 @@ class BlindReviewTest {
     void revealIsIdempotent() {
         BlindReview r = review();
         r.submitBlind("내 답변");
-        r.reveal("첫 초안", "ollama");
-        r.reveal("두 번째 초안", "ollama");     // 모델은 매번 다르게 쓴다
+        revealed(r, "첫 초안", "첫 템플릿");
+        revealed(r, "두 번째 초안", "두 번째 템플릿");     // 모델은 매번 다르게 쓴다
 
         assertThat(r.getModelDraft())
                 .as("사람이 실제로 본 것을 채점해야 한다")
                 .isEqualTo("첫 초안");
+        assertThat(r.getBaselineDraft())
+                .as("대조군도 같이 고정된다. 한쪽만 다시 뽑으면 짝이 어긋난다")
+                .isEqualTo("첫 템플릿");
+        assertThat(r.isBaselineFirst())
+                .as("표시 순서도 고정된다. 다시 열었을 때 순서가 바뀌면 채점이 화면과 안 맞는다")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("초안을 미리 심어 둬도 블라인드 답 전에는 공개가 아니다")
+    void preloadDoesNotReveal() {
+        BlindReview r = review();
+        r.preload("모델 초안", "ollama", "템플릿 초안", "template", false);
+
+        assertThat(r.preloaded()).isTrue();
+        assertThat(r.revealed())
+                .as("초안이 있느냐로 가르면 심는 순간 실험의 전제가 조용히 깨진다")
+                .isFalse();
+        assertThatThrownBy(r::markRevealed)
+                .isInstanceOf(BlindReviewException.class)
+                .hasMessageContaining("먼저 제출");
     }
 
     @Test
@@ -71,18 +99,35 @@ class BlindReviewTest {
     void happyPath() {
         BlindReview r = review();
         r.submitBlind("사실만 보고 쓴 답");
-        r.reveal("모델 초안", "ollama:qwen3:8b");
+        revealed(r, "모델 초안", "템플릿 초안");
         r.submitEdited("초안을 고친 것");
 
         assertThat(r.blindDone()).isTrue();
         assertThat(r.revealed()).isTrue();
         assertThat(r.editDone()).isTrue();
+        assertThat(r.pairDone())
+                .as("한쪽만 고치면 짝이 없어 두 중앙값을 같은 표본에서 못 낸다")
+                .isFalse();
+
+        r.submitEditedBaseline("대조군을 고친 것");
+        assertThat(r.pairDone()).isTrue();
+    }
+
+    @Test
+    @DisplayName("대조군 수정본도 공개 전에는 못 받는다")
+    void cannotEditBaselineBeforeReveal() {
+        BlindReview r = review();
+        r.submitBlind("내 답변");
+        assertThatThrownBy(() -> r.submitEditedBaseline("수정본"))
+                .isInstanceOf(BlindReviewException.class)
+                .extracting(e -> ((BlindReviewException) e).code())
+                .isEqualTo("REVIEW_OUT_OF_ORDER");
     }
 
     @Test
     @DisplayName("순서 위반은 오류가 아니라 <설계된 거절>이다 — 코드로 구분된다")
     void outOfOrderHasItsOwnCode() {
-        assertThatThrownBy(() -> review().reveal("초안", "ollama"))
+        assertThatThrownBy(() -> revealed(review(), "초안", "템플릿"))
                 .isInstanceOf(BlindReviewException.class)
                 .extracting(e -> ((BlindReviewException) e).code())
                 .as("500이 아니라 409로 나가야 호출자가 버그와 구분한다")

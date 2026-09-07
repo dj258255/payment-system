@@ -35,8 +35,38 @@ public class DraftService {
     private final DraftRubric rubric;
     /** 금액 결손은 <b>루브릭이 안 보던 자리</b>다. 초안에 빠진 금액을 되묻는 근거로 쓴다. */
     private final AmountCoverageGuard coverageGuard;
+    /** 대조군. {@code draft-provider} 와 무관하게 항상 있다({@link #baselineFor}). */
+    private final TemplateDraftAdapter template;
     /** 심판은 선택이다 — 켜지 않으면 없다. 켜면 호출이 한 번 더 는다. */
     private final java.util.Optional<DraftJudge> judge;
+
+    /**
+     * <b>대조군 초안.</b> {@code draft-provider} 가 무엇이든 템플릿으로 만든다.
+     *
+     * <p>블라인드 리뷰의 활성화 조건이 "편집률 중앙값이 <b>템플릿보다</b> 낮을 것"이라,
+     * 모델 초안과 <b>같은 사실에서 같은 시점에</b> 템플릿 초안도 있어야 한다.
+     * provider 를 바꿔 두 번 돌리면 두 번째 회차는 리뷰어가 이미 답을 아는 상태다.
+     *
+     * <p>되묻기와 심판은 태우지 않는다. 대조군은 <b>지금 운영에서 쓰는 그것</b>이어야 하고,
+     * 템플릿은 모델을 안 부르므로 고칠 것도 없다.
+     */
+    @Transactional(readOnly = true)
+    public CsDraft baselineFor(String orderNo, Long reconResultId) {
+        OrderTimeline timeline = timelineService.assemble(orderNo);
+        FactPack facts = FactPack.from(timeline, causeHint(reconResultId));
+        if (facts.empty()) {
+            return CsDraft.none(orderNo, template.name(), timeline.complete());
+        }
+        Optional<String> text = template.draft(facts);
+        if (text.isEmpty()) {
+            return CsDraft.none(orderNo, template.name(), timeline.complete());
+        }
+        // 템플릿은 사실을 옮겨 적을 뿐이라 숫자 출처 검증에 걸릴 일이 없다. 그래도 같은
+        // 잣대로 채점해 둔다 — 대조군만 채점을 건너뛰면 비교가 한쪽에만 유리해진다.
+        return CsDraft.ok(orderNo, text.get(), template.name(), timeline.complete(),
+                glossary.findJargon(text.get()), rubric.score(text.get(), facts),
+                DraftJudge.Verdict.unavailable("대조군은 심판을 안 태운다"));
+    }
 
     /**
      * 주문 한 건의 상담 초안을 만든다.

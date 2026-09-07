@@ -35,19 +35,28 @@ class BlindReviewAdminController {
         return service.submitBlind(id, body.text());
     }
 
-    /** 2단계 — 모델 초안 공개. 1단계 전이면 서비스가 거부한다. */
+    /** 2단계 — 초안 둘 공개(A/B). 1단계 전이면 서비스가 거부한다. */
     @PostMapping("/{id}/reveal")
     BlindReviewView reveal(@PathVariable long id) {
         return service.reveal(id);
     }
 
-    /** 3단계 — 초안을 발송 가능하게 고친 결과. */
-    @PostMapping("/{id}/edited")
-    BlindReviewView edited(@PathVariable long id, @RequestBody TextBody body) {
-        return service.submitEdited(id, body.text());
+    /**
+     * 3단계 — 초안 A 의 수정본. <b>A 가 모델인지 템플릿인지는 서버만 안다.</b>
+     * 경로에 모델/템플릿을 쓰면 개발자 도구를 연 순간 눈가림이 풀린다.
+     */
+    @PostMapping("/{id}/edited/a")
+    BlindReviewView editedA(@PathVariable long id, @RequestBody TextBody body) {
+        return service.submitFirst(id, body.text());
     }
 
-    /** 집계 — 표본 수와 한계를 함께 낸다. */
+    /** 3단계 — 초안 B 의 수정본. */
+    @PostMapping("/{id}/edited/b")
+    BlindReviewView editedB(@PathVariable long id, @RequestBody TextBody body) {
+        return service.submitSecond(id, body.text());
+    }
+
+    /** 집계 — 표본 수와 한계를 함께 낸다. 쌍 비교는 둘 다 고친 건에서만 나온다. */
     @GetMapping("/stats")
     BlindReviewStats stats() {
         return service.stats();

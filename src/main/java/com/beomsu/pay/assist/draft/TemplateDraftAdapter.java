@@ -1,6 +1,5 @@
 package com.beomsu.pay.assist.draft;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.text.NumberFormat;
@@ -19,11 +18,16 @@ import java.util.Optional;
  * <p><b>둘, 폴백</b>. 모델이 죽거나 {@link NumericProvenanceGuard}에 걸려 초안이 없을 때
  * 상담원이 빈 화면을 보면 안 된다. 사실 나열만으로도 처음부터 조사하는 것보다는 낫다.
  *
- * <p>{@code app.assist.draft-provider=template}(기본)일 때 활성화된다.
+ * <p><b>항상 빈으로 둔다.</b> {@code draft-provider} 가 무엇이든 이 구현이 필요하다.
+ * 모델을 켜도 <b>대조군</b>으로 쓰이기 때문이다 — 블라인드 리뷰의 활성화 조건이
+ * "편집률 중앙값이 <b>템플릿보다</b> 낮을 것"이라, 모델 초안과 같은 사실에서 같은 시점에
+ * 템플릿 초안도 뽑아야 한다. provider 를 바꿔 두 번 돌리면 두 번째 회차는 리뷰어가
+ * 이미 답을 아는 상태라 표본이 오염된다.
+ *
+ * <p>모델 어댑터가 켜지면 그쪽이 {@code @Primary} 라 {@link DraftPort} 주입은 그리로 간다.
+ * 이 구현을 쓰려면 구체 타입으로 받는다.
  */
 @Component
-@ConditionalOnProperty(name = "app.assist.draft-provider", havingValue = "template",
-        matchIfMissing = true)
 public class TemplateDraftAdapter implements DraftPort {
 
     private static final NumberFormat WON = NumberFormat.getIntegerInstance(Locale.KOREA);

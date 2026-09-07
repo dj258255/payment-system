@@ -199,7 +199,11 @@
     <div class="panel">
       <div class="sub">블라인드 리뷰 — 초안이 <b>쓸 만한지</b>를 재는 유일한 방법(ADR-014).
         <b>사실만 보고 먼저 직접 써야</b> 합니다. 초안을 먼저 보면 그 문장에 끌려가서
-        "고칠 게 없었다"와 "고칠 생각이 안 났다"가 구분되지 않습니다.</div>
+        "고칠 게 없었다"와 "고칠 생각이 안 났다"가 구분되지 않습니다.
+        답을 제출하면 <b>초안 두 개(A·B)</b>가 나옵니다. 하나는 지금 쓰는 템플릿이고 하나는
+        모델인데 <b>어느 쪽인지 알려주지 않고 순서도 건마다 뒤집습니다</b>. 알고 고치면
+        편집량이 그것에 끌려가 두 편집률의 차이가 방식 차이가 아니게 됩니다.
+        <b>둘 다 고쳐야</b> 그 건이 쌍 비교 표본이 됩니다.</div>
       <div class="row">
         <input id="brReconId" placeholder="대사 결과 ID" style="width:130px">
         <input id="brOrderNo" placeholder="주문번호" style="flex:1">
@@ -540,9 +544,11 @@ async function brReveal(){
   const r = await api('POST','/api/v1/admin/assist/reviews/'+brId+'/reveal');
   if(r.ok) brRender(r.data);
 }
-async function brSubmitEdited(){
-  const t = $('brInput').value;
-  const r = await api('POST','/api/v1/admin/assist/reviews/'+brId+'/edited', {text:t});
+// 초안 둘을 A/B 로만 받는다. 어느 쪽이 모델인지는 서버만 안다 —
+// 알고 고치면 "모델이니까 잘 썼겠지"가 편집량에 섞여 두 편집률의 차이가 방식 차이가 아니게 된다.
+async function brSubmitEdited(side){
+  const t = $('brInput_'+side).value;
+  const r = await api('POST','/api/v1/admin/assist/reviews/'+brId+'/edited/'+side, {text:t});
   if(r.ok) brRender(r.data);
 }
 
@@ -552,7 +558,7 @@ function brRender(d){
   stage.style.display = 'block';
   stage.textContent = {
     BLIND:    '\u2460 사실만 보고 직접 작성하세요 (초안은 아직 안 보여줍니다)',
-    REVEALED: '\u2461 모델 초안이 공개됐습니다. 발송 가능하게 고쳐 주세요',
+    REVEALED: '\u2461 초안 두 개가 공개됐습니다. \uAC01\uAC01 발송 가능하게 고쳐 주세요',
     DONE:     '\u2713 완료 \u2014 집계에 반영됩니다'
   }[d.stage] || d.stage;
   stage.style.color = d.stage === 'DONE' ? '#15803D' : '#B45309';
@@ -581,25 +587,32 @@ function brRender(d){
   box.appendChild(brEl('pre','white-space:pre-wrap;padding:10px 12px;margin:0;font-size:12.5px;'
     + 'background:#F8FAFB;border-radius:8px;line-height:1.7', d.blindReply || ''));
 
-  box.appendChild(brLabel('모델 초안 \u2014 '+(d.modelSource||'')));
-  box.appendChild(brEl('pre','white-space:pre-wrap;padding:10px 12px;margin:0;font-size:12.5px;'
-    + 'background:#EFF6FF;border-radius:8px;line-height:1.7',
-    d.modelDraft || '(초안 없음 \u2014 검증에 걸렸거나 만들 사실이 없었습니다)'));
+  // 출처를 안 적는다. 어느 쪽이 모델인지 알면 편집량이 그것에 끌려간다.
+  ['a','b'].forEach(side => {
+    const draft = side === 'a' ? d.draftA : d.draftB;
+    const edited = side === 'a' ? d.editedA : d.editedB;
+    const name = '초안 ' + side.toUpperCase();
 
-  if(d.stage === 'REVEALED'){
-    box.appendChild(brLabel('모델 초안을 발송 가능하게 고치세요'));
+    box.appendChild(brLabel(name));
+    box.appendChild(brEl('pre','white-space:pre-wrap;padding:10px 12px;margin:0;font-size:12.5px;'
+      + 'background:#EFF6FF;border-radius:8px;line-height:1.7',
+      draft || '(초안 없음 \u2014 검증에 걸렸거나 만들 사실이 없었습니다)'));
+
+    if(edited != null){
+      box.appendChild(brLabel(name + ' \uC744 \uACE0\uCE5C \uAC83'));
+      box.appendChild(brEl('pre','white-space:pre-wrap;padding:10px 12px;margin:0;font-size:12.5px;'
+        + 'background:#F0FDF4;border-radius:8px;line-height:1.7', edited));
+      return;
+    }
+    box.appendChild(brLabel(name + ' \uC744 \uBC1C\uC1A1 \uAC00\uB2A5\uD558\uAC8C \uACE0\uCE58\uC138\uC694'));
     const ta = brEl('textarea','width:100%;min-height:110px;padding:10px;font-size:13px;'
       + 'font-family:inherit;border:1px solid #CBD5E1;border-radius:8px;box-sizing:border-box');
-    ta.id = 'brInput'; ta.value = d.modelDraft || '';
+    ta.id = 'brInput_'+side; ta.value = draft || '';
     box.appendChild(ta);
-    const b = brEl('button','margin-top:8px','수정본 제출');
-    b.addEventListener('click', brSubmitEdited);
+    const b = brEl('button','margin-top:8px', name + ' \uC218\uC815\uBCF8 \uC81C\uCD9C');
+    b.addEventListener('click', () => brSubmitEdited(side));
     box.appendChild(b);
-  } else {
-    box.appendChild(brLabel('내가 고친 것'));
-    box.appendChild(brEl('pre','white-space:pre-wrap;padding:10px 12px;margin:0;font-size:12.5px;'
-      + 'background:#F0FDF4;border-radius:8px;line-height:1.7', d.editedDraft || ''));
-  }
+  });
 }
 
 async function brStats(){
@@ -608,12 +621,23 @@ async function brStats(){
   const d = r.data, box = brBox();
   box.textContent = ''; $('brStage').style.display = 'none';
   box.appendChild(brLabel('집계 \u2014 표본 '+d.samples+'건'));
+  const pct = x => (x*100).toFixed(1)+'%';
   const rows = [
-    ['편집률 중앙값 (모델 \u2192 수정본)', (d.medianEditRatio*100).toFixed(1)+'%  \u2190 낮을수록 좋음'],
-    ['괴리 중앙값 (내 답 \u2194 모델 초안)', (d.medianDivergence*100).toFixed(1)+'%'],
+    ['편집률 중앙값 (모델 \u2192 수정본)', pct(d.medianEditRatio)+'  \u2190 낮을수록 좋음'],
+    ['괴리 중앙값 (내 답 \u2194 모델 초안)', pct(d.medianDivergence)],
     ['그대로 쓴 건', d.usedAsIs+'건'],
     ['절반 이상 새로 쓴 건', d.rewritten+'건']
   ];
+  // 활성화 조건 1번. 표본이 없으면 판정하지 않는다 \u2014 안 잰 것과 못 넘은 것은 다르다.
+  if(d.pairedSamples > 0){
+    rows.push(['\u2500\u2500 쌍 비교 ('+d.pairedSamples+'건) \u2500\u2500','']);
+    rows.push(['모델 편집률 중앙값', pct(d.pairedModelMedian)]);
+    rows.push(['템플릿 편집률 중앙값', pct(d.pairedBaselineMedian)]);
+    rows.push(['조건 1: 템플릿보다 낮은가',
+      d.pairedModelMedian < d.pairedBaselineMedian ? '\u2713 통과' : '\u2717 미달']);
+  } else {
+    rows.push(['조건 1 (편집률)','아직 못 쟀음 \u2014 초안 둘을 다 고친 건이 없습니다']);
+  }
   const t = brEl('div','padding:8px 12px;font-size:12.5px;line-height:2');
   rows.forEach(([k,v]) => {
     const line = brEl('div','display:flex;justify-content:space-between');
