@@ -141,7 +141,7 @@ public class DraftService {
     private String reviseIfWorthIt(FactPack facts, String original) {
         DraftRubric.Score before = rubric.score(original, facts);
         // 루브릭은 <분류기 근거의 첫 금액> 하나만 본다. 사실 목록에 있는 나머지 금액이
-        // 통째로 빠져도 통과한다. 실측에서 12건 중 8건이 이 자리였다(13 문서 실험 8).
+        // 통째로 빠져도 통과한다. 실측에서 12건 중 8건이 이 자리였다(13 문서 실험 14).
         List<String> issues = new java.util.ArrayList<>(before.failed());
         List<Long> missing = coverageGuard.missing(original, facts);
         for (Long a : missing) {

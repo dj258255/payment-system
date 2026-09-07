@@ -86,6 +86,20 @@ class BlindReviewTest {
     }
 
     @Test
+    @DisplayName("순서 검사는 초안을 만들기 전에 한다 — 거절될 요청에 모델을 부르지 않는다")
+    void orderIsCheckedBeforeDraftsAreMade() {
+        BlindReview r = review();
+        // 초안 없이도 순서 위반이 잡혀야 한다. 서비스가 이걸 먼저 불러 모델 호출을 아낀다.
+        assertThatThrownBy(r::requireBlindDone)
+                .isInstanceOf(BlindReviewException.class)
+                .extracting(e -> ((BlindReviewException) e).code())
+                .isEqualTo("REVIEW_OUT_OF_ORDER");
+
+        r.submitBlind("내 답변");
+        r.requireBlindDone();     // 이제는 안 던진다
+    }
+
+    @Test
     @DisplayName("공개 전에는 수정본을 받을 수 없다")
     void cannotEditBeforeReveal() {
         BlindReview r = review();

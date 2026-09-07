@@ -82,7 +82,7 @@ public class PromptBuilder {
      * 용어 누출이 0% → 25% 로 깨졌다. 늘리는 것은 이미 해 봤고 나빠졌다.
      *
      * <p>이것이 낫다는 <b>가설</b>이지 처방이 아니다. 같은 모델·같은 설정에서
-     * 두 배치를 직접 비교해야 안다(13 문서 실험 7).
+     * 두 배치를 직접 비교해야 안다(13 문서 실험 13).
      */
     String rearranged(FactPack facts) {
         return HEAD + "\n" + SYSTEM + "\n" + examples.forCase(facts) + "\n"

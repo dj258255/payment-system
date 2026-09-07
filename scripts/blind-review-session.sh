@@ -71,10 +71,19 @@ case "${1:-up}" in
       sleep 5
     done
 
+    # 미해결 대사 건이 없으면 표본부터 심는다. 로컬 DB 에는 보통 없다.
+    pending=$(docker exec pay-mysql-1 mysql -N -B -uroot -proot pay -e \
+      "SELECT COUNT(*) FROM reconciliation_results WHERE status='PENDING'" 2>/dev/null || echo 0)
+    if [ "${pending:-0}" -lt "$COUNT" ]; then
+      echo "  미해결 대사 ${pending:-0}건. 표본을 심는다."
+      docker exec -i pay-mysql-1 mysql --default-character-set=utf8mb4 -uroot -proot pay \
+        < tools/seed-blind-review.sql 2>&1 | grep -v Warning || true
+    fi
+
     # 초안을 미리 고정한다. 블라인드 답은 안 채우므로 화면은 1단계부터 시작한다.
     ./gradlew captureTest --tests '*BlindReviewSeedTest*' --rerun -q \
       -Dseed.count="$COUNT" -Dseed.reviewer="${ADMIN_USER:-admin}" || \
-      echo "  (심기 실패 — 미해결 대사 건이 없으면 먼저 대사를 돌려야 한다)"
+      echo "  (심기 실패 — 앱 로그를 본다)"
 
     cat <<MSG
 

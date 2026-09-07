@@ -83,6 +83,8 @@ public class BlindReviewService {
     public BlindReviewView reveal(long reviewId) {
         BlindReview review = find(reviewId);
         if (!review.revealed()) {
+            // 순서를 <먼저> 막는다. 초안을 만들고 나서 막으면 거절될 요청에 모델을 두 번 부른다.
+            review.requireBlindDone();
             // 미리 심어 둔 표본이면 그대로 쓴다. 여기서 다시 뽑으면 모델이 다르게 써서
             // 심을 때 정한 A/B 배정과 어긋난다.
             if (!review.preloaded()) {

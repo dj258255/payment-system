@@ -13,9 +13,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 실험 8 — <b>금액이 빠지면 되묻는 것</b>이 값을 하는지 셋을 나란히 잰다(13 문서).
+ * 실험 14 — <b>금액이 빠지면 되묻는 것</b>이 값을 하는지 셋을 나란히 잰다(13 문서).
  *
- * <p>같은 하네스로 실험 7(프롬프트 배치)을 먼저 쟀고 12건에서 1건 차이라 안 켰다. 그때 초안을
+ * <p>같은 하네스로 실험 13(프롬프트 배치)을 먼저 쟀고 12건에서 1건 차이라 안 켰다. 그때 초안을
  * 열어 보고 찾은 진짜 병목이 <b>금액 누락</b>이라, 이번에는 그 자리를 고쳐서 다시 잰다.
  *
  * <p><b>판정 기준은 결과를 보기 전에 문서에 적었다.</b> 여기서 재는 것은 자동으로 잴 수 있는
@@ -92,7 +92,7 @@ class DraftPromptLayoutEvalTest {
     }
 
     @Test
-    @DisplayName("실험 8 — 금액이 빠지면 되묻는 것이 값을 하는가")
+    @DisplayName("실험 14 — 금액이 빠지면 되묻는 것이 값을 하는가")
     void compareLayouts() {
         var glossary = new CustomerGlossary();
         var examples = new DraftExamples();
@@ -107,7 +107,7 @@ class DraftPromptLayoutEvalTest {
         rows.add(run("② 모델 그대로", current, glossary, numeric, coverage, false));
         rows.add(run("③ 금액 빠지면 되묻기", current, glossary, numeric, coverage, true));
 
-        System.out.printf("%n  모델 %s · 사례 %d건 · 판정 기준은 13 문서 실험 8 에 먼저 적었다%n%n", MODEL, cases().size());
+        System.out.printf("%n  모델 %s · 사례 %d건 · 판정 기준은 13 문서 실험 14 에 먼저 적었다%n%n", MODEL, cases().size());
         System.out.printf("  %-12s %8s %10s %10s %9s %9s %7s%n",
                 "방식", "용어누출", "출처없는수", "금액결손", "p50", "p95", "빈초안");
         System.out.println("  " + "-".repeat(72));

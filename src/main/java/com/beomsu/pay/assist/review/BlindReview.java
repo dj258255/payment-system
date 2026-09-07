@@ -117,10 +117,7 @@ public class BlindReview {
      * 조용히 깨진다. 화면은 그대로 도는데 표본만 무의미해지는 종류의 사고다.
      */
     void markRevealed() {
-        if (blindReply == null) {
-            throw BlindReviewException.outOfOrder(
-                    "블라인드 답변을 먼저 제출해야 합니다. 초안을 먼저 보면 표본이 오염됩니다.");
-        }
+        requireBlindDone();
         if (revealedAt != null) {
             return;              // 멱등 — 이미 본 것을 그대로 돌려준다
         }
@@ -128,6 +125,20 @@ public class BlindReview {
             throw BlindReviewException.invalid("공개할 초안이 없습니다. 먼저 고정해야 합니다.");
         }
         this.revealedAt = Instant.now();
+    }
+
+    /**
+     * 순서를 먼저 막는다. <b>초안을 만들기 전에</b> 불러야 한다.
+     *
+     * <p>만들고 나서 막으면 거절될 요청에 모델을 두 번 부른다. 초안이 둘이라 20초 넘게
+     * 쓰고 나서 409 가 나가고, 그동안 화면은 멈춘 것처럼 보인다. 배관을 실제로 태워 보고
+     * 찾았다.
+     */
+    void requireBlindDone() {
+        if (blindReply == null) {
+            throw BlindReviewException.outOfOrder(
+                    "블라인드 답변을 먼저 제출해야 합니다. 초안을 먼저 보면 표본이 오염됩니다.");
+        }
     }
 
     /** 초안이 고정돼 있나. 공개와 다른 상태다. */
