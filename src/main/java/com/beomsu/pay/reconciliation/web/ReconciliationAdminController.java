@@ -86,22 +86,11 @@ class ReconciliationAdminController {
         return adminService.listMismatches(pageable);
     }
 
-    /**
-     * 대사 불일치 수기 확정 — <b>사유가 필수</b>다(ADR-008).
-     *
-     * <p>사유를 안 받으면 조사 결과가 어디에도 안 남아, 같은 패턴이 와도 매번 처음부터 조사하게 된다.
-     * 코드({@link ResolveCause})는 집계를 위해, 서술은 목록에 없는 새 원인을 담기 위해 함께 받는다.
-     */
-    @PostMapping("/{id}/resolve")
-    ReconMismatchView resolve(@PathVariable Long id,
-                              @Valid @RequestBody ResolveRequest request,
-                              Principal caller) {
-        String who = caller != null ? caller.getName() : "unknown";
-        audit.info("대사 불일치 수기 확정 요청 by={} reconResultId={} cause={}", who, id, request.cause());
-        ReconMismatchView view = adminService.resolve(id, who, request.cause(), request.note());
-        audit.info("대사 불일치 수기 확정 결과 by={} reconResultId={} cause={}", who, id, request.cause());
-        return view;
-    }
+    // 확정 엔드포인트는 여기 없다. 자료가 빠진 채로 확정하는 것을 서버가 막아야 하는데
+    // 이 모듈은 타임라인을 못 본다(timeline 이 reconciliation 을 이미 의존해 순환이다).
+    // 그래서 둘 다 읽을 수 있는 assist 로 옮겼다: POST /api/v1/admin/assist/resolve/{id}
+    // 여기 남겨 두면 화면이 게이트를 건너뛸 수 있어서 통째로 뺐다.
+
 
     /** 수기 확정 요청 본문. {@code cause}는 필수, {@code note}는 OTHER일 때 도메인이 필수로 강제한다. */
     record ResolveRequest(@NotNull ResolveCause cause, @Size(max = 500) String note) {}

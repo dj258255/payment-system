@@ -36,11 +36,18 @@ public class GuardedResolveService {
      * 확정한다. 자료가 빠져 있으면 {@code acknowledgedMissing} 이 그 목록과 <b>정확히 같을 때만</b>
      * 통과시킨다.
      *
-     * @param acknowledgedMissing 호출자가 "이게 빠진 것을 알고 있다"고 적어 낸 출처 목록.
+     * <p><b>서버가 조회한 누락 목록과 운영자가 확인한 목록이 같을 때만</b> 통과시킨다. 호출자가
+     * 보낸 목록만 보고 판단하지 않는다. 목록이 다르면 화면이 본 뒤로 자료 상태가 바뀐 것이므로
+     * 다시 보게 한다.
+     *
+     * @param acknowledgedMissing 운영자가 "이게 빠진 것을 확인했다"고 적어 낸 출처 목록.
      *                            빠진 것이 없으면 비워 둔다.
      */
-    public void resolve(long reconResultId, String orderNo, String actor,
+    public void resolve(long reconResultId, String actor,
                         ResolveCause cause, String note, java.util.List<String> acknowledgedMissing) {
+        // 주문번호는 <호출자가 준 것을 안 쓴다>. 대사 결과에서 직접 받는다. 화면이 다른 값을
+        // 실어 보내면 엉뚱한 주문의 자료를 보고 확정하게 된다.
+        String orderNo = reconciliation.orderNoOf(reconResultId);
         OrderTimeline timeline = timelineService.assemble(orderNo);
         java.util.List<String> missing = timeline.unavailable();
 

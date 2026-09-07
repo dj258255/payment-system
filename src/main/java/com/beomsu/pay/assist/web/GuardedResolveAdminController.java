@@ -4,7 +4,6 @@ import com.beomsu.pay.assist.resolve.GuardedResolveService;
 import com.beomsu.pay.assist.resolve.IncompleteEvidenceException;
 import com.beomsu.pay.reconciliation.ResolveCause;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
@@ -37,8 +36,7 @@ class GuardedResolveAdminController {
     ResponseEntity<Void> resolve(@PathVariable long reconResultId,
                                  @Valid @RequestBody Request body,
                                  Principal caller) {
-        service.resolve(reconResultId, body.orderNo(),
-                caller != null ? caller.getName() : "unknown",
+        service.resolve(reconResultId, caller != null ? caller.getName() : "unknown",
                 body.cause(), body.note(), body.acknowledgedMissing());
         return ResponseEntity.noContent().build();
     }
@@ -53,8 +51,8 @@ class GuardedResolveAdminController {
                 .body(Map.of("code", e.code(), "message", e.getMessage(), "missing", e.missing()));
     }
 
-    record Request(@NotBlank @Size(max = 64) String orderNo,
-                   @NotNull ResolveCause cause,
+    // 주문번호는 안 받는다. 서버가 대사 결과에서 직접 꺼낸다.
+    record Request(@NotNull ResolveCause cause,
                    @Size(max = 500) String note,
                    List<String> acknowledgedMissing) {}
 }

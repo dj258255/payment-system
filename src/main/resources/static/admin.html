@@ -739,13 +739,26 @@ function pickCause(cause){
   logLine('ok','원인 후보 선택: '+cause+' — 확정하려면 수기 확정을 누르세요');
 }
 // ── 대사 수기 확정 ──
+// 서버가 알려 준 <빠진 출처> 목록. 확인 뒤 다시 누르면 이 목록을 함께 보낸다.
+// 화면이 임의로 채우지 않는다 — 서버가 준 것을 그대로 돌려보내야 통과한다.
+let rcAckMissing = [];
 // 사유를 필수로 보낸다(ADR-008). 서버 도메인도 같은 규칙을 강제하지만, 화면에서 먼저 막아
 // 왕복 한 번을 아낀다. 최종 검증은 서버가 한다 — 화면 검증만 믿지 않는다.
 async function rcResolve(){
   const id=$('rcId').value.trim(), cause=$('rcCause').value, note=$('rcNote').value.trim();
   if(!id){logLine('err','✗ 대사 결과 ID를 입력하세요');return}
   if(cause==='OTHER'&&!note){logLine('err','✗ 사유가 기타면 조사 내용이 필수입니다');return}
-  await api('POST','/api/v1/admin/reconciliations/'+id+'/resolve',{cause,note:note||null});
+  // 확정은 <자료가 온전한지 서버가 확인하는> 경로로만 간다. 대사 모듈의 직통 엔드포인트는 없앴다.
+  // 자료가 빠져 있으면 409 로 거절되고, 그 목록을 확인했다고 다시 보내야 통과한다.
+  const r = await api('POST','/api/v1/admin/assist/resolve/'+id,
+                      {cause, note:note||null, acknowledgedMissing:rcAckMissing});
+  if(!r.ok && r.data && r.data.code === 'RESOLVE_EVIDENCE_INCOMPLETE'){
+    rcAckMissing = r.data.missing || [];
+    logLine('err','✗ 자료를 못 가져온 출처가 있습니다: '+rcAckMissing.join(', ')
+                  +' — 확인하셨으면 확정을 한 번 더 누르십시오');
+    return;
+  }
+  rcAckMissing = [];
   adm('GET','/api/v1/admin/reconciliations/mismatches','recon');
 }
 // ── 강제취소 ──

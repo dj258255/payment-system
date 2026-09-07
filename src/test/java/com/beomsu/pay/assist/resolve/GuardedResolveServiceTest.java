@@ -36,8 +36,22 @@ class GuardedResolveServiceTest {
     }
 
     private void timelineWith(List<String> unavailable) {
+        // 주문번호는 <서버가 대사 결과에서> 꺼낸다. 호출자가 준 값을 쓰지 않는다.
+        when(reconciliation.orderNoOf(1L)).thenReturn("ORD-1");
         when(timelineService.assemble("ORD-1"))
                 .thenReturn(new OrderTimeline("ORD-1", List.of(), unavailable));
+    }
+
+    @Test
+    @DisplayName("주문번호는 호출자가 준 것을 안 쓰고 대사 결과에서 직접 꺼낸다")
+    void orderNoComesFromTheReconResultNotTheCaller() {
+        timelineWith(List.of());
+
+        service.resolve(1L, "admin", ResolveCause.PG_FILE_DELAY, null, List.of());
+
+        // 엉뚱한 주문번호를 실어 보내도 서버가 본 것은 대사 결과가 가리키는 주문이다
+        verify(reconciliation).orderNoOf(1L);
+        verify(timelineService).assemble("ORD-1");
     }
 
     @Test
@@ -45,7 +59,7 @@ class GuardedResolveServiceTest {
     void passesWhenComplete() {
         timelineWith(List.of());
 
-        service.resolve(1L, "ORD-1", "admin", ResolveCause.PG_FILE_DELAY, "메모", List.of());
+        service.resolve(1L, "admin", ResolveCause.PG_FILE_DELAY, "메모", List.of());
 
         verify(reconciliation).resolve(1L, "admin", ResolveCause.PG_FILE_DELAY, "메모");
     }
@@ -56,7 +70,7 @@ class GuardedResolveServiceTest {
         timelineWith(List.of("LEDGER", "SETTLEMENT"));
 
         assertThatThrownBy(() ->
-                service.resolve(1L, "ORD-1", "admin", ResolveCause.PG_FILE_DELAY, "메모", List.of()))
+                service.resolve(1L, "admin", ResolveCause.PG_FILE_DELAY, "메모", List.of()))
                 .isInstanceOf(IncompleteEvidenceException.class)
                 .extracting(e -> ((IncompleteEvidenceException) e).code())
                 .isEqualTo("RESOLVE_EVIDENCE_INCOMPLETE");
@@ -70,7 +84,7 @@ class GuardedResolveServiceTest {
         timelineWith(List.of("LEDGER", "SETTLEMENT"));
 
         assertThatThrownBy(() ->
-                service.resolve(1L, "ORD-1", "admin", ResolveCause.PG_FILE_DELAY, null, List.of("LEDGER")))
+                service.resolve(1L, "admin", ResolveCause.PG_FILE_DELAY, null, List.of("LEDGER")))
                 .isInstanceOf(IncompleteEvidenceException.class);
 
         verify(reconciliation, never()).resolve(anyLong(), any(), any(), any());
@@ -81,7 +95,7 @@ class GuardedResolveServiceTest {
     void passesWhenAcknowledgedButRecordsIt() {
         timelineWith(List.of("LEDGER", "SETTLEMENT"));
 
-        service.resolve(1L, "ORD-1", "admin", ResolveCause.PG_FILE_DELAY, "메모",
+        service.resolve(1L, "admin", ResolveCause.PG_FILE_DELAY, "메모",
                 List.of("SETTLEMENT", "LEDGER"));
 
         var note = org.mockito.ArgumentCaptor.forClass(String.class);

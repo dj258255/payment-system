@@ -84,6 +84,20 @@ public class ReconciliationAdminService {
                 matched, internalOnly, externalOnly, amountMismatch, pending);
     }
 
+    /**
+     * 이 대사 결과가 가리키는 주문번호.
+     *
+     * <p>확정 게이트가 <b>호출자가 준 주문번호를 믿지 않고</b> 여기서 다시 받으려고 열어 뒀다.
+     * 화면이 다른 주문번호를 실어 보내면 엉뚱한 주문의 자료를 보고 확정하게 된다.
+     */
+    @Transactional(readOnly = true)
+    public String orderNoOf(long id) {
+        return repository.findById(id)
+                .orElseThrow(() -> new ReconciliationException("RECON_RESULT_NOT_FOUND",
+                        "대사 결과를 찾을 수 없습니다: " + id))
+                .getOrderNo();
+    }
+
     /** 사람 확인이 필요한 불일치(PENDING) 페이지. */
     @Transactional(readOnly = true)
     public Page<ReconMismatchView> listMismatches(Pageable pageable) {
