@@ -69,15 +69,16 @@ public class FraudPostHocListener {
         FraudResult result = fraudService.evaluate(
                 new FraudCheckRequest(0L, cardKey, null, null, e.amount()));
 
-        // REVIEW/BLOCK만 심사 큐에 적재한다(ALLOW/CHALLENGE는 제외).
-        if (result.decision() == FdsDecision.REVIEW || result.decision() == FdsDecision.BLOCK) {
-            reviewRepository.save(
-                    FraudReview.flagged(e.orderNo(), e.paymentId(), cardKey, e.amount(), result));
-        }
+        // 섀도. 점수를 먼저 낸다. 심사에 실어 보내야 큐가 그 순서로 정렬된다.
+        // <b>큐에 넣고 빼는 데는 안 쓴다.</b> 아래 조건은 규칙 판정만 본다(docs/27 5-1절).
+        Double risk = shadowScorer.score(cardKey, e.orderNo(), current).orElse(null);
 
-        // 섀도. 점수를 내고 기록만 한다. 큐에 넣지 않으므로 경보율이 안 늘고,
-        // 켤지 정할 근거가 실 트래픽에서 쌓인다(docs/27 5-2절 조건 C).
-        shadowScorer.score(cardKey, e.orderNo(), current);
+        // REVIEW/BLOCK만 심사 큐에 적재한다(ALLOW/CHALLENGE는 제외).
+        // 집합은 규칙이 정하고 순서만 모델이 정한다. 모델을 꺼도 이 조건은 그대로다.
+        if (result.decision() == FdsDecision.REVIEW || result.decision() == FdsDecision.BLOCK) {
+            reviewRepository.save(FraudReview.flagged(
+                    e.orderNo(), e.paymentId(), cardKey, e.amount(), result, risk));
+        }
     }
 
     /**

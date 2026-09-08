@@ -190,4 +190,49 @@ class FraudPostHocListenerTest {
         org.mockito.Mockito.verify(shadowScorer).score(any(), any(), any());
         org.mockito.Mockito.verify(reviewRepository, org.mockito.Mockito.never()).save(any());
     }
+
+    @Test
+    @DisplayName("섀도 점수를 심사에 실어 보낸다 — 큐 정렬이 그 값을 쓴다")
+    void shadowScoreIsCarriedIntoTheReview() {
+        when(paymentService.paymentKeyOf(10L)).thenReturn(Optional.of("card-xyz"));
+        when(fraudService.evaluate(any())).thenReturn(
+                new FraudResult(70, FdsDecision.REVIEW, List.of("HIGH_AMOUNT")));
+        when(shadowScorer.score(any(), any(), any())).thenReturn(Optional.of(0.87));
+
+        listener.onConfirmed(event());
+
+        var saved = org.mockito.ArgumentCaptor.forClass(
+                com.beomsu.pay.fraud.review.FraudReview.class);
+        org.mockito.Mockito.verify(reviewRepository).save(saved.capture());
+        assertThat(saved.getValue().getModelRisk()).isEqualTo(0.87);
+    }
+
+    @Test
+    @DisplayName("홀드아웃이라 점수가 없어도 큐에는 들어간다 — 집합은 규칙이 정한다")
+    void heldOutReviewStillEntersTheQueue() {
+        when(paymentService.paymentKeyOf(10L)).thenReturn(Optional.of("card-xyz"));
+        when(fraudService.evaluate(any())).thenReturn(
+                new FraudResult(70, FdsDecision.REVIEW, List.of("HIGH_AMOUNT")));
+        when(shadowScorer.score(any(), any(), any())).thenReturn(Optional.empty());
+
+        listener.onConfirmed(event());
+
+        var saved = org.mockito.ArgumentCaptor.forClass(
+                com.beomsu.pay.fraud.review.FraudReview.class);
+        org.mockito.Mockito.verify(reviewRepository).save(saved.capture());
+        assertThat(saved.getValue().getModelRisk()).isNull();
+    }
+
+    @Test
+    @DisplayName("모델이 높게 봐도 규칙이 ALLOW 면 큐에 안 넣는다 — 집합을 모델이 못 바꾼다")
+    void modelCannotAddToTheQueue() {
+        when(paymentService.paymentKeyOf(10L)).thenReturn(Optional.of("card-xyz"));
+        when(fraudService.evaluate(any())).thenReturn(
+                new FraudResult(0, FdsDecision.ALLOW, List.of()));
+        when(shadowScorer.score(any(), any(), any())).thenReturn(Optional.of(0.99));
+
+        listener.onConfirmed(event());
+
+        org.mockito.Mockito.verify(reviewRepository, org.mockito.Mockito.never()).save(any());
+    }
 }

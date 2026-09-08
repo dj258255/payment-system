@@ -35,6 +35,14 @@ public class FraudReview {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * 섀도 모델 점수. <b>정렬에만 쓰고 큐에 넣고 빼는 데는 안 쓴다.</b>
+     *
+     * <p>집합은 규칙이 정하고 순서만 모델이 정한다. 그래서 경보율이 안 늘고, 순서만 쓰므로
+     * 기저율에 안 휘둘린다. 홀드아웃에 들었거나 채점이 실패하면 {@code null} 이다.
+     */
+    private Double modelRisk;
+
     @Column(nullable = false, length = 200)
     private String orderNo;
 
@@ -91,6 +99,14 @@ public class FraudReview {
      * 사후 탐지 결과를 PENDING 심사 항목으로 적재한다. 점수·판정·근거는 재평가 결과({@link FraudResult})
      * 에서 가져오고, 근거는 콤마로 이어 500자로 방어 절단한다.
      */
+    /** 모델 점수를 함께 남긴다. 홀드아웃이거나 채점이 실패했으면 {@code null} 을 준다. */
+    public static FraudReview flagged(String orderNo, long paymentId, String cardKey, long amount,
+                                      FraudResult result, Double modelRisk) {
+        FraudReview r = flagged(orderNo, paymentId, cardKey, amount, result);
+        r.modelRisk = modelRisk;
+        return r;
+    }
+
     public static FraudReview flagged(String orderNo, long paymentId, String cardKey, long amount,
                                       FraudResult result) {
         String reasons = String.join(",", result.reasons());

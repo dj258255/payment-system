@@ -36,9 +36,22 @@ class FraudReviewAdminController {
     private final RuleFalsePositiveService ruleFalsePositiveService;
 
     /** 상태별 심사 항목 목록(기본 PENDING = 미결 건). */
+    /**
+     * 심사 큐. {@code order=risk} 면 모델 점수가 높은 것부터 준다.
+     *
+     * <p><b>집합은 규칙이 정하고 순서만 모델이 정한다.</b> 어느 순서로 보든 큐에 든 건은
+     * 같다. 그래서 모델을 꺼도 심사자가 볼 건이 줄지 않는다.
+     *
+     * <p><b>기본이 {@code id} 순인 이유</b>: 지금까지 심사자가 보던 순서다. 기본값을 바꾸면
+     * 켠 것을 아무도 모르는 채로 화면이 달라진다. 켰다는 것을 아는 상태에서 골라 쓰게 한다.
+     */
     @GetMapping
     Page<FraudReviewView> list(@RequestParam(defaultValue = "PENDING") FraudReviewStatus status,
+                               @RequestParam(defaultValue = "id") String order,
                                @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
+        if ("risk".equalsIgnoreCase(order)) {
+            return adminService.listByRisk(status, pageable);
+        }
         return adminService.list(status, pageable);
     }
 

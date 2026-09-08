@@ -21,6 +21,14 @@ public interface FraudReviewRepository extends JpaRepository<FraudReview, Long> 
     /** 어드민 관측용 — 상태별 심사 항목 페이지(기본 PENDING = 미결 건). 전건 로딩 방지 위해 페이지 단위. */
     Page<FraudReview> findByStatus(FraudReviewStatus status, Pageable pageable);
 
+    /**
+     * 모델 점수가 높은 것부터. <b>집합은 그대로고 순서만 바뀐다.</b>
+     *
+     * <p>MySQL 은 {@code DESC} 정렬에서 NULL 을 뒤로 보낸다. 홀드아웃에 들었거나 채점이
+     * 실패해 점수가 없는 건이 아래로 간다. 그 건들이 큐에서 빠지는 것은 아니다.
+     */
+    Page<FraudReview> findByStatusOrderByModelRiskDesc(FraudReviewStatus status, Pageable pageable);
+
     /** 상태별 건수 — 심사 큐 깊이 게이지가 쓴다. 스크레이프마다 count 한 번만 돈다. */
     long countByStatus(FraudReviewStatus status);
 
