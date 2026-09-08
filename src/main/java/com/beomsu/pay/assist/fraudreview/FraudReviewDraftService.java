@@ -7,6 +7,7 @@ import com.beomsu.pay.fraud.FraudReviewFactsPort;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -54,16 +55,28 @@ public class FraudReviewDraftService {
     private final NumericProvenanceGuard guard;
     private final MeterRegistry registry;
 
+    /**
+     * 화면에 나갈 구현을 <b>이름으로</b> 고른다.
+     *
+     * <p>예전에는 모델 어댑터에 {@code @Primary} 를 붙여 주입으로 갈랐는데, 그러면
+     * <b>모델이 빈으로 떠 있다는 사실만으로 화면이 바뀐다.</b> 블라인드 비교 표본을 쌓으려면
+     * 모델을 돌려야 하는데, 그것 때문에 심사 화면까지 바뀌면 켤 근거를 모으기도 전에 켜 버리는
+     * 셈이 된다. 그래서 <b>도는 것</b>과 <b>나가는 것</b>을 갈랐다.
+     */
     public FraudReviewDraftService(FraudReviewFactsPort facts,
-                                   FraudReviewDraftPort primary,
+                                   List<FraudReviewDraftPort> ports,
                                    TemplateFraudReviewAdapter template,
                                    NumericProvenanceGuard guard,
-                                   MeterRegistry registry) {
+                                   MeterRegistry registry,
+                                   @Value("${app.assist.fraud-review-provider:template}") String provider) {
         this.facts = facts;
-        this.primary = primary;
         this.template = template;
         this.guard = guard;
         this.registry = registry;
+        this.primary = ports.stream()
+                .filter(p -> p.name().startsWith(provider))
+                .findFirst()
+                .orElse(template);   // 이름이 안 맞으면 템플릿이다. 없는 모델을 부르는 것보다 낫다
     }
 
     /**

@@ -41,7 +41,9 @@ class FraudReviewDraftServiceTest {
 
     private FraudReviewDraftService serviceWith(FraudReviewDraftPort primary) {
         FraudReviewFactsPort port = id -> id == REVIEW_ID ? Optional.of(facts()) : Optional.empty();
-        return new FraudReviewDraftService(port, primary, template, guard, registry);
+        // provider 이름으로 고르므로 그 이름을 그대로 준다.
+        return new FraudReviewDraftService(port, List.of(primary, template), template,
+                guard, registry, primary.name());
     }
 
     /** 고정된 문장을 돌려주는 가짜 모델. */

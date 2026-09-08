@@ -4,7 +4,6 @@ import com.beomsu.pay.fraud.FraudReviewFacts;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -29,9 +28,11 @@ import java.util.Optional;
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "app.assist.fraud-review-provider", havingValue = "ollama")
-// 템플릿 어댑터는 대조군으로 항상 떠 있다. 켜졌을 때 포트 주입이 이쪽으로 오게 한다.
-@Primary
+// <b>"빈으로 있는 것"과 "심사 화면에 나가는 것"을 갈랐다.</b> 예전에는 provider 로 둘을
+// 한꺼번에 정했는데, 그러면 provider 가 template 일 때 이 어댑터가 아예 안 떠서
+// 블라인드 비교가 <b>템플릿 대 템플릿</b>이 됐다. 표본이 영원히 안 쌓인다.
+// 이 플래그는 <b>모델을 돌릴지</b>만 정하고, 화면에 무엇이 나갈지는 provider 가 정한다.
+@ConditionalOnProperty(name = "app.assist.ollama.fraud-review-enabled", havingValue = "true")
 public class OllamaFraudReviewAdapter implements FraudReviewDraftPort {
 
     private final RestClient client;

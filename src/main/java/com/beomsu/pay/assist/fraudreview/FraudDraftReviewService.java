@@ -32,13 +32,32 @@ public class FraudDraftReviewService {
     private final TemplateFraudReviewAdapter baseline;
     private final FraudDraftReviewRepository repository;
 
-    public FraudDraftReviewService(FraudReviewFactsPort facts, FraudReviewDraftPort model,
+    /**
+     * <b>모델 구현을 명시적으로 고른다.</b> 주입에 맡기면 안 된다.
+     *
+     * <p>여기서 {@code FraudReviewDraftPort} 하나를 받게 두면 모델이 안 떠 있을 때 템플릿이
+     * 주입돼 <b>템플릿 대 템플릿</b>을 비교하게 된다. 편집률 차이가 0 으로 수렴하고, 그
+     * 수치를 보고 "모델이 템플릿보다 낫지 않다" 고 읽게 된다. 실제로는 비교를 안 한 것이다.
+     *
+     * <p>모델이 없으면 {@code null} 로 둔다. 그러면 {@link #reveal} 이 공개를 거절하고,
+     * 표본이 안 쌓이는 이유가 <b>모델이 꺼져 있다</b>로 드러난다.
+     */
+    public FraudDraftReviewService(FraudReviewFactsPort facts,
+                                   List<FraudReviewDraftPort> ports,
                                    TemplateFraudReviewAdapter baseline,
                                    FraudDraftReviewRepository repository) {
         this.facts = facts;
-        this.model = model;
         this.baseline = baseline;
         this.repository = repository;
+        this.model = ports.stream()
+                .filter(p -> !p.name().equals(baseline.name()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /** 비교할 모델이 떠 있는가. 화면이 "표본 0건" 과 "모델이 꺼져 있음" 을 구별해야 한다. */
+    public boolean modelAvailable() {
+        return model != null;
     }
 
     /** 심사자가 자기 메모를 쓸 자리를 연다. 초안은 아직 안 준다. */
@@ -65,6 +84,11 @@ public class FraudDraftReviewService {
      */
     @Transactional
     public Optional<FraudDraftReview> reveal(long fraudReviewId, String reviewer) {
+        if (model == null) {
+            // 모델이 안 떠 있으면 비교가 아니다. 템플릿 둘을 놓고 편집률을 재면
+            // 차이가 0 으로 나오고, 그 0 을 "모델이 낫지 않다" 로 읽게 된다.
+            return Optional.empty();
+        }
         var row = require(fraudReviewId, reviewer);
         var f = facts.factsOf(fraudReviewId).orElse(null);
         if (f == null) {

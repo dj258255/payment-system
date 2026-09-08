@@ -95,7 +95,8 @@ class FraudDraftReviewServiceTest {
     @BeforeEach
     void setUp() {
         rows.clear();
-        service = new FraudDraftReviewService(port(), fixed("모델이 쓴 문장", "ollama:qwen3:8b"),
+        service = new FraudDraftReviewService(port(),
+                List.of(fixed("모델이 쓴 문장", "ollama:qwen3:8b"), new TemplateFraudReviewAdapter()),
                 new TemplateFraudReviewAdapter(), repository());
     }
 
@@ -139,7 +140,7 @@ class FraudDraftReviewServiceTest {
     @Test
     @DisplayName("모델 초안이 비면 공개하지 않는다 — 한쪽만 있는 화면은 비교가 아니다")
     void oneSidedRevealIsRefused() {
-        service = new FraudDraftReviewService(port(), fixed(null, "ollama"),
+        service = new FraudDraftReviewService(port(), List.of(fixed(null, "ollama")),
                 new TemplateFraudReviewAdapter(), repository());
         service.open(REVIEW_ID, ME);
         service.blind(REVIEW_ID, ME, "메모");
@@ -189,5 +190,33 @@ class FraudDraftReviewServiceTest {
     @DisplayName("없는 심사는 못 연다")
     void missingReviewCannotOpen() {
         assertThat(service.open(999L, ME)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("모델이 안 떠 있으면 공개를 거절한다 — 템플릿 둘을 비교하면 차이가 0으로 나온다")
+    void withoutModelThereIsNoComparison() {
+        var onlyTemplate = new FraudDraftReviewService(port(),
+                List.of(new TemplateFraudReviewAdapter()),
+                new TemplateFraudReviewAdapter(), repository());
+
+        assertThat(onlyTemplate.modelAvailable())
+                .as("표본 0건과 모델이 꺼진 것을 화면이 구별해야 한다")
+                .isFalse();
+
+        onlyTemplate.open(REVIEW_ID, ME);
+        onlyTemplate.blind(REVIEW_ID, ME, "메모");
+        assertThat(onlyTemplate.reveal(REVIEW_ID, ME)).isEmpty();
+        assertThat(onlyTemplate.stats().judged()).isZero();
+    }
+
+    @Test
+    @DisplayName("공개된 초안 둘은 서로 다른 구현이 만든 것이다")
+    void revealedPairComesFromTwoImplementations() {
+        service.open(REVIEW_ID, ME);
+        service.blind(REVIEW_ID, ME, "메모");
+        var row = service.reveal(REVIEW_ID, ME).orElseThrow();
+
+        assertThat(row.getModelSource()).isNotEqualTo(row.getBaselineSource());
+        assertThat(row.getModelDraft()).isNotEqualTo(row.getBaselineDraft());
     }
 }
