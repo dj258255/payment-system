@@ -247,9 +247,16 @@ BENCH_INFRA=external BENCH_DB_PORT=3307 BENCH_ALLOW_DB_RESET=1 ./gradlew bench -
 - [docs/03 아키텍처 설계](docs/03-아키텍처-설계.md): 멱등성, Saga/Outbox, 원장, 웹훅, 정산/대사
 - [docs/04 장애 시나리오 설계](docs/04-장애-시나리오-설계.md): 외부 API 실패 처리 전반
 - [docs/05 성능 전략](docs/05-성능개선-전략.md): 동시성 제어, 부하테스트, 관측성
-- [docs/09 ERD](docs/09-ERD-설계.md) ([다이어그램](docs/images/erd.svg)), [docs/10 API 스펙](docs/10-API-스펙.md)
+- [docs/09 ERD](docs/09-ERD-설계.md) ([핵심 다이어그램](docs/images/erd-core.svg)) — 39개 테이블. 돈이 지나가는 경로와 **두 번 처리되면 안 되는 자리마다 걸린 유니크 제약**, [docs/10 API 스펙](docs/10-API-스펙.md)
 - [docs/11 AI 운영 자동화 검토](docs/11-AI-운영자동화-검토.md): **결정** — 대사 원인 8개 중 6개는 산수, 설계 원칙 4가지, 자동 확정 등급, 만들기 전에 정할 것(홀드아웃·인젝션 전제)
 - [docs/12 AI 운영 자동화 사례 연구](docs/12-AI-운영자동화-사례연구.md): **근거** — Klarna·Amex·DoorDash·eBay·Zalando·Meta·Uber·Stripe·PayPal·Nubank·Monzo·카카오뱅크·토스. 출처 신뢰도와 미공개 항목까지 표시
+- 실측 기록 — 최근 것들:
+  [docs/17 FDS 지연 예산](docs/17-FDS-지연예산-실측.md) (판정 단독 대 승인과 합산, 합의 p99 는 p99 의 합이 아니다) ·
+  [docs/22 제재 스크리닝 이름 매칭](docs/22-제재-스크리닝-이름매칭.md) ·
+  [docs/23 배치 조회 상한](docs/23-배치-조회-상한.md) ·
+  [docs/24 조회 인덱스 실측](docs/24-조회-인덱스-실측.md) (추정 50행 대 실제 30만 행, 22쌍 전수 감사) ·
+  [docs/25 알림 소음 억제와 표본 바닥](docs/25-알림-소음-억제와-표본바닥.md) ·
+  [docs/26 FDS 규칙별 오탐](docs/26-FDS-규칙별-오탐.md)
 - [docs/adr](docs/adr/): 아키텍처 결정 기록 — 최근 것들:
   [ADR-010 무엇을 만들지 않을지](docs/adr/ADR-010-what-not-to-build.md) ·
   [ADR-011 주문 타임라인](docs/adr/ADR-011-order-timeline-assembly.md) ·

@@ -5,16 +5,18 @@
 
 ## 0. 전체 ERD
 
-![pay ERD: 주문·결제·원장·정산/대사·회원/에스크로/분쟁·월렛/포인트·이벤트 인프라 그룹과 관계](images/erd.svg)
+![pay 핵심 ERD: 결제 한 건이 지나가는 길과 두 번 처리되면 안 되는 자리마다 걸린 유니크 제약](images/erd-core.svg)
 
-핵심 그룹만 표기한 다이어그램이고, 코어 관계는 아래 mermaid와 각 절의 DDL이 기준이다.
+**돈이 지나가는 경로만 골라 그렸고, 각 자리를 지키는 유니크 제약을 함께 적었다.** 전체는 **39개 테이블**이다(Spring Modulith 내장 `event_publication` 둘 제외). 코어 관계는 아래 mermaid와 각 절의 DDL이 기준이다.
+
+> 이 문서는 설계 당시의 이름과 구현된 이름이 갈리는 자리가 있다. **`~~취소선~~`은 설계만 하고 안 만든 것**이고,
+> 아래 12절은 **만들었는데 이 문서에 절이 없던 것**을 모아 둔 자리다.
 
 ```mermaid
 erDiagram
     orders ||--o{ order_items : contains
     orders ||--o{ payments : "1:N (재시도 허용)"
     payments ||--o{ payment_history : "상태 전이 이력"
-    payments ||--o{ payment_cancels : "취소 이력"
     payments ||--o{ compensation_tasks : "망취소/보상"
     orders ||--o{ ledger_transactions : ""
     ledger_transactions ||--|{ ledger_entries : "차/대변 쌍"
@@ -441,6 +443,32 @@ append-only 이력 테이블에 남겨 감사·복구의 진실 원천으로 삼
 - **분쟁/차지백**: `disputes`(`chargeback_id` 유니크 — 웹훅 멱등키 / `order_no`·`payment_id` / `status` 상태머신 /
   `respond_by_deadline`·`evidence_memo`·`resolved_at` / **@Version** 동시 확정 레이스 차단). 패소 시 원장에
   `(txType=DISPUTE_LOST, sourceType=DISPUTE, sourceId=disputeId)` 유니크로 멱등 역분개.
+
+## 12. 이 문서에 절이 없던 구현 테이블
+
+설계 문서를 쓴 뒤에 만든 것들이라 위 절에 자리가 없었다. **전부 실제로 존재하는 테이블**이고,
+여기 모아 두는 이유는 문서만 읽고 스키마를 짐작하면 어긋나기 때문이다.
+
+| 테이블 | 무엇 | 지키는 제약·규칙 |
+|---|---|---|
+| `sellers` | 판매자. 정산 지급 대상 | `uk_seller_business_number` (사업자번호) |
+| `seller_screenings` | 제재 명단 대조 이력 | 대조한 명단 판·점수·판정을 함께 남긴다 |
+| `escrow_holds` | 구매확정 전까지 지급을 붙잡는다 | `uk_escrow_order` (order_no) |
+| `settlement_adjustments` | 부분취소로 정산액을 되돌린 기록 | `uk_settlement_adjustment_order_seq` (order_no, cancel_seq) |
+| `fraud_reviews` | 이상거래 사람 심사 큐 | 상태 전이는 PENDING 에서만 출발 |
+| `virtual_accounts` | 가상계좌 입금 대기 | 만료 스케줄러가 회수 |
+| `cash_receipts` | 현금영수증 발급 이력 | |
+| `force_cancel_requests` | 강제취소 2인 승인 | 요청자 본인은 승인 못 한다 |
+| `audit_logs` | 상태를 바꾼 액션의 요청·결과 쌍 | append-only |
+| `dead_letters` | 소비에 끝내 실패한 이벤트 | 어드민에서 재처리 |
+| `blind_reviews` | 상담 초안 블라인드 평가 | `uk_blind_review_recon_reviewer` |
+| `suggestion_outcomes` | 모델 제안과 사람 확정의 대조 | `uk_suggestion_outcome_recon` |
+| `narrative_audits` · `narrative_preferences` | 타임라인 서술의 가드 결과와 선호 | |
+
+`settlements` 의 유니크 키는 **두 번 바뀌었다**. `(settlement_date)` → `(settlement_date, currency)` →
+판매자별로 가르며 `seller_id` 를 더했는데, **MySQL 은 유니크 인덱스에서 NULL 을 서로 다른 값으로 본다.**
+이 서비스에서 `NULL` 은 플랫폼 직판이라 기본값이었고 같은 날짜 정산이 몇 줄이든 들어갔다. 생성 컬럼
+`seller_key = COALESCE(seller_id, 0)` 으로 NULL 을 하나로 모아 되살렸다(V42).
 
 ## 확장 여지로 남긴 것
 

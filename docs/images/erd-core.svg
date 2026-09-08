@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760" font-family="'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif">
+<rect width="1400" height="760" fill="#ffffff"/>
+<defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0,0 L10,5 L0,10 z" fill="#868e96"/>
+  </marker>
+</defs>
+
+<text x="700" y="44" font-size="27" font-weight="700" fill="#212529" text-anchor="middle">결제 한 건이 지나가는 길과, 두 번 처리되면 안 되는 자리</text>
+<text x="700" y="74" font-size="15" font-weight="500" fill="#868e96" text-anchor="middle">화살표는 돈이 흐르는 방향이고, 각 상자 아래는 그 자리를 지키는 DB 유니크 제약이다. 애플리케이션 검사가 아니라 스키마가 막는다</text>
+
+<rect x="60" y="106" width="1280" height="104" rx="10" fill="#f8f9fa" stroke="#dee2e6"/>
+<text x="80" y="132" font-size="14" font-weight="700" fill="#868e96">들어오는 것을 거르는 자리</text>
+
+<rect x="300" y="140" width="300" height="56" rx="8" fill="#ffffff" stroke="#adb5bd"/>
+<text x="450" y="163" font-size="15" font-weight="700" fill="#212529" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">idempotency_keys</text>
+<text x="450" y="184" font-size="12" fill="#868e96" text-anchor="middle">UNIQUE(idempotency_key, api_path, http_method)</text>
+
+<rect x="620" y="140" width="240" height="56" rx="8" fill="#ffffff" stroke="#adb5bd"/>
+<text x="740" y="163" font-size="15" font-weight="700" fill="#212529" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">webhook_events</text>
+<text x="740" y="184" font-size="12" fill="#868e96" text-anchor="middle">UNIQUE(external_event_id)</text>
+
+<rect x="880" y="140" width="260" height="56" rx="8" fill="#ffffff" stroke="#adb5bd"/>
+<text x="1010" y="163" font-size="15" font-weight="700" fill="#212529" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">processed_events</text>
+<text x="1010" y="184" font-size="12" fill="#868e96" text-anchor="middle">UNIQUE(event_key, consumer)</text>
+
+<path d="M450 210 L450 262" stroke="#868e96" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+<text x="462" y="242" font-size="12" fill="#868e96">같은 요청·같은 웹훅·같은 이벤트를 두 번 받아도 한 번만 지난다</text>
+
+<rect x="60" y="278" width="200" height="104" rx="10" fill="#e7f5ff" stroke="#4dabf7"/>
+<text x="160" y="304" font-size="16" font-weight="700" fill="#212529" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">orders</text>
+<text x="160" y="326" font-size="14" fill="#495057" text-anchor="middle">주문</text>
+<text x="160" y="352" font-size="12" fill="#868e96" text-anchor="middle">UNIQUE(order_no)</text>
+<text x="160" y="370" font-size="11" fill="#adb5bd" text-anchor="middle">상태머신이 같은 주문의 다른 요청을 막는다</text>
+
+<rect x="290" y="278" width="200" height="104" rx="10" fill="#e7f5ff" stroke="#4dabf7"/>
+<text x="390" y="304" font-size="16" font-weight="700" fill="#212529" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">payments</text>
+<text x="390" y="326" font-size="14" fill="#495057" text-anchor="middle">결제 · 미확정 보존</text>
+<text x="390" y="352" font-size="12" fill="#868e96" text-anchor="middle">UNKNOWN 상태를 지우지 않는다</text>
+<text x="390" y="370" font-size="11" fill="#adb5bd" text-anchor="middle">복구 배치가 PG 에 다시 물어 확정한다</text>
+
+<rect x="520" y="278" width="230" height="104" rx="10" fill="#e7f5ff" stroke="#4dabf7"/>
+<text x="635" y="304" font-size="16" font-weight="700" fill="#212529" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">ledger_transactions</text>
+<text x="635" y="326" font-size="14" fill="#495057" text-anchor="middle">복식부기 원장</text>
+<text x="635" y="352" font-size="12" fill="#868e96" text-anchor="middle">UNIQUE(tx_type, source_type,</text>
+<text x="635" y="368" font-size="12" fill="#868e96" text-anchor="middle">source_id, source_seq)</text>
+
+<rect x="780" y="278" width="200" height="104" rx="10" fill="#e7f5ff" stroke="#4dabf7"/>
+<text x="880" y="304" font-size="16" font-weight="700" fill="#212529" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">settlement_items</text>
+<text x="880" y="326" font-size="14" fill="#495057" text-anchor="middle">정산 항목</text>
+<text x="880" y="352" font-size="12" fill="#868e96" text-anchor="middle">UNIQUE(payment_id)</text>
+<text x="880" y="370" font-size="11" fill="#adb5bd" text-anchor="middle">결제 하나가 두 항목이 되지 않는다</text>
+
+<rect x="1010" y="278" width="200" height="104" rx="10" fill="#fff5f5" stroke="#e03131" stroke-width="2"/>
+<text x="1110" y="304" font-size="16" font-weight="700" fill="#212529" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">settlements</text>
+<text x="1110" y="326" font-size="14" fill="#495057" text-anchor="middle">일별 정산</text>
+<text x="1110" y="352" font-size="12" fill="#e03131" text-anchor="middle">UNIQUE(settlement_date,</text>
+<text x="1110" y="368" font-size="12" fill="#e03131" text-anchor="middle">currency, seller_key)</text>
+
+<rect x="1240" y="278" width="100" height="104" rx="10" fill="#e7f5ff" stroke="#4dabf7"/>
+<text x="1290" y="310" font-size="14" font-weight="700" fill="#212529" text-anchor="middle">지급</text>
+<text x="1290" y="336" font-size="12" fill="#868e96" text-anchor="middle">제재 심사에</text>
+<text x="1290" y="352" font-size="12" fill="#868e96" text-anchor="middle">걸리면 여기만</text>
+<text x="1290" y="368" font-size="12" fill="#868e96" text-anchor="middle">막는다</text>
+
+<path d="M260 330 L286 330" stroke="#868e96" stroke-width="2" marker-end="url(#ah)"/>
+<path d="M490 330 L516 330" stroke="#868e96" stroke-width="2" marker-end="url(#ah)"/>
+<path d="M750 330 L776 330" stroke="#868e96" stroke-width="2" marker-end="url(#ah)"/>
+<path d="M980 330 L1006 330" stroke="#868e96" stroke-width="2" marker-end="url(#ah)"/>
+<path d="M1210 330 L1236 330" stroke="#868e96" stroke-width="2" marker-end="url(#ah)"/>
+
+<rect x="60" y="424" width="330" height="86" rx="10" fill="#ffffff" stroke="#adb5bd"/>
+<text x="225" y="450" font-size="15" font-weight="700" fill="#212529" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">escrow_holds</text>
+<text x="225" y="472" font-size="12" fill="#868e96" text-anchor="middle">UNIQUE(order_no)</text>
+<text x="225" y="494" font-size="11" fill="#adb5bd" text-anchor="middle">구매확정 전까지 판매자 지급을 붙잡는다</text>
+
+<rect x="420" y="424" width="330" height="86" rx="10" fill="#ffffff" stroke="#adb5bd"/>
+<text x="585" y="450" font-size="15" font-weight="700" fill="#212529" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">settlement_adjustments</text>
+<text x="585" y="472" font-size="12" fill="#868e96" text-anchor="middle">UNIQUE(order_no, cancel_seq)</text>
+<text x="585" y="494" font-size="11" fill="#adb5bd" text-anchor="middle">부분취소가 두 번 배달돼도 한 번만 반영된다</text>
+
+<rect x="780" y="424" width="330" height="86" rx="10" fill="#ffffff" stroke="#adb5bd"/>
+<text x="945" y="450" font-size="15" font-weight="700" fill="#212529" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">reconciliation_results</text>
+<text x="945" y="472" font-size="12" fill="#868e96" text-anchor="middle">UNIQUE(trade_date, order_no)</text>
+<text x="945" y="494" font-size="11" fill="#adb5bd" text-anchor="middle">우리 장부와 PG 정산 파일을 하루치씩 맞댄다</text>
+
+<path d="M390 388 L390 420" stroke="#dee2e6" stroke-width="2" stroke-dasharray="4 4"/>
+<path d="M880 388 L880 420" stroke="#dee2e6" stroke-width="2" stroke-dasharray="4 4"/>
+<path d="M1110 388 L1110 410 L945 410 L945 420" stroke="#dee2e6" stroke-width="2" stroke-dasharray="4 4" fill="none"/>
+
+<rect x="60" y="548" width="1280" height="120" rx="10" fill="#fff5f5" stroke="#e03131"/>
+<text x="84" y="578" font-size="16" font-weight="700" fill="#e03131">이 제약은 한 번 스스로 뚫었다가 되살렸다</text>
+<text x="84" y="606" font-size="14" fill="#495057">정산을 판매자별로 가르며 유니크 키에 <tspan font-family="ui-monospace,Menlo,monospace">seller_id</tspan> 를 더했는데, MySQL 은 유니크 인덱스에서 <tspan font-weight="700">NULL 을 서로 다른 값으로 본다.</tspan></text>
+<text x="84" y="630" font-size="14" fill="#495057">이 서비스에서 <tspan font-family="ui-monospace,Menlo,monospace">NULL</tspan> 은 플랫폼 직판이라 기본값이었고, 같은 날짜 정산이 몇 줄이든 들어갔다. 남은 방어는 이미 뚫린 존재 검사 하나뿐이었다.</text>
+<text x="84" y="654" font-size="14" fill="#495057">생성 컬럼 <tspan font-family="ui-monospace,Menlo,monospace">seller_key = COALESCE(seller_id, 0)</tspan> 으로 NULL 을 하나로 모아 제약을 되살리고, 실 MySQL 테스트로 고정했다.</text>
+
+<text x="700" y="708" font-size="13" fill="#868e96" text-anchor="middle">전체 39개 테이블 중 돈이 지나가는 경로만 골랐다. 회원·상품·재고·포인트·월렛·이상거래 심사·감사 로그는 뺐다.</text>
+<text x="700" y="732" font-size="13" fill="#868e96" text-anchor="middle">아웃박스는 Spring Modulith 의 <tspan font-family="ui-monospace,Menlo,monospace">event_publication</tspan> 을 그대로 쓴다. 결제 커밋과 같은 트랜잭션에 소식이 남는다.</text>
+</svg>
