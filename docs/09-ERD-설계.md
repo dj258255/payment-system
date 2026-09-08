@@ -10,7 +10,8 @@
 **돈이 지나가는 경로만 골라 그렸고, 각 자리를 지키는 유니크 제약을 함께 적었다.** 전체는 **39개 테이블**이다(Spring Modulith 내장 `event_publication` 둘 제외). 코어 관계는 아래 mermaid와 각 절의 DDL이 기준이다.
 
 > 이 문서는 설계 당시의 이름과 구현된 이름이 갈리는 자리가 있다. **`~~취소선~~`은 설계만 하고 안 만든 것**이고,
-> 아래 12절은 **만들었는데 이 문서에 절이 없던 것**을 모아 둔 자리다.
+> 아래 12절은 **만들었는데 이 문서에 절이 없던 것** 14개를 DDL 까지 옮겨 둔 자리다.
+> **유니크 키가 없는 표는 없다고 적어 뒀다.** 있는 줄 알고 쓰면 중복이 들어온다.
 
 ```mermaid
 erDiagram
@@ -447,28 +448,321 @@ append-only 이력 테이블에 남겨 감사·복구의 진실 원천으로 삼
 ## 12. 이 문서에 절이 없던 구현 테이블
 
 설계 문서를 쓴 뒤에 만든 것들이라 위 절에 자리가 없었다. **전부 실제로 존재하는 테이블**이고,
-여기 모아 두는 이유는 문서만 읽고 스키마를 짐작하면 어긋나기 때문이다.
+아래 DDL 은 마이그레이션에서 그대로 옮겼다. 여기 모아 두는 이유는 문서만 읽고 스키마를 짐작하면
+어긋나기 때문이다. **유니크 키가 없는 표는 없다고 적어 뒀다.** 있는 줄 알고 쓰면 중복이 들어온다.
 
-| 테이블 | 무엇 | 지키는 제약·규칙 |
-|---|---|---|
-| `sellers` | 판매자. 정산 지급 대상 | `uk_seller_business_number` (사업자번호) |
-| `seller_screenings` | 제재 명단 대조 이력 | 대조한 명단 판·점수·판정을 함께 남긴다 |
-| `escrow_holds` | 구매확정 전까지 지급을 붙잡는다 | `uk_escrow_order` (order_no) |
-| `settlement_adjustments` | 부분취소로 정산액을 되돌린 기록 | `uk_settlement_adjustment_order_seq` (order_no, cancel_seq) |
-| `fraud_reviews` | 이상거래 사람 심사 큐 | 상태 전이는 PENDING 에서만 출발 |
-| `virtual_accounts` | 가상계좌 입금 대기 | 만료 스케줄러가 회수 |
-| `cash_receipts` | 현금영수증 발급 이력 | |
-| `force_cancel_requests` | 강제취소 2인 승인 | 요청자 본인은 승인 못 한다 |
-| `audit_logs` | 상태를 바꾼 액션의 요청·결과 쌍 | append-only |
-| `dead_letters` | 소비에 끝내 실패한 이벤트 | 어드민에서 재처리 |
-| `blind_reviews` | 상담 초안 블라인드 평가 | `uk_blind_review_recon_reviewer` |
-| `suggestion_outcomes` | 모델 제안과 사람 확정의 대조 | `uk_suggestion_outcome_recon` |
-| `narrative_audits` · `narrative_preferences` | 타임라인 서술의 가드 결과와 선호 | |
+| 테이블 | 무엇 | 지키는 제약 | 마이그레이션 |
+|---|---|---|---|
+| `sellers` | 판매자. 정산 지급 대상 | `uk_seller_business_number (business_number)` | V36 |
+| `seller_screenings` | 제재 명단 대조 이력 | 유니크 키 없음. 판정마다 한 행씩 쌓는다 | V36 |
+| `escrow_holds` | 구매확정 전까지 지급을 붙잡는다 | `uk_escrow_order (order_no)` | V5 |
+| `settlement_adjustments` | 이미 정산된 뒤 온 취소의 회수 항목 | `uk_settlement_adjustment_order_seq (order_no, cancel_seq)` | V28 |
+| `fraud_reviews` | 이상거래 사람 심사 큐 | 유니크 키 없음. 상태 전이는 `PENDING` 에서만 출발 | V8 |
+| `virtual_accounts` | 가상계좌 입금 대기 | 유니크 키 없음. `version` 낙관적 락만 있다 | V3 |
+| `cash_receipts` | 현금영수증 발급 이력 | 유니크 키 없음. 같은 주문에 재발급 줄이 쌓인다 | V3 |
+| `force_cancel_requests` | 강제취소 2인 승인 | 유니크 키 없음. 요청자 본인 승인은 애플리케이션이 막는다 | V7 |
+| `audit_logs` | 상태를 바꾼 액션의 요청·결과 쌍 | 유니크 키 없음. append-only 로만 쓴다 | V3 |
+| `dead_letters` | 소비에 끝내 실패한 이벤트 | 유니크 키 없음. `idx_dead_letters_created` 로 훑는다 | V1 |
+| `blind_reviews` | 상담 초안 블라인드 평가 | `uk_blind_review_recon_reviewer (recon_result_id, reviewer)` | V26, V41 |
+| `suggestion_outcomes` | 모델 제안과 사람 확정의 대조 | `uk_suggestion_outcome_recon (recon_result_id)` | V35 |
+| `narrative_audits` | 타임라인 서술을 만든 기록 | 유니크 키 없음. 같은 주문에 여러 번 생성된다 | V33 |
+| `narrative_preferences` | 서술 둘을 나란히 놓고 고른 기록 | 유니크 키 없음 | V33 |
 
-`settlements` 의 유니크 키는 **두 번 바뀌었다**. `(settlement_date)` → `(settlement_date, currency)` →
-판매자별로 가르며 `seller_id` 를 더했는데, **MySQL 은 유니크 인덱스에서 NULL 을 서로 다른 값으로 본다.**
-이 서비스에서 `NULL` 은 플랫폼 직판이라 기본값이었고 같은 날짜 정산이 몇 줄이든 들어갔다. 생성 컬럼
-`seller_key = COALESCE(seller_id, 0)` 으로 NULL 을 하나로 모아 되살렸다(V42).
+### 12.1 판매자와 제재 스크리닝 (sellers / seller_screenings)
+
+```sql
+CREATE TABLE sellers (
+    id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    business_number     VARCHAR(20)  NOT NULL,             -- 제재·PEP 명단 대조의 기준이자 정산 대상 식별자
+    legal_name          VARCHAR(200) NOT NULL,             -- 법인명. 명단 대조는 이 이름으로 한다
+    representative_name VARCHAR(100) NOT NULL,             -- 대표자명. 개인 제재 명단과 대조한다
+    country_code        CHAR(2)      NOT NULL DEFAULT 'KR',
+    status              VARCHAR(24)  NOT NULL,             -- PENDING_SCREENING / ACTIVE / ON_HOLD / BLOCKED
+    payout_account      VARCHAR(64)  NULL,                 -- 심사 통과 전에는 비어 있을 수 있다
+    created_at          DATETIME(6)  NOT NULL,
+    updated_at          DATETIME(6)  NOT NULL,
+    UNIQUE KEY uk_seller_business_number (business_number),
+    KEY idx_seller_status (status)
+);
+
+CREATE TABLE seller_screenings (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    seller_id       BIGINT       NOT NULL,
+    screened_name   VARCHAR(200) NOT NULL,                 -- 대조한 이름 자체를 남긴다
+    name_kind       VARCHAR(16)  NOT NULL,                 -- LEGAL / REPRESENTATIVE
+    matched_entry   VARCHAR(200) NULL,                     -- 명단 쪽에서 걸린 항목. 안 걸렸으면 NULL
+    match_score     INT          NOT NULL,                 -- 0~100
+    verdict         VARCHAR(16)  NOT NULL,                 -- CLEAR / POTENTIAL / CONFIRMED
+    human_verdict   VARCHAR(16)  NULL,                     -- FALSE_POSITIVE / TRUE_POSITIVE. 오탐률의 분자
+    reviewed_by     VARCHAR(100) NULL,
+    list_version    VARCHAR(40)  NOT NULL,                 -- 대조한 명단의 판
+    screened_at     DATETIME(6)  NOT NULL,
+    reviewed_at     DATETIME(6)  NULL,
+    KEY idx_screening_seller (seller_id, screened_at),
+    KEY idx_screening_review (verdict, human_verdict)      -- 오탐률 집계가 쓰는 조회
+);
+```
+
+**설계 결정**
+- **판매자를 넣은 것은 범위 확장이 아니다.** 이 프로젝트는 정산이 일자·통화별 집계라 판매자별로 쪼개지지 않았다. 그런데 정산은 누군가에게 한다. 사업자등록번호와 계좌 없이 지급할 방법이 없다 (ADR-021 개정)
+- **`status` 를 정산 지급이 본다.** `ON_HOLD` 는 잠재 일치가 있어 사람이 확인 중이라는 뜻이고, 이 상태면 지급을 막는다
+- **스크리닝은 판정마다 한 행이고 지우지 않는다.** 제재 명단은 갱신된다. 어제 통과한 판매자가 오늘 걸릴 수 있고, 그때 "언제 무엇과 대조해 통과였는지"를 못 대면 규제 대응이 안 된다. `list_version` 이 그 답이다
+- **`human_verdict` 가 오탐률의 근거다.** 기계 판정만 쌓으면 분모는 있는데 분자가 없다
+
+### 12.2 정산 조정과 에스크로 (settlement_adjustments / escrow_holds)
+
+```sql
+CREATE TABLE settlement_adjustments (
+    id                     BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_no               VARCHAR(64)  NOT NULL,
+    payment_id             BIGINT       NOT NULL,
+    original_settlement_id BIGINT       NOT NULL,          -- 회수 대상이 나간 원 정산
+    cancel_seq             INT          NOT NULL,          -- 결제 도메인이 부여한 취소 순번
+    adjustment_amount      BIGINT       NOT NULL,          -- 회수액. 음수로 저장한다
+    status                 VARCHAR(20)  NOT NULL,          -- PENDING / APPLIED / REVIEW_REQUIRED
+    applied_settlement_id  BIGINT       NULL,
+    created_at             DATETIME(6)  NOT NULL,
+    applied_at             DATETIME(6)  NULL,
+    CONSTRAINT uk_settlement_adjustment_order_seq UNIQUE (order_no, cancel_seq),
+    KEY idx_settlement_adjustment_status (status)
+);
+
+CREATE TABLE escrow_holds (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_no        VARCHAR(200) NOT NULL,
+    amount          BIGINT       NOT NULL,
+    status          ENUM('HELD','RELEASED','REFUNDED') NOT NULL,
+    held_at         DATETIME(6)  NOT NULL,
+    auto_release_at DATETIME(6)  NOT NULL,
+    resolved_at     DATETIME(6)  NULL,
+    created_at      DATETIME(6)  NOT NULL,
+    updated_at      DATETIME(6)  NOT NULL,
+    CONSTRAINT uk_escrow_order UNIQUE (order_no),
+    KEY idx_escrow_status_auto_release (status, auto_release_at)
+);
+```
+
+**설계 결정**
+- **과거 정산은 고치지 않는다.** 이미 지급 대상으로 나갔고, 수정하면 그때 무엇을 근거로 얼마를 줬는지 추적할 수 없게 된다. 차기 정산에 음수로 반영한다
+- **`(order_no, cancel_seq)` 유니크가 재배달을 막는다.** 예전에는 `settlement.postsettle.cancel` 카운터만 올렸다. 몇 건 있었는지는 알지만 **어떤 주문을 얼마 조정해야 하는지**는 복구할 수 없었고, 재시작하면 처리할 목록조차 남지 않았다
+- **에스크로는 주문당 하나다.** `uk_escrow_order` 가 그것이고, `(status, auto_release_at)` 인덱스는 자동 해제 스캔이 쓴다
+
+### 12.3 이상거래 사람 심사 (fraud_reviews)
+
+```sql
+CREATE TABLE fraud_reviews (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    payment_id  BIGINT       NOT NULL,
+    order_no    VARCHAR(200) NOT NULL,
+    card_key    VARCHAR(200) NOT NULL,                     -- 거부 시 이 값을 블랙리스트에 올린다
+    amount      BIGINT       NOT NULL,
+    score       INT          NOT NULL,
+    reasons     VARCHAR(500) NULL,                         -- 걸린 규칙 이름들
+    decision    ENUM('ALLOW','CHALLENGE','REVIEW','BLOCK') NOT NULL,   -- 기계 판정
+    status      ENUM('PENDING','APPROVED','REJECTED')      NOT NULL,   -- 사람 판정
+    reviewed_by VARCHAR(100) NULL,
+    reviewed_at DATETIME(6)  NULL,
+    created_at  DATETIME(6)  NOT NULL,
+    KEY idx_fraud_review_status (status)
+);
+```
+
+**설계 결정**
+- **`decision` 과 `status` 를 나눠 둔 것이 오탐률의 전부다.** 기계가 `REVIEW`·`BLOCK` 을 냈는데 사람이 `APPROVED` 로 닫으면 그 한 건이 오탐이다. 한 칸에 덮어썼으면 잴 수 없다
+- **`reasons` 를 규칙별로 갈라 오탐률을 낸다.** 두 규칙이 함께 걸린 건은 양쪽에 센다 (`RuleFalsePositiveService`)
+- 유니크 키가 없다. 같은 결제가 재평가되면 행이 더 생긴다
+
+### 12.4 결제 부가 (virtual_accounts / cash_receipts)
+
+```sql
+CREATE TABLE virtual_accounts (
+    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_no       VARCHAR(64)  NOT NULL,
+    bank_code      VARCHAR(10)  NOT NULL,
+    account_number VARCHAR(30)  NOT NULL,
+    amount         BIGINT       NOT NULL,
+    payment_key    VARCHAR(200) NULL,
+    status         ENUM('WAITING_FOR_DEPOSIT','DONE','EXPIRED','CANCELED') NOT NULL,
+    due_date       DATETIME(6)  NOT NULL,                  -- 만료 스케줄러가 이 값을 본다
+    deposited_at   DATETIME(6)  NULL,
+    version        BIGINT       NOT NULL,                  -- @Version 낙관적 락
+    created_at     DATETIME(6)  NOT NULL,
+    KEY idx_virtual_accounts_pay_key (payment_key),         -- V38
+    KEY idx_virtual_accounts_status (status, due_date)      -- V38. 만료 스캔용
+);
+
+CREATE TABLE cash_receipts (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_no     VARCHAR(200) NOT NULL,
+    receipt_type VARCHAR(20)  NOT NULL,
+    receipt_key  VARCHAR(100) NULL,
+    amount       BIGINT       NOT NULL,
+    status       ENUM('REQUESTED','ISSUED','CANCELED','FAILED') NOT NULL,
+    issued_at    DATETIME(6)  NULL,
+    created_at   DATETIME(6)  NOT NULL,
+    KEY idx_cash_receipts_order_no (order_no)               -- V38
+);
+```
+
+**남아 있는 구멍**
+- **`virtual_accounts.order_no` 에 유니크가 없다.** 같은 주문에 가상계좌가 두 번 발급되면 둘 다 들어온다. 지금은 발급 경로가 하나뿐이라 안 겪었을 뿐이고, 막고 있는 것은 `version` 뿐이다
+- **`cash_receipts` 도 마찬가지다.** 재발급이 정상 흐름이라 유니크를 걸 자리가 애매하다. 건다면 `(order_no, receipt_key)` 인데 `receipt_key` 가 NULL 인 `REQUESTED` 상태가 있어서 §12.7 과 같은 NULL 문제를 그대로 만난다
+
+### 12.5 운영 통제 (force_cancel_requests / audit_logs / dead_letters)
+
+```sql
+CREATE TABLE force_cancel_requests (
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    payment_id    BIGINT       NOT NULL,
+    cancel_amount BIGINT       NOT NULL,
+    requested_by  VARCHAR(100) NOT NULL,
+    approved_by   VARCHAR(100) NULL,                       -- 요청자와 같으면 애플리케이션이 거절한다
+    reason        VARCHAR(300) NULL,
+    status        ENUM('REQUESTED','EXECUTED','REJECTED') NOT NULL,
+    requested_at  DATETIME(6)  NOT NULL,
+    resolved_at   DATETIME(6)  NULL,
+    created_at    DATETIME(6)  NOT NULL,
+    updated_at    DATETIME(6)  NOT NULL,
+    KEY idx_fcr_status (status)
+);
+
+CREATE TABLE audit_logs (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    actor       VARCHAR(100)  NOT NULL,
+    action      VARCHAR(60)   NOT NULL,
+    target_type VARCHAR(40)   NOT NULL,
+    target_id   VARCHAR(64)   NOT NULL,
+    detail      VARCHAR(1000) NULL,
+    created_at  DATETIME(6)   NOT NULL
+);
+
+CREATE TABLE dead_letters (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    payment_id  BIGINT        NOT NULL,
+    order_no    VARCHAR(64)   NOT NULL,
+    event_type  VARCHAR(100)  NOT NULL,
+    event_key   VARCHAR(200)  NOT NULL,
+    amount      BIGINT        NOT NULL,
+    retry_count INT           NOT NULL,
+    fail_reason VARCHAR(1000) NULL,
+    created_at  DATETIME(6)   NOT NULL,
+    KEY idx_dead_letters_created (created_at)
+);
+```
+
+**설계 결정**
+- **2인 승인은 DB 제약으로 못 건다.** `requested_by <> approved_by` 는 체크 제약으로 가능하지만, 승인 시점에 두 칸이 다 차 있어야 한다. 지금은 애플리케이션이 막고 회귀 테스트로 고정했다. **DB 가 지키는 것과 코드가 지키는 것을 구별해 적어 둔다**
+- **`audit_logs` 는 append-only 를 규칙으로만 지킨다.** `UPDATE`·`DELETE` 를 막는 권한 분리는 없다. 실 운영이라면 이 표에 쓰기 전용 계정을 따로 둔다
+- **`dead_letters` 는 `event_key` 를 갖는다.** 재처리할 때 이 값으로 원 이벤트를 찾는다. 유니크는 없어서 같은 이벤트가 두 번 죽으면 두 줄이 남는다. 이건 의도한 것이다. 몇 번 실패했는지가 정보다
+
+### 12.6 AI 판단을 재는 표 (blind_reviews / suggestion_outcomes / narrative_audits / narrative_preferences)
+
+```sql
+CREATE TABLE blind_reviews (
+    id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
+    recon_result_id    BIGINT       NOT NULL,
+    order_no           VARCHAR(64)  NOT NULL,
+    reviewer           VARCHAR(64)  NOT NULL,
+    -- 1단계: 사실만 보고 사람이 먼저 쓴 답
+    blind_reply        TEXT         NULL,
+    blind_at           DATETIME(6)  NULL,
+    -- 2단계: 그 뒤 공개하는 초안 둘. 어느 쪽이 모델인지 리뷰어에게 안 알린다 (V41)
+    model_draft        TEXT         NULL,
+    model_source       VARCHAR(64)  NULL,
+    baseline_draft     TEXT         NULL,
+    baseline_source    VARCHAR(64)  NULL,
+    baseline_first     BOOLEAN      NOT NULL DEFAULT FALSE,  -- 표시 순서를 공개 시점에 고정한다
+    revealed_at        DATETIME(6)  NULL,
+    -- 3단계: 각각을 발송 가능하게 고친 결과
+    edited_draft       TEXT         NULL,
+    edited_at          DATETIME(6)  NULL,
+    edited_baseline    TEXT         NULL,
+    baseline_edited_at DATETIME(6)  NULL,
+    created_at         DATETIME(6)  NOT NULL,
+    UNIQUE KEY uk_blind_review_recon_reviewer (recon_result_id, reviewer),
+    KEY idx_blind_review_created (created_at)
+);
+
+CREATE TABLE suggestion_outcomes (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    recon_result_id BIGINT       NOT NULL,
+    suggested_cause VARCHAR(40)  NULL,                     -- 기권했으면 NULL
+    chosen_cause    VARCHAR(40)  NOT NULL,                 -- 사람이 확정한 원인
+    outcome         VARCHAR(16)  NOT NULL,                 -- accepted / rejected / abstained / no_suggestion
+    blind           BOOLEAN      NOT NULL,                 -- 제안을 가린 채 골랐는지
+    resolved_by     VARCHAR(100) NULL,
+    suggested_at    DATETIME(6)  NULL,
+    resolved_at     DATETIME(6)  NOT NULL,
+    UNIQUE KEY uk_suggestion_outcome_recon (recon_result_id),
+    KEY idx_suggestion_outcome_type (suggested_cause, blind, outcome)
+);
+
+CREATE TABLE narrative_audits (
+    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_no       VARCHAR(64)  NOT NULL,
+    source         VARCHAR(100) NOT NULL,                  -- template 또는 ollama:모델명. 모델 판이 여기 실린다
+    outcome        VARCHAR(40)  NOT NULL,                  -- narrated / abstained / unsourced_figures / no_facts
+    output         TEXT         NULL,                      -- 실제로 나간 문장. 기권·폐기면 NULL
+    fact_count     INT          NOT NULL,
+    facts_complete BOOLEAN      NOT NULL,
+    created_at     DATETIME(6)  NOT NULL,
+    KEY idx_narrative_audit_order (order_no, created_at)
+);
+
+CREATE TABLE narrative_preferences (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_no   VARCHAR(64)  NOT NULL,
+    source_a   VARCHAR(100) NOT NULL,                      -- A 자리에 놓인 것. 고르기 전에는 안 보인다
+    source_b   VARCHAR(100) NOT NULL,
+    text_a     TEXT         NOT NULL,
+    text_b     TEXT         NOT NULL,
+    choice     VARCHAR(8)   NULL,                          -- A / B / TIE. 억지로 고르게 하지 않는다
+    reviewer   VARCHAR(100) NULL,
+    created_at DATETIME(6)  NOT NULL,
+    chosen_at  DATETIME(6)  NULL
+);
+```
+
+**설계 결정**
+- **`uk_blind_review_recon_reviewer` 는 표본 오염을 DB 에서 막는다.** 한 사람이 같은 건을 두 번 리뷰하면 두 번째는 이미 답을 아는 상태다. 순서가 이 실험의 유일한 방법론적 근거라 애플리케이션에만 맡기지 않았다
+- **초안 둘을 한 행에 붙인 이유 (V41).** 활성화 조건이 "편집률 중앙값이 템플릿보다 낮을 것"인데, 초안 하나만 고정하면 provider 를 바꿔 두 번 돌려야 한다. 두 번째 회차는 리뷰어가 답을 아는 상태라, 유니크로 막아 둔 오염이 회차 사이로 샌다
+- **`baseline_first` 를 공개 시점에 뽑아 고정한다.** 항상 같은 쪽을 먼저 보여주면 먼저 본 것에 기준이 생긴다. 다시 열어도 같은 순서라야 채점이 그 화면과 맞는다
+- **`suggestion_outcomes` 는 카운터로는 못 내는 것을 낸다.** 승인 여부를 프로메테우스 카운터로만 세면 재시작에 사라지고, 태그가 `outcome`·`blind` 뿐이라 **원인 유형별로 안 갈린다.** 유형별 오류율을 못 내면 자동 확정 3단은 영영 못 켠다
+- **`narrative_audits` 는 프롬프트 본문을 저장하지 않는다.** 사실 묶음에서 결정적으로 재구성되기 때문이다. 재구성되는 것을 또 저장하면 두 곳이 언젠가 갈라지고, 갈라지면 어느 쪽이 맞는지 알 수 없다. 대신 `fact_count` 와 `facts_complete` 를 남겨 그때와 지금이 같은 입력인지 대조한다
+- **`narrative_preferences` 는 쌍 비교다.** 처음에는 길이·기권·출처 없는 숫자로 쟀는데 앞의 둘은 품질이 아니다. 특히 짧아진 것을 개선으로 읽은 것은 방향이 틀렸다. 평가자가 긴 답을 선호하는 편향이 알려져 있어서, 짧아진 것을 좋아졌다고 읽을 근거가 없다
+
+### 12.7 settlements 의 유니크 키는 두 번 바뀌었다
+
+`(settlement_date)` → `(settlement_date, currency)` → 판매자별로 가르며 `seller_id` 를 더했는데,
+**MySQL 은 유니크 인덱스에서 NULL 을 서로 다른 값으로 본다.** 이 서비스에서 `NULL` 은 플랫폼
+직판이라 기본값이었고, 같은 날짜 정산이 몇 줄이든 들어갔다. 생성 컬럼
+`seller_key = COALESCE(seller_id, 0)` 으로 NULL 을 하나로 모아 되살렸다 (V42).
+
+```sql
+ALTER TABLE settlements
+    ADD COLUMN seller_key BIGINT
+        GENERATED ALWAYS AS (COALESCE(seller_id, 0)) STORED NOT NULL
+        COMMENT '유니크 제약 전용. NULL 판매자(플랫폼 직판)를 0 으로 모은다';
+
+ALTER TABLE settlements DROP INDEX uk_settlement_date_currency_seller;
+
+ALTER TABLE settlements
+    ADD CONSTRAINT uk_settlement_date_currency_seller
+        UNIQUE (settlement_date, currency, seller_key);
+```
+
+**가짜 판매자 행을 만들지 않았다.** V37 이 NULL 을 고른 이유가 그것이라, 여기서 `seller_id` 를 0 으로
+채우면 없던 판매자를 지어내는 셈이 된다. 생성 컬럼으로 NULL 을 0 에 대응시켜 **그 컬럼에만** 유니크를
+걸었다. `seller_id` 자체는 NULL 그대로다.
+
+**V37 이 남긴 방어가 왜 부족했나.** V37 은 이걸 알고 "제약만으로는 못 막는 자리라 코드가 함께 지킨다"고
+적어 뒀다. 그런데 코드가 지키는 방식이 집계 전 존재 검사(`SettlementRepository.existsFor`)였고,
+**그건 이 프로젝트가 인스턴스 둘을 띄워 실제로 뚫은 바로 그 종류의 검사다.** 검사와 삽입 사이가
+벌어지면 둘 다 통과한다. 마지막 방어선이 없는 상태였다. 확인한 것은 같은
+`(2099-01-01, KRW, NULL)` 을 두 번 넣으면 두 줄 다 들어간다는 것이다.
+
+**여기서 배운 것**: 유니크 키에 nullable 컬럼을 넣으면 그 키는 NULL 행에 대해 아무것도 막지 않는다.
+같은 함정이 `cash_receipts` 에 남아 있다 (§12.4).
 
 ## 확장 여지로 남긴 것
 
