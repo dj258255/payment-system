@@ -149,6 +149,22 @@ med 26.2 ms   p95 56.8 ms   p99 105.4 ms   max 384.6 ms   실패 0.00%
 즉 **막을 준비**가 판정 속도보다 큰 일이다. 이번에 닫은 것은 "지연 때문에 못 한다"는
 근거 없는 이유 하나이고, 남은 것은 위 셋이다.
 
+### 첫 항목은 제품 탓이 아니라 층을 안 나눈 탓이다
+
+"Redis 가 죽으면" 이라고 적어 뒀는데, 다시 보니 <b>문제를 잘못 짚은 문장</b>이다.
+
+속도 카운터를 TTL 붙여 캐시에 두는 것 자체는 표준이다. 승인 종단 예산이 100~200ms 이고
+그중 부정거래 판정 몫이 10~50ms 라, 이 구간에 관계형 DB 를 넣을 수가 없다. 카카오뱅크도
+ML 추론용 피처를 <b>"고속 저장소가 적합한 Redis 를 선정"</b>해 온라인 피처 스토어로 쓴다.
+
+다른 것은 <b>층을 나눴다는 점</b>이다. 같은 시스템에서 거래 이벤트 프로파일은 캐시 계층에
+넣되 <b>따로 영속화한다</b>. 우리는 안 나눴다. 속도 집계가 캐시에만 있어서 <b>죽으면 그 창의
+집계가 그냥 사라진다.</b> 세우려 해도 기준이 없으니 fail-open 말고 선택지가 없는 것이다.
+
+그러니 첫 항목의 진짜 제목은 <b>"속도 집계를 캐시에만 두고 있다"</b> 이고, 결정해야 할 것은
+fail-open 이냐 fail-close 냐가 아니라 <b>그 집계를 어디에 한 벌 더 둘 것이냐</b> 다.
+저장소를 바꾸는 이야기가 아니다.
+
 ---
 
 ## 참고
@@ -157,5 +173,7 @@ med 26.2 ms   p95 56.8 ms   p99 105.4 ms   max 384.6 ms   실패 0.00%
   https://snehasishkonger.medium.com/real-time-fraud-checks-under-100ms-the-architecture-behind-the-budget-9105d7933287
 - 판정 지연을 무엇으로 재나(OpenTelemetry):
   https://oneuptime.com/blog/post/2026-02-06-monitor-fraud-detection-inference-latency-opentelemetry/view
+- FDS 에 AI 를 적용한 국내 사례(캐시 계층·영속 계층 분리, 온라인 피처 스토어로서의 Redis):
+  https://tech.kakaobank.com/posts/2310-applying-ai-into-fds-system/
 - 실시간 판정 아키텍처와 지연:
   https://redis.io/blog/real-time-fraud-detection/
