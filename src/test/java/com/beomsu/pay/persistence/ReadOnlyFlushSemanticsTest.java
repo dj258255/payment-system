@@ -112,6 +112,13 @@ class ReadOnlyFlushSemanticsTest {
         @PersistenceContext
         private EntityManager em;
 
+        /** ②가 프록시를 타고 부르는 대상. 같은 빈에 두면 self-invocation 이 된다. */
+        private final Lookup lookup;
+
+        Probe(Lookup lookup) {
+            this.lookup = lookup;
+        }
+
         @Transactional
         long insert(String name) {
             Thing t = new Thing();
@@ -127,25 +134,22 @@ class ReadOnlyFlushSemanticsTest {
             em.find(Thing.class, id).setName(name);
         }
 
-        /** ② 바깥은 read-write, 안에서 readOnly 조회를 한 번 부른다. */
+        /**
+         * ② 바깥은 read-write, 안에서 readOnly 조회를 한 번 부른다.
+         *
+         * <p>조회를 <b>다른 빈</b>({@link Lookup})에 두고 부른다. 같은 빈 안에서 부르면
+         * self-invocation 이라 프록시를 안 타고, 그러면 {@code @Transactional(readOnly = true)}
+         * 자체가 적용되지 않는다. 결과는 같아 보이지만 <b>이유가 달라</b> 이 테스트가
+         * 증명하려는 것("참여한 readOnly 는 무시된다")을 증명하지 못한다.
+         */
         @Transactional
         FlushMode mutateAfterInnerReadOnly(long id, String name) {
-            readOnlyLookup(id);                        // 프록시를 안 타도 결과는 같다 — 아래 주석 참고
+            lookup.readOnlyLookup(id);                 // 프록시를 타고 들어간다
             Thing t = em.find(Thing.class, id);
             t.setName(name);
             return em.unwrap(Session.class).getHibernateFlushMode();
         }
 
-        /**
-         * REQUIRED(기본)라 바깥 트랜잭션에 참여한다.
-         *
-         * <p>참여하는 순간 {@code readOnly} 는 <b>물리 트랜잭션에 새로 적용되지 않는다.</b>
-         * 그래서 self-invocation이라 프록시를 안 타는 것과 무관하게 결과가 같다.
-         */
-        @Transactional(readOnly = true)
-        void readOnlyLookup(long id) {
-            em.find(Thing.class, id);
-        }
 
         /** ③ 독립된 readOnly 트랜잭션. 여기서는 진짜로 MANUAL이다. */
         @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
@@ -163,13 +167,43 @@ class ReadOnlyFlushSemanticsTest {
         }
     }
 
+    /**
+     * readOnly 조회만 하는 <b>별도 빈</b>.
+     *
+     * <p>Probe 안에 두면 self-invocation 이라 프록시를 안 타고, 그러면 애너테이션이
+     * 아예 적용되지 않은 상태를 관찰하게 된다. 갈라 둬야 <b>"참여한 readOnly 는 무시된다"</b>를
+     * 실제로 재는 것이 된다.
+     */
+    @Service
+    static class Lookup {
+
+        @PersistenceContext
+        private EntityManager em;
+
+        /**
+         * REQUIRED(기본)라 바깥 트랜잭션에 참여한다.
+         *
+         * <p>참여하는 순간 {@code readOnly} 는 <b>물리 트랜잭션에 새로 적용되지 않는다.</b>
+         * Spring 이 새 물리 트랜잭션을 열 때만 그 힌트를 Hibernate 세션에 건다.
+         */
+        @Transactional(readOnly = true)
+        void readOnlyLookup(long id) {
+            em.find(Thing.class, id);
+        }
+    }
+
     @Configuration
     @EnableAutoConfiguration
     @EntityScan(basePackageClasses = probe.flush.Thing.class)
     static class TestApp {
         @org.springframework.context.annotation.Bean
-        Probe probe() {
-            return new Probe();
+        Lookup lookup() {
+            return new Lookup();
+        }
+
+        @org.springframework.context.annotation.Bean
+        Probe probe(Lookup lookup) {
+            return new Probe(lookup);
         }
     }
 }
