@@ -41,8 +41,18 @@ public class SubscriptionService {
     private static final int BILLING_PERIOD_MONTHS = 1;
     /** soft decline 최대 청구 시도 횟수 — 이 횟수째 실패면 재시도 소진으로 정지. */
     private static final int MAX_ATTEMPTS = 3;
-    /** soft decline 후 재시도 간격(일). */
-    private static final int RETRY_INTERVAL_DAYS = 2;
+    /**
+     * soft decline 후 <b>몇 번째 재시도를 며칠 뒤에 걸지</b>. 1회차는 다음 날, 2회차는 사흘 뒤다.
+     *
+     * <p>고정 간격이었다가 단계별로 벌렸다. soft decline 이 나는 이유가 대개 한도 초과와 잔액
+     * 부족인데, <b>그건 시간이 지나야 풀린다.</b> 같은 간격으로 계속 두드리면 같은 이유로 또 거절되고,
+     * 그 거절이 가맹점 승인율 기록에 그대로 남는다.
+     *
+     * <p>국내 결제대행사·카드사는 <b>같은 건에 대한 반복 승인 시도의 횟수와 간격을 계약으로 제한</b>한다.
+     * 업계에서 잡는 기준선이 D+1, D+3, D+7 에 3회라 그것을 그대로 따랐다.
+     * {@code MAX_ATTEMPTS} 가 3이라 D+7 은 예약되지 않지만, 횟수를 늘릴 때 쓰라고 남겨 둔다.
+     */
+    private static final int[] RETRY_BACKOFF_DAYS = {1, 3, 7};
 
     private final BillingGateway billingGateway;
     private final SubscriptionRepository subscriptionRepository;
@@ -203,10 +213,21 @@ public class SubscriptionService {
             if (subscription.getStatus() == SubscriptionStatus.ACTIVE) {
                 subscription.enterGrace();
             }
-            nextRetryAt = today.plusDays(RETRY_INTERVAL_DAYS);
+            nextRetryAt = today.plusDays(retryBackoffDays(attemptNo));
         }
         dunningAttemptRepository.save(
                 DunningAttempt.of(subscription.getId(), attemptNo, BillingResult.SOFT_DECLINE, nextRetryAt));
+    }
+
+    /**
+     * {@code attemptNo} 번째 실패 뒤 며칠을 기다릴지. 표를 넘어가면 마지막 값을 쓴다.
+     *
+     * <p>표 밖으로 나가면 예외를 던지지 않는다. {@code MAX_ATTEMPTS} 를 올리는 것은 설정 변경에
+     * 가까운데, 그때 <b>결제 스케줄러가 예외로 멈추면 그 회차 청구가 통째로 빠진다.</b>
+     */
+    private static int retryBackoffDays(int attemptNo) {
+        int idx = Math.min(Math.max(attemptNo, 1), RETRY_BACKOFF_DAYS.length) - 1;
+        return RETRY_BACKOFF_DAYS[idx];
     }
 
     private void handleHardDecline(Subscription subscription) {
