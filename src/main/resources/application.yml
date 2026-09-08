@@ -171,6 +171,11 @@ app:
     # 확정 시 초안을 만들어 <기록만> 한다. 사람에게 보여주지 않아 앵커링이 생기지 않는다.
     # 기본 꺼짐 — 확정마다 타임라인 조립(10개 도메인) 비용이 붙는다.
     shadow-enabled: ${APP_ASSIST_SHADOW_ENABLED:false}
+    # FDS 심사 초안. template | ollama
+    # <b>기본이 template 인 이유</b>: 켤 근거가 아직 없다. 상황 3.2 의 상담 초안은 블라인드
+    # 비교로 템플릿보다 수정량이 적은 것을 보고 켰는데, 이 자리는 그 표본이 0 건이다.
+    # 구성을 정한 것과 기능이 도는 것은 다른 일이라, 근거 없이 기본값을 ollama 로 두지 않는다.
+    fraud-review-provider: ${APP_ASSIST_FRAUD_REVIEW_PROVIDER:template}
     ollama:
       base-url: ${APP_ASSIST_OLLAMA_BASE_URL:http://localhost:11434}
       model: ${APP_ASSIST_OLLAMA_MODEL:qwen3:14b}
@@ -474,3 +479,32 @@ spring:
     rescreen:
       enabled: ${APP_SCREENING_RESCREEN_ENABLED:false}
       cron: ${APP_SCREENING_RESCREEN_CRON:0 30 5 * * *}
+
+# 이상거래 탐지 모델. <b>지금은 섀도만 돈다.</b> 점수를 내고 기록만 하고 아무것도 안 막는다.
+#
+# 켤 조건 넷 중 셋이 아직 안 넘었다(docs/27 5-2절).
+#   A 실 기저율 환산 정밀도 20% 이상 — 지금 1% 기저율에서 20.6% 로 겨우 걸친다
+#   B 축 여섯 중 넷이 50% 이상   — 지금 셋이다(IP 회전 0%, 심야 21%)
+#   C 섀도 모드 선행            — <b>이 설정이 그것이다</b>
+#   D 상시 홀드아웃 유지         — holdout.percent 가 그것이다
+fds:
+  model:
+    # 학습 결과 그대로다. FraudModelEvalTest 가 찍어 준 값을 옮겼고 순서는
+    # SequenceFeatures.NAMES 와 같다. 순서가 어긋나면 조용히 틀린 점수가 나온다.
+    #   windowCount, amountToMedian, nearThresholdRatio, microCount,
+    #   escalation, deviceChurn, ipChurn, nightRatio
+    weights: ${FDS_MODEL_WEIGHTS:2.679502,-0.158154,2.928409,8.557328,3.530378,2.452604,-0.967388,2.115038}
+    bias: ${FDS_MODEL_BIAS:-5.447640}
+    shadow:
+      # 점수를 내고 기록만 한다. 꺼도 결제와 사후 탐지는 그대로 돈다.
+      enabled: ${FDS_MODEL_SHADOW_ENABLED:true}
+    window:
+      # 창을 얼마나 되돌아볼지. 길게 잡으면 amountToMedian 이 <요즘> 씀씀이가 아니라
+      # 평생 평균과 견주는 값이 된다.
+      hours: ${FDS_MODEL_WINDOW_HOURS:24}
+      # 창 조회 상한. 상황 2.3 에서 배치 조회 15곳에 건 것과 같은 이유다.
+      max-rows: ${FDS_MODEL_WINDOW_MAX_ROWS:200}
+    holdout:
+      # 이 비율만큼은 점수를 아예 안 낸다. <b>켜기 전에 있어야 한다.</b> 켠 다음에 만들면
+      # 이미 비교할 이전이 없다. 주문번호 해시로 갈라 같은 주문은 늘 같은 쪽에 든다.
+      percent: ${FDS_MODEL_HOLDOUT_PERCENT:5}

@@ -287,6 +287,12 @@ class FraudModelEvalTest {
         var model = train(train, 4_000, 3.0);
         double threshold = thresholdAt(model, train);
 
+        // 운영에 넣을 값을 그대로 찍는다. 손으로 옮겨 적다 순서가 어긋나면 조용히 틀린 점수가 난다.
+        System.out.printf("%n  [application.yml 에 넣을 값]%n    weights: %s%n    bias: %.6f%n    threshold: %.6f%n",
+                java.util.Arrays.stream(model.weights())
+                        .mapToObj("%.6f"::formatted).collect(java.util.stream.Collectors.joining(", ")),
+                model.bias(), threshold);
+
         java.util.function.Predicate<FraudCorpus.Case> byModel =
                 c -> model.risk(featuresOf(c)) >= threshold;
 

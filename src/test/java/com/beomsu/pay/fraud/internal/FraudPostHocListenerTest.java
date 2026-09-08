@@ -28,6 +28,8 @@ class FraudPostHocListenerTest {
     private PaymentService paymentService;
     private FraudService fraudService;
     private FraudReviewRepository reviewRepository;
+    private com.beomsu.pay.fraud.model.CardTransactionRepository transactionRepository;
+    private com.beomsu.pay.fraud.model.ShadowRiskScorer shadowScorer;
     private FraudPostHocListener listener;
 
     @BeforeEach
@@ -35,7 +37,11 @@ class FraudPostHocListenerTest {
         paymentService = mock(PaymentService.class);
         fraudService = mock(FraudService.class);
         reviewRepository = mock(FraudReviewRepository.class);
-        listener = new FraudPostHocListener(paymentService, fraudService, reviewRepository);
+        transactionRepository = mock(com.beomsu.pay.fraud.model.CardTransactionRepository.class);
+        shadowScorer = mock(com.beomsu.pay.fraud.model.ShadowRiskScorer.class);
+        when(shadowScorer.score(any(), any(), any())).thenReturn(Optional.empty());
+        listener = new FraudPostHocListener(paymentService, fraudService, reviewRepository,
+                transactionRepository, shadowScorer);
     }
 
     private PaymentConfirmedEvent event() {
@@ -127,5 +133,61 @@ class FraudPostHocListenerTest {
         assertThat(req.userId()).isEqualTo(0L);
         assertThat(req.ip()).isNull();
         assertThat(req.deviceId()).isNull();
+    }
+
+    @Test
+    @DisplayName("판정보다 먼저 거래 이력을 남긴다 — 이번 건이 창에 들어야 escalation 이 맞는다")
+    void recordsHistoryBeforeEvaluating() {
+        when(paymentService.paymentKeyOf(10L)).thenReturn(Optional.of("card-xyz"));
+        when(fraudService.evaluate(any())).thenReturn(
+                new FraudResult(0, FdsDecision.ALLOW, List.of()));
+        when(transactionRepository.existsByOrderNo("ord-1")).thenReturn(false);
+
+        listener.onConfirmed(event());
+
+        var order = org.mockito.Mockito.inOrder(transactionRepository, fraudService);
+        order.verify(transactionRepository).save(any());
+        order.verify(fraudService).evaluate(any());
+    }
+
+    @Test
+    @DisplayName("같은 이벤트가 두 번 와도 이력은 한 줄이다 — 아웃박스는 at-least-once 다")
+    void redeliveryDoesNotDuplicateHistory() {
+        when(paymentService.paymentKeyOf(10L)).thenReturn(Optional.of("card-xyz"));
+        when(fraudService.evaluate(any())).thenReturn(
+                new FraudResult(0, FdsDecision.ALLOW, List.of()));
+        when(transactionRepository.existsByOrderNo("ord-1")).thenReturn(true);
+
+        listener.onConfirmed(event());
+
+        org.mockito.Mockito.verify(transactionRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    @DisplayName("이력 저장이 터져도 판정은 돈다 — 관찰이 판정을 막으면 안 된다")
+    void historyFailureDoesNotStopDetection() {
+        when(paymentService.paymentKeyOf(10L)).thenReturn(Optional.of("card-xyz"));
+        when(transactionRepository.existsByOrderNo("ord-1"))
+                .thenThrow(new IllegalStateException("DB 죽음"));
+        when(fraudService.evaluate(any())).thenReturn(
+                new FraudResult(70, FdsDecision.REVIEW, List.of("HIGH_AMOUNT")));
+
+        listener.onConfirmed(event());
+
+        org.mockito.Mockito.verify(reviewRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("섀도는 심사 큐를 안 건드린다 — ALLOW 면 큐에 아무것도 안 들어간다")
+    void shadowDoesNotTouchTheQueue() {
+        when(paymentService.paymentKeyOf(10L)).thenReturn(Optional.of("card-xyz"));
+        when(fraudService.evaluate(any())).thenReturn(
+                new FraudResult(0, FdsDecision.ALLOW, List.of()));
+        when(shadowScorer.score(any(), any(), any())).thenReturn(Optional.of(0.99));
+
+        listener.onConfirmed(event());
+
+        org.mockito.Mockito.verify(shadowScorer).score(any(), any(), any());
+        org.mockito.Mockito.verify(reviewRepository, org.mockito.Mockito.never()).save(any());
     }
 }

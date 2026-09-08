@@ -67,11 +67,11 @@ public class LogisticFraudRiskModel implements FraudRiskModel {
                 .toArray(String[]::new);
     }
 
-    double[] weights() {
+    public double[] weights() {
         return weights.clone();
     }
 
-    double bias() {
+    public double bias() {
         return bias;
     }
 }
