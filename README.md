@@ -256,7 +256,8 @@ BENCH_INFRA=external BENCH_DB_PORT=3307 BENCH_ALLOW_DB_RESET=1 ./gradlew bench -
   [docs/23 배치 조회 상한](docs/23-배치-조회-상한.md) ·
   [docs/24 조회 인덱스 실측](docs/24-조회-인덱스-실측.md) (추정 50행 대 실제 30만 행, 22쌍 전수 감사) ·
   [docs/25 알림 소음 억제와 표본 바닥](docs/25-알림-소음-억제와-표본바닥.md) ·
-  [docs/26 FDS 규칙별 오탐](docs/26-FDS-규칙별-오탐.md)
+  [docs/26 FDS 규칙별 오탐](docs/26-FDS-규칙별-오탐.md) ·
+  [docs/27 FDS 모델 평가와 켤 조건](docs/27-FDS-모델-평가와-켤-조건.md) (규칙이 못 보는 축 여섯, 정밀도 91.7% 를 실 기저율로 환산하면 20.6%)
 - [docs/adr](docs/adr/): 아키텍처 결정 기록 — 최근 것들:
   [ADR-010 무엇을 만들지 않을지](docs/adr/ADR-010-what-not-to-build.md) ·
   [ADR-011 주문 타임라인](docs/adr/ADR-011-order-timeline-assembly.md) ·
