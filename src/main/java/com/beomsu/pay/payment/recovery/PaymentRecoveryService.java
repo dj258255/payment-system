@@ -75,9 +75,11 @@ public class PaymentRecoveryService {
      * <p><b>예외를 던지지 않는다</b>: 호출부가 "없음"을 보고 다른 상태를 쓰려는데, 여기서 예외가 나면
      * 그 트랜잭션이 rollback-only 로 오염돼 그 write 마저 버려진다(실 MySQL 통합 테스트로 확인).
      *
-     * <p><b>{@code readOnly} 를 쓰지 않는다</b>: readOnly 로 바깥 트랜잭션에 합류하면 Hibernate
-     * FlushMode 가 MANUAL 이 되어, 호출부가 이어서 하는 save 가 flush 되지 않고 사라진다.
-     * 이 저장소가 {@code saveAndFlush} 를 쓰는 이유와 같은 함정이다(pay-26).
+     * <p><b>{@code readOnly} 를 안 붙인 것은 습관이 아니다</b>: 붙여도 여기서는 무해하다.
+     * 이 메서드는 늘 read-write 트랜잭션 안에서 불리고, <b>참여하는 readOnly 는 물리 트랜잭션에
+     * 적용되지 않아</b> FlushMode 가 그대로 AUTO 다({@code ReadOnlyFlushSemanticsTest} ②).
+     * FlushMode 가 MANUAL 이 되는 것은 <b>독립된 readOnly 트랜잭션이 새로 열릴 때</b>이고(같은 테스트 ③),
+     * 그래서 이 저장소는 상태 전이 지점에서 {@code saveAndFlush} 로 명시 영속한다(pay-26).
      */
     @Transactional(propagation = Propagation.SUPPORTS)
     public boolean exists(String paymentKey) {

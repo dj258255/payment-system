@@ -332,7 +332,7 @@ CREATE TABLE ledger_entries (                           -- ★ append-only. UPDA
 ```sql
 CREATE TABLE settlements (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    merchant_id     BIGINT       NOT NULL,
+    seller_id       BIGINT       NULL,          -- NULL 이면 플랫폼 직판(V37)
     settlement_date DATE         NOT NULL,             -- 정산 기준일
     currency        VARCHAR(3)   NOT NULL,             -- ISO 4217. 정산은 통화별로 따로 만든다
     gross_amount    BIGINT       NOT NULL,             -- 거래 총액(해당 통화의 최소 단위)
@@ -340,7 +340,8 @@ CREATE TABLE settlements (
     net_amount      BIGINT       NOT NULL,             -- 지급액 (gross - fee) — 불변식 검증 대상
     status          VARCHAR(20)  NOT NULL,             -- CREATED / CONFIRMED / PAID
     created_at      DATETIME(6)  NOT NULL,
-    UNIQUE KEY uk_settlement (merchant_id, settlement_date, currency)   -- ★ 배치 재실행 멱등성의 핵심
+    seller_key      BIGINT       AS (COALESCE(seller_id,0)) STORED,  -- 유니크 전용(V42)
+    UNIQUE KEY uk_settlement_date_currency_seller (settlement_date, currency, seller_key)   -- ★ 배치 재실행 멱등성의 핵심
     -- 통화가 키에 없으면 같은 날 KRW·USD 정산이 둘 다 못 나온다. 그렇다고 제약을 풀면
     -- 같은 날짜를 두 번 집계해 지급이 두 배가 되는 것을 못 막는다(ADR-016).
 );
@@ -357,7 +358,8 @@ CREATE TABLE settlement_details (   -- 실제 이름: settlement_items
 ```
 
 **설계 결정**
-- `uk_settlement`: 정산 배치가 같은 날짜로 재실행되면 UPSERT 또는 삭제-재생성한다. **배치 멱등성**을 스키마가 보장
+- `uk_settlement_date_currency_seller`: 정산 배치가 같은 날짜로 재실행되면 UPSERT 또는 삭제-재생성한다. **배치 멱등성**을 스키마가 보장.
+  판매자가 NULL(플랫폼 직판)이면 MySQL 이 NULL 을 서로 다른 값으로 봐서 제약이 안 걸리므로, **V42 가 생성 컬럼 `seller_key` 로 NULL 을 0 에 모아** 제약을 완성했다
 - 집계 기간은 `start ≤ approved_at < end` 반개구간 (배민 정산 방식으로 경계 중복/누락 방지)
 - `fee_rate` 스냅샷: 수수료율 변경 이력과 무관하게 "그 거래에 적용된 요율"을 고정
 
