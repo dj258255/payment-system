@@ -33,7 +33,7 @@ class RedisVelocityCounterTest {
     StringRedisTemplate redis;
 
     private RedisVelocityCounter counter() {
-        return new RedisVelocityCounter(redis);
+        return new RedisVelocityCounter(redis, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     @Test

@@ -6,6 +6,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -50,8 +52,20 @@ public class RedisVelocityCounter implements VelocityCounter {
 
     private final StringRedisTemplate redis;
 
-    public RedisVelocityCounter(StringRedisTemplate redis) {
+    /**
+     * Redis 가 죽어 속도 제한이 무력화된 횟수.
+     *
+     * <p>fail-open 은 <b>결제를 세우지 않는 대신 규칙 하나가 조용히 꺼진다.</b> 로그만 남기면
+     * 아무도 안 본다. 이상거래가 몰리는 때와 Redis 가 흔들리는 때가 겹치면
+     * <b>가장 필요한 순간에 규칙이 없는 상태</b>가 되는데, 그것을 알 방법이 없었다.
+     */
+    private final Counter failOpen;
+
+    public RedisVelocityCounter(StringRedisTemplate redis, MeterRegistry meterRegistry) {
         this.redis = redis;
+        this.failOpen = Counter.builder("fraud.velocity.fail.open.total")
+                .description("Redis 실패로 속도 제한을 건너뛴 횟수. 0이 아니면 그 시간대의 판정은 규칙 하나가 빠진 값이다")
+                .register(meterRegistry);
     }
 
     @Override
@@ -65,6 +79,7 @@ public class RedisVelocityCounter implements VelocityCounter {
                     String.valueOf(WINDOW.getSeconds()));
             return count == null ? 1 : count.intValue();
         } catch (RuntimeException e) {
+            failOpen.increment();
             log.warn("velocity Redis 실패 — fail-open(이번 시도만 카운트)으로 처리합니다. key={}, err={}",
                     key, e.toString());
             return 1;

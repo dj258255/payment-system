@@ -102,7 +102,7 @@ class FdsLatencyBudgetTest {
         factory.afterPropertiesSet();
         StringRedisTemplate redis = new StringRedisTemplate(factory);
 
-        FraudService service = serviceWith(new RedisVelocityCounter(redis));
+        FraudService service = serviceWith(new RedisVelocityCounter(redis, new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
 
         measure(service, WARMUP);                       // JIT·커넥션 워밍업
         long[] sorted = measure(service, SAMPLES);
