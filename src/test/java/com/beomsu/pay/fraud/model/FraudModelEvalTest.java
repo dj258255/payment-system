@@ -29,6 +29,15 @@ import static org.mockito.Mockito.when;
  * <p><b>학습과 평가를 가른다.</b> 가중치는 학습 절반에서만 뽑고, 성적은 그 절반을 한 번도
  * 안 본 홀드아웃에서 낸다. 같은 표본에서 맞추고 재면 늘 좋아 보인다.
  *
+ * <p><b>지표는 업계가 부정거래 모델에 쓰는 것으로 맞췄다.</b> 재현율·정밀도·경보율을 같이 내고,
+ * 임계와 무관한 비교는 <b>PR-AUC(평균 정밀도)</b> 로 한다. 정상이 압도적으로 많은 표본에서
+ * ROC-AUC 는 오탐이 늘어도 거의 안 움직여 좋아 보인다. 심사 인원이 유한하다는 사실은
+ * <b>상위 K 정밀도</b>로 넣는다.
+ *
+ * <p><b>정밀도는 기저율에 그대로 끌려간다.</b> 이 코퍼스는 부정이 30% 라 정밀도가 실제보다
+ * 훨씬 높게 나온다. 그래서 재현율과 정상 오탐을 고정한 채 <b>실 기저율로 환산한 값</b>을 같이
+ * 찍는다. 그 환산값이 이 모델을 켤지 정하는 근거다.
+ *
  * <p><b>이 수치로 할 수 있는 말은 하나다.</b> 규칙은 건 하나만 보므로 건들 사이의 관계로 만든
  * 패턴을 못 잡는다. <b>실 트래픽에서 이런 패턴이 얼마나 되는지는 모른다.</b>
  */
@@ -162,9 +171,25 @@ class FraudModelEvalTest {
 
     // ── 채점 ────────────────────────────────────────────────────────────────
 
+    /**
+     * 한 방식의 성적.
+     *
+     * <p>지표를 셋으로 두는 것은 업계 관행을 따른 것이다. 재현율만 보면 전부 올리면 100% 가
+     * 되고, 정밀도만 보면 확실한 것만 올려 대부분을 놓친다. 그리고 <b>경보율</b>이 있어야
+     * 심사 인원이 감당할 양인지 알 수 있다.
+     */
     private record Score(String name, long caught, long missed, long falseAlarm, long normals) {
+        /** 부정 중 잡은 비율. */
         double recall() { return caught + missed == 0 ? 0 : (double) caught / (caught + missed); }
+        /** 정상 중 잘못 올린 비율. */
         double falseAlarmRate() { return normals == 0 ? 0 : (double) falseAlarm / normals; }
+        /** 올린 것 중 진짜 부정의 비율. <b>심사자가 겪는 체감이 이 값이다.</b> */
+        double precision() { return caught + falseAlarm == 0 ? 0 : (double) caught / (caught + falseAlarm); }
+        /** 전체 중 심사 큐로 올라가는 비율. 사람이 감당할 양인지를 정하는 값이다. */
+        double alertRate() {
+            long total = caught + missed + normals;
+            return total == 0 ? 0 : (double) (caught + falseAlarm) / total;
+        }
     }
 
     private static Score score(String name, List<FraudCorpus.Case> holdout,
@@ -180,6 +205,54 @@ class FraudModelEvalTest {
             }
         }
         return new Score(name, caught, missed, falseAlarm, normals);
+    }
+
+    // ── 임계와 무관한 지표 ──────────────────────────────────────────────────
+
+    /**
+     * 평균 정밀도(PR 곡선 아래 넓이).
+     *
+     * <p><b>불균형 표본에서는 ROC-AUC 보다 이쪽을 본다.</b> ROC 는 위음성률을 쓰는데, 정상이
+     * 압도적으로 많으면 오탐이 조금 늘어도 그 비율이 거의 안 움직여 곡선이 좋아 보인다.
+     * PR 곡선은 정밀도를 쓰므로 정상 개수에 덜 휘둘린다. 업계가 부정거래 모델을 이 지표로
+     * 재는 이유가 그것이다.
+     *
+     * <p><b>임계를 안 정하고 재는 것이 요점이다.</b> 임계를 고르고 나서 비교하면 그 임계를
+     * 어느 쪽에 유리하게 잡았는지가 결과에 섞인다.
+     */
+    private static double averagePrecision(List<FraudCorpus.Case> holdout,
+                                           java.util.function.ToDoubleFunction<FraudCorpus.Case> score) {
+        var ranked = holdout.stream()
+                .sorted(java.util.Comparator.comparingDouble(score).reversed())
+                .toList();
+        long positives = ranked.stream().filter(FraudCorpus.Case::fraud).count();
+        if (positives == 0) {
+            return 0;
+        }
+        long tp = 0;
+        double sum = 0;
+        for (int i = 0; i < ranked.size(); i++) {
+            if (ranked.get(i).fraud()) {
+                tp++;
+                sum += (double) tp / (i + 1);   // 이 건을 잡은 시점의 정밀도
+            }
+        }
+        return sum / positives;
+    }
+
+    /**
+     * 상위 {@code k} 건 안의 정밀도.
+     *
+     * <p><b>심사 인원이 유한하다</b>는 사실을 지표에 넣는 것이다. 하루에 30건을 볼 수 있으면
+     * 점수 상위 30건만 보게 되고, 그 30건 중 몇 건이 진짜인지가 그 팀이 겪는 값이다.
+     * 전체 재현율이 좋아도 상위 구간이 정상으로 차 있으면 현장에서는 쓸모가 없다.
+     */
+    private static double precisionAt(List<FraudCorpus.Case> holdout, int k,
+                                      java.util.function.ToDoubleFunction<FraudCorpus.Case> score) {
+        var top = holdout.stream()
+                .sorted(java.util.Comparator.comparingDouble(score).reversed())
+                .limit(k).toList();
+        return top.isEmpty() ? 0 : (double) top.stream().filter(FraudCorpus.Case::fraud).count() / top.size();
     }
 
     // ── 시험 ────────────────────────────────────────────────────────────────
@@ -225,12 +298,42 @@ class FraudModelEvalTest {
         System.out.printf("%n  학습 %d건 · 홀드아웃 %d건 (부정 %d건) · 모델 임계 %.3f%n",
                 train.size(), holdout.size(),
                 holdout.stream().filter(FraudCorpus.Case::fraud).count(), threshold);
-        System.out.printf("  %-14s %8s %8s %10s%n", "", "탐지", "놓침", "정상 오탐");
+        System.out.printf("  %-14s %8s %8s %8s %8s%n", "", "재현율", "정밀도", "정상오탐", "경보율");
         for (var s : results) {
-            System.out.printf("  %-14s %6d건 %6d건 %6d건 (%.1f%%)   재현율 %.1f%%%n",
-                    s.name(), s.caught(), s.missed(), s.falseAlarm(),
-                    s.falseAlarmRate() * 100, s.recall() * 100);
+            System.out.printf("  %-14s %7.1f%% %7.1f%% %7.1f%% %7.1f%%   (탐지 %d · 놓침 %d · 오탐 %d)%n",
+                    s.name(), s.recall() * 100, s.precision() * 100,
+                    s.falseAlarmRate() * 100, s.alertRate() * 100,
+                    s.caught(), s.missed(), s.falseAlarm());
         }
+
+        // 임계와 무관한 지표. 임계를 어느 쪽에 유리하게 잡았는지가 안 섞인다.
+        double apModel = averagePrecision(holdout, c -> model.risk(featuresOf(c)));
+        double apRule = averagePrecision(holdout, c -> ruleFlags(c) ? 1 : 0);
+        System.out.printf("%n  평균 정밀도(PR-AUC)   규칙 %.3f · 모델 %.3f%n", apRule, apModel);
+        System.out.printf("  상위 K 정밀도(모델)   ");
+        for (int k : new int[]{10, 30, 60}) {
+            System.out.printf("P@%d %.0f%%  ", k, precisionAt(holdout, k, c -> model.risk(featuresOf(c))) * 100);
+        }
+        System.out.println();
+
+        // 이 코퍼스의 부정 비율은 실제와 다르다. 정밀도는 기저율에 그대로 끌려가므로
+        // 여기 91.7% 를 그대로 인용하면 과장이 된다. 환산해서 같이 적는다.
+        var m0 = results.get(1);
+        double base = (double) holdout.stream().filter(FraudCorpus.Case::fraud).count() / holdout.size();
+        System.out.printf("%n  기저율 환산 (재현율 %.3f · 정상오탐 %.3f 고정)%n", m0.recall(), m0.falseAlarmRate());
+        System.out.printf("    이 코퍼스 %.1f%% -> 정밀도 %.1f%%%n", base * 100, m0.precision() * 100);
+        for (double p : new double[]{0.01, 0.001}) {
+            double prec = p * m0.recall() / (p * m0.recall() + (1 - p) * m0.falseAlarmRate());
+            System.out.printf("    실 기저율 %.1f%% -> 정밀도 %.1f%%  (심사 %d건에 진짜 %d건)%n",
+                    p * 100, prec * 100, 100, Math.round(prec * 100));
+        }
+
+        assertThat(apModel)
+                .as("불균형 표본이라 PR-AUC 로 본다. 임계를 안 정하고도 모델이 규칙보다 나아야 한다")
+                .isGreaterThan(apRule);
+        assertThat(precisionAt(holdout, 30, c -> model.risk(featuresOf(c))))
+                .as("심사 인원이 유한하다. 상위 30건이 정상으로 차 있으면 현장에서는 못 쓴다")
+                .isGreaterThan(0.5);
 
         var rule = results.get(0);
         var m = results.get(1);
