@@ -247,3 +247,28 @@ groups:
         annotations:
           summary: "낙관적 락 재시도 소진 — 사용자에게 실패가 나가는 중"
           description: "재시도 상한을 소진해 STOCK_CONCURRENCY / WALLET_CONCURRENCY 로 실패하고 있습니다. 경합이 재시도로 흡수되는 수준을 넘었습니다."
+
+      # 11) 속도 제한이 조용히 꺼져 있다 — fail-open 은 결제를 세우지 않는 대신 규칙 하나를 뺀다.
+      #     이상거래가 몰리는 때와 Redis 가 흔들리는 때가 겹치면 가장 필요한 순간에 규칙이 없다.
+      #     결제를 막지는 않으므로 성공률·에러율에는 안 나타난다. 이 카운터만 오른다.
+      - alert: FraudVelocityFailOpen
+        expr: sum(rate(fraud_velocity_fail_open_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          domain: fraud
+        annotations:
+          summary: "이상거래 속도 제한이 Redis 실패로 건너뛰어지는 중 (초당 {{ $value | printf \"%.2f\" }}회)"
+          description: "그 시간대의 FDS 판정은 속도 규칙이 빠진 값입니다. Redis 상태를 먼저 보고, 이어진 시간대의 승인 건은 사후 심사에서 다시 보십시오."
+
+      # 12) 오탐이 너무 많다 — 규칙이 정상 거래를 잡고 있고, 그 비용은 사람 심사 시간이다.
+      #     판정 표본이 얇을 때 비율만 보면 2건 중 1건이 50% 로 잡히므로 건수도 함께 건다.
+      - alert: FraudFalsePositiveHigh
+        expr: fraud_review_false_positive_ratio > 0.7 and fraud_review_judged_count >= 20
+        for: 30m
+        labels:
+          severity: warning
+          domain: fraud
+        annotations:
+          summary: "이상거래 심사 오탐률 {{ $value | printf \"%.0f\" }}% — 규칙이 정상 거래를 잡고 있음"
+          description: "사람이 처리한 심사 열 건 중 일곱 건 이상이 정상이었습니다. 임계나 규칙을 조일 때가 된 것이고, 그대로 두면 심사 큐가 사람 시간만 씁니다."
