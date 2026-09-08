@@ -25,4 +25,13 @@ public interface CardTransactionRepository extends JpaRepository<CardTransaction
 
     /** 이미 담은 주문인지. 아웃박스 재배달을 저장 전에 거른다. */
     boolean existsByOrderNo(String orderNo);
+
+    /**
+     * 그 주문의 결제. 유니크 제약이 있어 최대 한 줄인데 {@code List} 로 받는다.
+     *
+     * <p>{@code Optional} 로 받으면 어쩌다 두 줄이 생겼을 때 {@code
+     * IncorrectResultSizeDataAccessException} 이 터진다. 라벨 채점은 배치라 한 건 때문에
+     * 통째로 멈추면 안 된다. 상황 2.3 에서 한 건 실패가 배치를 멈추지 않게 한 것과 같다.
+     */
+    List<CardTransaction> findByOrderNo(String orderNo);
 }
