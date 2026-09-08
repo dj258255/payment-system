@@ -88,7 +88,7 @@ class SubscriptionServiceTest {
     }
 
     @Test
-    @DisplayName("(2) SOFT_DECLINE 첫 실패 → IN_GRACE_PERIOD, nextRetryAt(오늘+2일) 기록")
+    @DisplayName("(2) SOFT_DECLINE 첫 실패 → IN_GRACE_PERIOD, 다음 날 재시도(D+1) 기록")
     void softDeclineFirstEntersGrace() {
         Subscription sub = activeSub();
         givenBillingTargets(sub);
@@ -101,8 +101,26 @@ class SubscriptionServiceTest {
         assertThat(sub.getNextBillingDate()).isEqualTo(TODAY); // 유예 중 청구일 불변
         DunningAttempt dunning = capturedDunning();
         assertThat(dunning.getResult()).isEqualTo(BillingResult.SOFT_DECLINE);
-        assertThat(dunning.getNextRetryAt()).isEqualTo(TODAY.plusDays(2));
+        assertThat(dunning.getNextRetryAt()).isEqualTo(TODAY.plusDays(1));
         assertThat(dunning.getAttemptNo()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("(2-1) 두 번째 SOFT_DECLINE 은 사흘 뒤로 벌린다(D+3)")
+    void softDeclineSecondBacksOffFurther() {
+        Subscription sub = activeSub();
+        sub.enterGrace();                       // 첫 실패로 이미 유예 중
+        givenBillingTargets(sub);
+        when(dunningAttemptRepository.countBySubscriptionIdAndResult(any(), any())).thenReturn(1);
+        gateway.setNextResult(BillingResult.SOFT_DECLINE);
+
+        service.runBillingCycle(TODAY);
+
+        DunningAttempt dunning = capturedDunning();
+        assertThat(dunning.getAttemptNo()).isEqualTo(2);
+        assertThat(dunning.getNextRetryAt())
+                .as("한도 초과와 잔액 부족은 시간이 지나야 풀린다. 같은 간격으로 두드리면 같은 이유로 또 거절된다")
+                .isEqualTo(TODAY.plusDays(3));
     }
 
     @Test
