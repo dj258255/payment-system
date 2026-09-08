@@ -58,3 +58,39 @@ receivers:
           {{ .Annotations.description }}
           {{ end }}
         send_resolved: true
+
+# 묶는 것만으로는 모자란다 — <원인과 결과가 같은 무게로 나간다>.
+#
+# group_by 는 여섯 건을 두 묶음(payment 다섯 + settlement 하나)으로 만들 뿐,
+# 묶음 안에서 무엇이 원인이고 무엇이 파생인지는 말해 주지 않는다. 사람이 다섯 줄을
+# 읽고 스스로 골라야 한다. inhibit 는 <파생을 아예 안 보낸다>.
+#
+# 억제는 인과가 확실한 것만 건다. 애매하면 안 건다 — 억제된 알림은 울린 적이
+# 없으므로, 잘못 걸면 <고장이 조용해진다>. 그래서 아래 넷은 전부 한 방향이고,
+# critical 은 억제 대상에 넣지 않았다. 돈이 걸린 판정은 원인이 무엇이든 사람이 본다.
+inhibit_rules:
+  # 1) 승인이 안 되는 동안 같은 도메인의 warning 은 <같은 고장의 다른 얼굴>이다.
+  #    아웃박스가 안 비는 것도 락 재시도가 느는 것도 승인 경로부터 고쳐야 사라진다.
+  #    이 하나로 DB 장애 시 여섯 건이 넷이 된다(OutboxConsumptionStalled·OptimisticLockRetryRising 억제).
+  #    남는 넷은 critical 셋과 settlement 하나다. 대사는 다른 시간대에 다른 사람이 본다.
+  - source_matchers: [alertname="PaymentSuccessRateLow"]
+    target_matchers: [severity="warning"]
+    equal: ['domain']
+
+  # 2) 속도 제한이 꺼진 동안의 오탐률은 <규칙 하나가 빠진 값>이다.
+  #    그 수치를 보고 규칙을 조이면 Redis 가 돌아왔을 때 정탐까지 같이 놓친다.
+  - source_matchers: [alertname="FraudVelocityFailOpen"]
+    target_matchers: [alertname="FraudFalsePositiveHigh"]
+    equal: ['domain']
+
+  # 3) 이미 마감을 넘긴 건에 "마감이 다가온다"가 같이 뜨는 것은 노이즈다.
+  #    증빙 제출은 연장이 없어서, 지난 것과 남은 것을 섞으면 남은 것을 놓친다.
+  - source_matchers: [alertname="DisputeDeadlineMissed"]
+    target_matchers: [alertname="DisputeDeadlineApproaching"]
+    equal: ['domain']
+
+  # 4) 재시도가 소진된 뒤의 "재시도가 늘고 있음"은 이미 지난 이야기다.
+  #    소진은 사용자가 실패를 본 것이고, 증가는 아직 흡수되고 있다는 뜻이다.
+  - source_matchers: [alertname="OptimisticLockExhausted"]
+    target_matchers: [alertname="OptimisticLockRetryRising"]
+    equal: ['domain']
