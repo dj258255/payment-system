@@ -1,12 +1,11 @@
 package com.beomsu.pay.fraud.web;
 
 import com.beomsu.pay.SecurityConfig;
-import com.beomsu.pay.fraud.review.FraudReviewView;
-import com.beomsu.pay.fraud.review.FraudReviewStatus;
-import com.beomsu.pay.fraud.review.FraudReviewAdminService;
 import com.beomsu.pay.fraud.review.FraudReviewAdminService;
 import com.beomsu.pay.fraud.review.FraudReviewStatus;
 import com.beomsu.pay.fraud.review.FraudReviewView;
+import com.beomsu.pay.fraud.review.RuleFalsePositive;
+import com.beomsu.pay.fraud.review.RuleFalsePositiveService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +16,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.util.List;
 
 /**
  * FDS 심사 큐 백오피스 어드민 REST 컨트롤러.
@@ -33,6 +33,7 @@ class FraudReviewAdminController {
     private static final Logger audit = LoggerFactory.getLogger("AUDIT");
 
     private final FraudReviewAdminService adminService;
+    private final RuleFalsePositiveService ruleFalsePositiveService;
 
     /** 상태별 심사 항목 목록(기본 PENDING = 미결 건). */
     @GetMapping
@@ -59,5 +60,18 @@ class FraudReviewAdminController {
         FraudReviewView view = adminService.reject(id, who);
         audit.info("FDS 심사 거부 결과 by={} reviewId={} status={}", who, id, view.status());
         return view;
+    }
+
+    /**
+     * 규칙별 오탐률. <b>어느 규칙을 조일지</b>를 고르는 화면이 쓴다.
+     *
+     * <p>전체 오탐률 알림이 울렸을 때 여는 자리다. 알림은 "정상 거래를 잡고 있다"까지만
+     * 말하고, 다섯 규칙 중 어느 것인지는 여기서 본다.
+     *
+     * <p>기준을 넘긴 것만 주지 않는다. 목록이 비어 있는 것과 다 멀쩡한 것은 다르다.
+     */
+    @GetMapping("/rule-false-positives")
+    List<RuleFalsePositive> ruleFalsePositives() {
+        return ruleFalsePositiveService.byRule();
     }
 }

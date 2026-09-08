@@ -1,0 +1,40 @@
+# 주간 baseline 알림이 <절대 임계가 못 보는 구간>에서 우는지 고정한다.
+#
+# 왜 필요한가: 이 알림이 값을 하는 구간은 "아직 SLO 안인데 평소보다 낮다"뿐이다.
+# 폭을 잘못 잡으면(처음에 5%p 로 썼다) 그 구간이 사라져서, 뜨긴 뜨는데 언제나
+# 절대 임계가 먼저 울린 뒤라 아무것도 더 알려 주지 않는 규칙이 된다.
+# 여기서 고정하는 것은 <성공률 96% 에서 운다>는 것이다. 96% 는 95% 임계를 안 넘는다.
+#
+# 1주치 시계열을 만들어야 offset 1w 가 값을 돌려준다. 그래서 이 파일만 5분 간격이다.
+#
+# 돌리는 법:
+#   docker run --rm -v "$PWD/monitoring:/m" --entrypoint promtool prom/prometheus:latest \
+#     test rules /m/tests/weekly-baseline-test.yml
+rule_files:
+  - ../alert-rules.yml
+
+evaluation_interval: 5m
+
+tests:
+  # 1주차 성공률 0.99 → 2주차 0.96. 절대 임계(0.95)는 안 넘는데 지난주보다 3%p 낮다.
+  - interval: 5m
+    input_series:
+      - series: 'payment_confirm_total{outcome="success"}'
+        values: '0+99x2016 199680+96x24'
+      - series: 'payment_confirm_total{outcome="failure"}'
+        values: '0+1x2016 2020+4x24'
+    alert_rule_test:
+      # 7일 + 50분. offset 1w 는 1주차의 50분 지점(0.99)을 본다.
+      - eval_time: 10130m
+        alertname: PaymentSuccessRateBelowWeeklyBaseline
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              domain: payment
+            exp_annotations:
+              summary: "결제 성공률이 지난주 같은 시각보다 2%p 넘게 낮음 (현재 0.960)"
+              description: "절대 임계(95%)는 아직 안 넘었지만 같은 요일 같은 시각 대비 2%p 넘게 떨어졌습니다. 특정 카드사·결제수단만 빠지는 중인지 먼저 보십시오."
+      # 같은 시각에 절대 임계는 조용하다. 이게 이 알림을 따로 둔 이유다.
+      - eval_time: 10130m
+        alertname: PaymentSuccessRateLow
+        exp_alerts: []

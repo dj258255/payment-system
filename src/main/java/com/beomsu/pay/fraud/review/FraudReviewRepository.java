@@ -30,4 +30,28 @@ public interface FraudReviewRepository extends JpaRepository<FraudReview, Long> 
      */
     @Query("select min(r.createdAt) from FraudReview r where r.status = :status")
     Optional<Instant> findOldestCreatedAt(@Param("status") FraudReviewStatus status);
+
+    /**
+     * 규칙별 오탐 집계용 — <b>판정이 끝난</b> 심사의 근거와 결과만 읽는다.
+     *
+     * <p>근거가 콤마로 이어 붙인 문자열이라 SQL 로는 규칙 단위로 못 가른다. 그래서 두 칼럼만
+     * 가져와 자바에서 쪼갠다. 엔티티 전건을 읽지 않는 것은 이 조회가 어드민 화면마다 도는데
+     * 심사 이력은 계속 쌓이기 때문이다.
+     *
+     * <p>PENDING 은 애초에 안 읽는다. 분모에 넣으면 <b>심사가 밀릴수록 오탐률이 떨어져</b> 보인다.
+     */
+    @Query("""
+            select r.reasons as reasons, r.status as status
+              from FraudReview r
+             where r.status in (com.beomsu.pay.fraud.review.FraudReviewStatus.APPROVED,
+                                com.beomsu.pay.fraud.review.FraudReviewStatus.REJECTED)
+               and r.reasons is not null
+            """)
+    List<JudgedReasons> findJudgedReasons();
+
+    /** 위 조회의 투영. 근거 문자열과 사람의 판정만 있으면 규칙별로 가를 수 있다. */
+    interface JudgedReasons {
+        String getReasons();
+        FraudReviewStatus getStatus();
+    }
 }

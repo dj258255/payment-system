@@ -1,0 +1,67 @@
+# 성공률 알림이 <표본 크기>를 어떻게 다루는지 고정한다.
+#
+# 왜 필요한가: 비율 알림의 함정은 분모가 작을 때다. 5분에 네 건 들어오는 새벽에
+# 한 건이 실패하면 성공률이 75% 로 찍힌다. 이건 고장이 아니라 표본이 얇은 것인데,
+# 임계값 하나로는 낮 시간의 75% 와 구별되지 않는다. 반대로 바닥만 걸면 저트래픽
+# 시간대의 진짜 장애가 통째로 조용해진다. 그 둘 사이를 여기서 고정한다.
+#
+# 돌리는 법:
+#   docker run --rm -v "$PWD/monitoring:/m" --entrypoint promtool prom/prometheus:latest \
+#     test rules /m/tests/success-rate-sampling-test.yml
+rule_files:
+  - ../alert-rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ① 표본이 얇으면 비율이 나빠도 안 울린다.
+  #    분당 4건(초당 0.067) 은 바닥 0.1 미만이다. 성공률은 75% 로 임계를 한참 밑돈다.
+  - interval: 1m
+    input_series:
+      - series: 'payment_confirm_total{outcome="success"}'
+        values: '0+3x30'
+      - series: 'payment_confirm_total{outcome="failure"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PaymentSuccessRateLow
+        exp_alerts: []
+
+  # ② 같은 표본이어도 <붕괴>는 울린다.
+  #    분당 4건 전부 실패. 성공률 0% 는 몇 건이든 고장이라 바닥을 안 본다.
+  #    ①과 ②의 차이가 이 알림의 설계 전부다.
+  - interval: 1m
+    input_series:
+      - series: 'payment_confirm_total{outcome="success"}'
+        values: '0+0x30'
+      - series: 'payment_confirm_total{outcome="failure"}'
+        values: '0+4x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PaymentSuccessRateLow
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              domain: payment
+            exp_annotations:
+              summary: "결제 성공률 저하 (< 95%)"
+              description: "최근 5분 결제 성공률이 95% 미만입니다. PG 장애/승인 실패 급증 여부를 확인하세요."
+
+  # ③ 표본이 충분하면 같은 90% 가 울린다.
+  #    분당 20건(초당 0.333) 은 바닥을 넘는다. ①과 비율은 비슷한데 결과가 다르다.
+  - interval: 1m
+    input_series:
+      - series: 'payment_confirm_total{outcome="success"}'
+        values: '0+18x30'
+      - series: 'payment_confirm_total{outcome="failure"}'
+        values: '0+2x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PaymentSuccessRateLow
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              domain: payment
+            exp_annotations:
+              summary: "결제 성공률 저하 (< 95%)"
+              description: "최근 5분 결제 성공률이 95% 미만입니다. PG 장애/승인 실패 급증 여부를 확인하세요."

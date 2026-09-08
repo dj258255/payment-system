@@ -70,6 +70,26 @@ jobs:
         run: |
           docker run --rm -v "$PWD/monitoring:/m" --entrypoint promtool \
             prom/prometheus:latest test rules /m/tests/db-outage-probe.yml
+      # 비율 알림은 분모가 작을 때 거짓말을 한다. 표본 바닥과 붕괴 예외를 고정한다.
+      - name: Check success-rate sampling floor
+        run: |
+          docker run --rm -v "$PWD/monitoring:/m" --entrypoint promtool \
+            prom/prometheus:latest test rules /m/tests/success-rate-sampling-test.yml
+      # 주간 baseline 알림이 <절대 임계가 안 우는 구간>에서 우는지 본다.
+      # 폭을 잘못 잡으면 절대 임계에 가려 혼자서는 영영 안 우는 규칙이 된다.
+      - name: Check weekly baseline alert
+        run: |
+          docker run --rm -v "$PWD/monitoring:/m" --entrypoint promtool \
+            prom/prometheus:latest test rules /m/tests/weekly-baseline-test.yml
+      # 억제 규칙은 문법이 틀려도 알림이 안 멈춘다 — <조용히 안 걸릴> 뿐이다.
+      # 웹훅 URL 은 실행 시 환경변수로 들어가므로 검사용 더미로 바꿔 넣는다.
+      - name: Check alertmanager config
+        run: |
+          mkdir -p build/am
+          sed "s|'\${SLACK_WEBHOOK_URL}'|'https://hooks.slack.com/services/T0/B0/XXXX'|" \
+            monitoring/alertmanager.yml > build/am/alertmanager.yml
+          docker run --rm -v "$PWD/build/am:/m" --entrypoint amtool \
+            prom/alertmanager:latest check-config /m/alertmanager.yml
 
   integration-test:
     name: integration test (real DB)

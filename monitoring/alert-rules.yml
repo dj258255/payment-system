@@ -6,8 +6,22 @@ groups:
       # 1) 최근 5분 결제 성공률 < 95%.
       #    분모(전체 승인율)가 0이면 0/0=NaN이라 Prometheus는 알림을 발화하지 않는다
       #    → 트래픽이 없을 때 오탐이 뜨지 않는다.
+      #
+      #    <b>표본 바닥을 걸었다.</b> 분모가 0이 아니어도 새벽에는 5분에 열 건이 안 들어온다.
+      #    그때 한 건이 실패하면 성공률이 90% 로 찍혀 임계를 넘는데, 이건 고장이 아니라
+      #    표본이 얇은 것이다. 초당 0.1건(5분에 30건) 밑에서는 비율을 신뢰하지 않는다.
+      #
+      #    <b>대신 붕괴는 표본과 무관하게 잡는다.</b> 바닥만 걸면 저트래픽 시간대의 진짜
+      #    장애가 통째로 조용해진다. 성공률이 50% 밑으로 떨어지는 것은 몇 건이든 고장이므로
+      #    두 번째 항으로 따로 뺐다. 둘을 한 알림에 담아 같은 고장에 두 건이 안 나가게 했다.
       - alert: PaymentSuccessRateLow
-        expr: sum(rate(payment_confirm_total{outcome="success"}[5m])) / sum(rate(payment_confirm_total[5m])) < 0.95
+        expr: |
+          (
+            sum(rate(payment_confirm_total{outcome="success"}[5m])) / sum(rate(payment_confirm_total[5m])) < 0.95
+            and sum(rate(payment_confirm_total[5m])) >= 0.1
+          )
+          or
+          sum(rate(payment_confirm_total{outcome="success"}[5m])) / sum(rate(payment_confirm_total[5m])) < 0.5
         for: 5m
         labels:
           severity: critical
@@ -272,3 +286,47 @@ groups:
         annotations:
           summary: "이상거래 심사 오탐률 {{ $value | printf \"%.0f\" }}% — 규칙이 정상 거래를 잡고 있음"
           description: "사람이 처리한 심사 열 건 중 일곱 건 이상이 정상이었습니다. 임계나 규칙을 조일 때가 된 것이고, 그대로 두면 심사 큐가 사람 시간만 씁니다."
+
+  # 고정 임계값이 못 보는 것 — <이 시간대에는 원래 이 정도였는가>.
+  #
+  # 위의 95% 는 하루 종일 같은 숫자다. 그런데 결제는 요일과 시간대로 모양이 크게 다르다.
+  # 평일 점심의 96% 와 새벽의 96% 는 같은 값이 아니다. 앞의 것은 평소보다 3%p 떨어진
+  # 것일 수 있고 뒤의 것은 평소 그대로일 수 있는데, 임계 하나로는 둘을 못 가른다.
+  #
+  # <b>모델을 쓰지 않는다.</b> 이 자리의 baseline 은 <지난주 같은 요일 같은 시각>이면
+  # 충분하다. 요일과 시간대가 곧 결제량의 주기라서, 학습해야 알 수 있는 것이 아니다.
+  # 모델을 넣으면 "왜 울렸는가"를 설명해야 하는 자리가 하나 더 늘 뿐이다.
+  #
+  # <b>첫 일주일은 조용하다.</b> offset 1w 가 빈 값을 돌려주므로 비교가 성립하지 않는다.
+  # 이건 결함이 아니라 전제다. 비교할 지난주가 없으면 baseline 도 없다.
+  - name: payment-baseline
+    rules:
+      # 30분 창으로 성공률을 미리 계산해 둔다. offset 비교를 알림 식에서 두 번 쓰기 때문에
+      # 기록 규칙으로 빼지 않으면 같은 식이 네 번 들어간다.
+      - record: payment:confirm_success_ratio:rate30m
+        expr: sum(rate(payment_confirm_total{outcome="success"}[30m])) / sum(rate(payment_confirm_total[30m]))
+
+      # 13) 지난주 같은 시각보다 2%p 넘게 낮다.
+      #
+      #     <b>2%p 로 잡은 이유.</b> 처음에 5%p 로 썼다가 지웠다. 성공률 상한이 1.0 이라
+      #     5%p 가 떨어지면 이미 95% 밑이고, 그러면 위의 절대 임계가 먼저 울린다.
+      #     <b>혼자서는 절대 안 울리는 규칙</b>이 되는 것이다. 이 알림이 값을 하는 구간은
+      #     "아직 SLO 안이지만 평소보다 낮다"뿐이라, 폭이 그 안에 들어와야 한다.
+      #
+      #     <b>표본 바닥이 위보다 높다(초당 0.3건 = 30분에 540건).</b> 2%p 는 좁아서
+      #     표본이 얇으면 흔들림에 묻힌다. 성공률 0.98 에서 표준편차가 √(0.98·0.02/N) 이라
+      #     540건이면 0.006 이고 2%p 는 그 3.3배다. 180건이면 1.9배라 절반이 잡음이 된다.
+      #     양쪽 다 건다 — 지난주 그 시각이 한산했으면 비교 자체가 성립하지 않는다.
+      - alert: PaymentSuccessRateBelowWeeklyBaseline
+        expr: |
+          payment:confirm_success_ratio:rate30m
+            < (payment:confirm_success_ratio:rate30m offset 1w) - 0.02
+          and sum(rate(payment_confirm_total[30m])) >= 0.3
+          and sum(rate(payment_confirm_total[30m] offset 1w)) >= 0.3
+        for: 15m
+        labels:
+          severity: warning
+          domain: payment
+        annotations:
+          summary: "결제 성공률이 지난주 같은 시각보다 2%p 넘게 낮음 (현재 {{ $value | printf \"%.3f\" }})"
+          description: "절대 임계(95%)는 아직 안 넘었지만 같은 요일 같은 시각 대비 2%p 넘게 떨어졌습니다. 특정 카드사·결제수단만 빠지는 중인지 먼저 보십시오."
