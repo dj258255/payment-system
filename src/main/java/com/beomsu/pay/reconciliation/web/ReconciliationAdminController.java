@@ -44,6 +44,7 @@ class ReconciliationAdminController {
     private static final Logger audit = LoggerFactory.getLogger("AUDIT");
 
     private final ReconciliationAdminService adminService;
+    private final com.beomsu.pay.reconciliation.cause.RulePromotionService rulePromotionService;
 
     /**
      * PG 정산 파일(CSV)을 업로드해 대사를 실행한다. 결과는 분류별 집계({@link ReconRunSummary})로 응답하고,
@@ -79,6 +80,17 @@ class ReconciliationAdminController {
     @GetMapping("/{id}/suggestions")
     java.util.List<com.beomsu.pay.reconciliation.CauseSuggestion> suggestions(@PathVariable Long id) {
         return adminService.suggestCauses(id);
+    }
+
+    /**
+     * 사람이 반복해서 같은 답을 낸 자리를 센다. <b>규칙으로 올릴 후보</b>다.
+     *
+     * <p>여기서 규칙을 켜지는 않는다. 대사 규칙을 바꾸는 것은 돈 판정을 바꾸는 일이라
+     * 근거를 보고 사람이 눌러야 한다. 이 응답은 <b>어디를 볼지</b>만 알려 준다.
+     */
+    @GetMapping("/rule-candidates")
+    java.util.List<com.beomsu.pay.reconciliation.cause.RulePromotionCandidate> ruleCandidates() {
+        return rulePromotionService.candidates();
     }
 
     @GetMapping("/mismatches")
