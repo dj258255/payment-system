@@ -90,6 +90,11 @@ jobs:
             monitoring/alertmanager.yml > build/am/alertmanager.yml
           docker run --rm -v "$PWD/build/am:/m" --entrypoint amtool \
             prom/alertmanager:latest check-config /m/alertmanager.yml
+      # 문법이 맞아도 억제가 걸리는지는 모른다. 살아 있는 alertmanager 에 알림 여섯을
+      # 밀어 넣고 몇 건이 안 억제된 채 남는지 센다. 억제는 안 걸려도 조용해서
+      # 이 검사가 없으면 소음이 줄었는지 아닌지를 사람이 알 방법이 없다.
+      - name: Measure alert inhibition
+        run: ./monitoring/tests/run-inhibit-probe.sh
 
   integration-test:
     name: integration test (real DB)
