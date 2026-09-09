@@ -30,6 +30,22 @@ public class FraudReviewAdminService {
                 .map(FraudReviewView::from);
     }
 
+    /**
+     * 모델 점수가 높은 것부터 본다. <b>집합은 그대로고 순서만 바뀐다.</b>
+     *
+     * <p><b>이것이 지금 모델을 켠 유일한 자리다</b>(docs/27 5-1절). 큐에 새로 넣지 않으므로
+     * 경보율이 안 늘고, <b>순서만 쓰므로 기저율에 안 휘둘린다.</b> 코퍼스에서 상위 10건과
+     * 30건의 정밀도가 100% 였다는 것이 그 근거다. 반대로 이진 플래그로 쓰면 실 기저율 1%
+     * 에서 정밀도가 20.6% 로 떨어져 큐가 정상으로 찬다.
+     *
+     * <p>점수가 없는 건(홀드아웃·채점 실패)은 뒤로 가되 <b>큐에서 빠지지는 않는다.</b>
+     */
+    @Transactional(readOnly = true)
+    public Page<FraudReviewView> listByRisk(FraudReviewStatus status, Pageable pageable) {
+        return repository.findByStatusOrderByModelRiskDesc(status, pageable)
+                .map(FraudReviewView::from);
+    }
+
     /** 승인 — PENDING → APPROVED(정상 거래로 확인). */
     @Transactional
     public FraudReviewView approve(long id, String reviewer) {

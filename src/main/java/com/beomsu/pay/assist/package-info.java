@@ -34,7 +34,7 @@
  * 사람 확인 원칙(ADR-008)을 우회하는 뒷문이 된다.
  */
 @org.springframework.modulith.ApplicationModule(
-        allowedDependencies = { "shared", "timeline", "reconciliation" }
+        allowedDependencies = { "shared", "timeline", "reconciliation", "fraud" }
 )
 package com.beomsu.pay.assist;
 

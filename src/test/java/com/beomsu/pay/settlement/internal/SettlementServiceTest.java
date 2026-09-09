@@ -156,6 +156,37 @@ class SettlementServiceTest {
     }
 
     @Test
+    @DisplayName("당일 집계가 끝난 뒤 확정된 항목을 다음 날 집계가 줍는다 — 조회를 그 날짜 이하로 넓힌 이유")
+    void lateConfirmationIsSweptByTheNextDayRun() {
+        // D 집계가 이미 끝났다. 그 뒤에 D 로 확정된 항목이 하나 더 들어온다.
+        SettlementItem late = SettlementItem.of(9L, "order-late", 50_000, DATE);
+        late.confirm(DATE);
+
+        // D 는 이미 정산이 있어 재실행이 건너뛴다. 여기서 끝나면 이 항목은 영구 미정산이다.
+        when(settlementRepository.existsFor(eq(DATE), eq("KRW"), any())).thenReturn(true);
+        assertThat(service.settle(DATE))
+                .as("이미 정산된 날짜는 재실행이 건너뛴다. 그래서 늦게 확정된 건이 여기서 안 잡힌다")
+                .isNull();
+
+        // D+1 집계. 조회가 <그 날짜 이하>라 confirmedDate=D 인 이 항목이 걸린다.
+        LocalDate nextDay = DATE.plusDays(1);
+        when(settlementRepository.existsFor(eq(nextDay), eq("KRW"), any())).thenReturn(false);
+        when(itemRepository.findByStatusAndConfirmedDateLessThanEqual(
+                eq(SettlementItemStatus.CONFIRMED), eq(nextDay), any(Pageable.class)))
+                .thenReturn(List.of(late));
+        when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Settlement swept = service.settle(nextDay);
+
+        assertThat(swept)
+                .as("날짜가 정확히 맞는 것만 모으면 이 항목이 또 영영 빠진다")
+                .isNotNull();
+        assertThat(swept.getSettlementDate()).isEqualTo(nextDay);
+        assertThat(swept.getGrossAmount()).isEqualTo(50_000L);
+        assertThat(late.getStatus()).isEqualTo(SettlementItemStatus.SETTLED);
+    }
+
+    @Test
     @DisplayName("에스크로 릴리스: 항목이 없으면(순서 레이스) 무시하고 저장하지 않는다")
     void confirmSettlementMissingItemIsIgnored() {
         when(itemRepository.findByOrderNo("order-x")).thenReturn(Optional.empty());

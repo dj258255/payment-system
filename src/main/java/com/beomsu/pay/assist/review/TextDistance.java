@@ -16,7 +16,7 @@ package com.beomsu.pay.assist.review;
  * 맞는 초안의 어미만 다듬어도 거리는 작다 — 여기까지가 이 숫자가 말할 수 있는 전부다.
  * "내용이 맞는가"는 사람이 판단할 몫으로 남는다.
  */
-final class TextDistance {
+public final class TextDistance {
 
     private TextDistance() {
     }
@@ -25,7 +25,7 @@ final class TextDistance {
      * 레벤슈타인 거리. 공백은 하나로 접어 비교한다 —
      * 줄바꿈이나 들여쓰기 차이를 "고쳤다"로 세면 안 된다.
      */
-    static int levenshtein(String a, String b) {
+    public static int levenshtein(String a, String b) {
         String x = normalize(a);
         String y = normalize(b);
         if (x.isEmpty()) return y.length();
@@ -57,7 +57,7 @@ final class TextDistance {
      * <p>긴 쪽으로 나눈다. 짧은 쪽으로 나누면 초안이 짧고 사람이 길게 쓴 경우
      * 1을 넘어 해석이 깨진다.
      */
-    static double editRatio(String from, String to) {
+    public static double editRatio(String from, String to) {
         String x = normalize(from);
         String y = normalize(to);
         int longer = Math.max(x.length(), y.length());

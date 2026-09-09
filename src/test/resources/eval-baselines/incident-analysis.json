@@ -1,15 +1,15 @@
 {
-  "recordedAt" : "2026-09-06T00:27:33.379970Z",
-  "note" : "회귀 감지용 기준선. 나빠지면 evalTest 가 알린다. 바뀐 것이 맞다고 판단하면 EvalBaseline.accept 로 갱신한다",
-  "context" : {
-    "corpusFingerprint" : "20460f8c",
-    "model" : "ollama:qwen3:8b",
-    "samples" : "12"
+  "recordedAt": "2026-09-09T01:01:17.280378Z",
+  "note": "회귀 감지용 기준선. 나빠지면 evalTest 가 알린다. 바뀐 것이 맞다고 판단하면 EvalBaseline.accept 로 갱신한다 | 2026-09-09: QUEUE_BACKLOG.log 을 RACE_CONDITION-04.log 로 라벨 정정(docs/19 8-4-1). 규칙은 그대로 7, 모델 쪽만 11->12",
+  "context": {
+    "corpusFingerprint": "1c95c1c3",
+    "model": "ollama:qwen3:8b",
+    "samples": "12"
   },
-  "metrics" : {
-    "rule.correct" : 7.0,
-    "ruleFirst.correct" : 11.0,
-    "ruleFirst.wrong" : -1.0,
-    "model.correct" : 11.0
+  "metrics": {
+    "rule.correct": 7.0,
+    "ruleFirst.correct": 12.0,
+    "ruleFirst.wrong": 0.0,
+    "model.correct": 12.0
   }
 }

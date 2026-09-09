@@ -1,6 +1,10 @@
 package com.beomsu.pay.fraud.internal;
 
 import com.beomsu.pay.order.internal.CheckoutService;
+import com.beomsu.pay.fraud.model.CardTransaction;
+import com.beomsu.pay.fraud.model.CardTransactionRepository;
+import com.beomsu.pay.fraud.model.ShadowRiskScorer;
+import com.beomsu.pay.fraud.model.TxnRecord;
 import com.beomsu.pay.fraud.review.FraudReviewRepository;
 import com.beomsu.pay.fraud.review.FraudReview;
 import com.beomsu.pay.payment.PaymentConfirmedEvent;
@@ -24,6 +28,14 @@ import org.springframework.stereotype.Component;
  *
  * <p>BLOCK은 사후엔 이미 결제가 완료돼 막을 수 없지만, 긴급 심사 대상으로 큐에 적재한다.
  * ALLOW/CHALLENGE는 큐에 넣지 않는다.
+ *
+ * <p><b>여기서 셋을 한다.</b> 순서가 뜻을 갖는다.
+ * <ol>
+ *   <li><b>거래 이력을 남긴다</b> — 모델이 볼 창이다. 판정보다 먼저 해야 이번 건이 창에 든다</li>
+ *   <li><b>규칙으로 판정한다</b> — 지금까지 하던 일. 이것만 심사 큐를 채운다</li>
+ *   <li><b>모델로 섀도 채점한다</b> — 점수를 기록만 하고 <b>아무것도 안 막는다</b></li>
+ * </ol>
+ * 1과 3은 실패해도 2를 멈추지 않는다. 관찰이 판정을 막으면 안 된다.
  */
 @Component
 @RequiredArgsConstructor
@@ -31,9 +43,14 @@ import org.springframework.stereotype.Component;
 // ModularityTests 의 allowedDependencies 가 막는다.
 public class FraudPostHocListener {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(FraudPostHocListener.class);
+
     private final PaymentService paymentService;
     private final FraudService fraudService;
     private final FraudReviewRepository reviewRepository;
+    private final CardTransactionRepository transactionRepository;
+    private final ShadowRiskScorer shadowScorer;
 
     @ApplicationModuleListener
     void onConfirmed(PaymentConfirmedEvent e) {
@@ -43,15 +60,47 @@ public class FraudPostHocListener {
             return;
         }
 
+        // 이번 건이 창에 들어야 escalation·windowCount 가 이번 결제를 반영한다. 판정보다 먼저 한다.
+        var current = new TxnRecord(e.amount(), java.time.Instant.now(), null, null, 0);
+        record(cardKey, e.orderNo(), current);
+
         // 사후 재평가: ip/deviceId/userId는 요청 시점 신호라 사후엔 없다 → 0/null.
         // 활성 룰이 cardKey·amount 기준이라 이 입력으로도 정상 동작한다.
         FraudResult result = fraudService.evaluate(
                 new FraudCheckRequest(0L, cardKey, null, null, e.amount()));
 
+        // 섀도. 점수를 먼저 낸다. 심사에 실어 보내야 큐가 그 순서로 정렬된다.
+        // <b>큐에 넣고 빼는 데는 안 쓴다.</b> 아래 조건은 규칙 판정만 본다(docs/27 5-1절).
+        Double risk = shadowScorer.score(cardKey, e.orderNo(), current).orElse(null);
+
         // REVIEW/BLOCK만 심사 큐에 적재한다(ALLOW/CHALLENGE는 제외).
+        // 집합은 규칙이 정하고 순서만 모델이 정한다. 모델을 꺼도 이 조건은 그대로다.
         if (result.decision() == FdsDecision.REVIEW || result.decision() == FdsDecision.BLOCK) {
-            reviewRepository.save(
-                    FraudReview.flagged(e.orderNo(), e.paymentId(), cardKey, e.amount(), result));
+            reviewRepository.save(FraudReview.flagged(
+                    e.orderNo(), e.paymentId(), cardKey, e.amount(), result, risk));
+        }
+    }
+
+    /**
+     * 거래 이력 한 줄. <b>실패해도 판정을 멈추지 않는다.</b>
+     *
+     * <p>아웃박스가 at-least-once 라 같은 이벤트가 두 번 온다. 저장 전에 먼저 보고, 그 사이에
+     * 끼어들면 유니크 제약이 마지막에 막는다. <b>검사만으로는 못 막는다</b>는 것을 상황 2.2 에서
+     * 인스턴스 둘로 실제로 뚫어 봤다.
+     */
+    private void record(String cardKey, String orderNo, TxnRecord current) {
+        try {
+            if (transactionRepository.existsByOrderNo(orderNo)) {
+                return;
+            }
+            transactionRepository.save(CardTransaction.of(
+                    cardKey, orderNo, current.amount(), current.installmentMonths(),
+                    current.deviceId(), current.ip(), current.at()));
+        } catch (org.springframework.dao.DataIntegrityViolationException dup) {
+            // 유니크 제약이 막은 것이다. 재배달이라 정상이다.
+            log.debug("[fds] 이미 담은 주문이라 거래 이력을 건너뜁니다 order={}", orderNo);
+        } catch (RuntimeException ex) {
+            log.warn("[fds] 거래 이력 저장 실패 order={}", orderNo, ex);
         }
     }
 }

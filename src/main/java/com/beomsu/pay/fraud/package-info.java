@@ -19,7 +19,7 @@
  * 되읽으므로 payment에 의존한다(payment는 fraud를 모르므로 순환 없음).
  */
 @org.springframework.modulith.ApplicationModule(
-        allowedDependencies = { "shared", "payment" }
+        allowedDependencies = { "shared", "payment", "dispute" }
 )
 package com.beomsu.pay.fraud;
 

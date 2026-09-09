@@ -21,8 +21,25 @@ public interface FraudReviewRepository extends JpaRepository<FraudReview, Long> 
     /** 어드민 관측용 — 상태별 심사 항목 페이지(기본 PENDING = 미결 건). 전건 로딩 방지 위해 페이지 단위. */
     Page<FraudReview> findByStatus(FraudReviewStatus status, Pageable pageable);
 
+    /**
+     * 모델 점수가 높은 것부터. <b>집합은 그대로고 순서만 바뀐다.</b>
+     *
+     * <p>MySQL 은 {@code DESC} 정렬에서 NULL 을 뒤로 보낸다. 홀드아웃에 들었거나 채점이
+     * 실패해 점수가 없는 건이 아래로 간다. 그 건들이 큐에서 빠지는 것은 아니다.
+     */
+    Page<FraudReview> findByStatusOrderByModelRiskDesc(FraudReviewStatus status, Pageable pageable);
+
     /** 상태별 건수 — 심사 큐 깊이 게이지가 쓴다. 스크레이프마다 count 한 번만 돈다. */
     long countByStatus(FraudReviewStatus status);
+
+    /**
+     * 같은 카드의 심사 이력. 심사자가 "이 카드가 전에도 걸렸나"를 보는 데 쓴다.
+     *
+     * <p>상한 없이 {@code List} 를 돌려주는 것이 걸리는데, 여기는 <b>카드 하나</b>로 좁힌
+     * 조회라 상황 2.3 에서 상한을 건 배치 스캔과 성질이 다르다. 한 카드가 수천 번 걸릴 만큼
+     * 쌓이면 그건 목록을 자를 문제가 아니라 그 카드를 이미 막았어야 하는 상황이다.
+     */
+    List<FraudReview> findByCardKey(String cardKey);
 
     /**
      * 해당 상태에서 <b>가장 오래 기다린</b> 항목의 생성 시각. 큐 깊이만으로는 적체를 못 본다.
