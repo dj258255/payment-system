@@ -43,7 +43,7 @@ class FraudReviewDraftServiceTest {
         FraudReviewFactsPort port = id -> id == REVIEW_ID ? Optional.of(facts()) : Optional.empty();
         // provider 이름으로 고르므로 그 이름을 그대로 준다.
         return new FraudReviewDraftService(port, List.of(primary, template), template,
-                guard, registry, primary.name());
+                guard, new com.beomsu.pay.assist.draft.AmountCoverageGuard(), registry, primary.name());
     }
 
     /** 고정된 문장을 돌려주는 가짜 모델. */
@@ -139,5 +139,50 @@ class FraudReviewDraftServiceTest {
                     .doesNotContain("부정거래")
                     .doesNotContain("차단");
         }
+    }
+
+    /** 금액을 빠뜨린 초안을 내고, 되묻기에서 채워 주는 가짜 모델. */
+    private static FraudReviewDraftPort forgetsAmountThenFixes(String first, String revised) {
+        return new FraudReviewDraftPort() {
+            @Override public Optional<String> draft(FraudReviewFacts f) { return Optional.of(first); }
+            @Override public Optional<String> revise(FraudReviewFacts f, String o, java.util.List<String> issues) {
+                return Optional.ofNullable(revised);
+            }
+            @Override public String name() { return "fake-forgetful"; }
+        };
+    }
+
+    @Test
+    @DisplayName("금액이 빠지면 되묻어 채운다 — 지어낸 값을 버리는 검사와 방향이 반대다")
+    void missingAmountIsRevised() {
+        String withAmount = "심사 대상 결제는 " + java.text.NumberFormat
+                .getNumberInstance(java.util.Locale.KOREA).format(AMOUNT) + "원입니다.";
+
+        var draft = serviceWith(forgetsAmountThenFixes("금액이 큰 결제입니다.", withAmount))
+                .draftFor(REVIEW_ID).orElseThrow();
+
+        assertThat(draft.text()).isEqualTo(withAmount);
+        assertThat(draft.source()).isEqualTo("fake-forgetful");
+    }
+
+    @Test
+    @DisplayName("되묻어도 안 채워지면 원본을 쓴다 — 되묻기가 멀쩡한 문장을 흔들면 안 된다")
+    void unhelpfulReviseKeepsTheOriginal() {
+        var draft = serviceWith(forgetsAmountThenFixes("금액이 큰 결제입니다.", "여전히 금액이 없습니다."))
+                .draftFor(REVIEW_ID).orElseThrow();
+
+        assertThat(draft.text()).isEqualTo("금액이 큰 결제입니다.");
+    }
+
+    @Test
+    @DisplayName("금액이 이미 있으면 되묻지 않는다 — 고칠 게 없는데 다시 쓰게 하면 문장이 흔들린다")
+    void draftWithAmountIsNotRevised() {
+        String ok = "심사 대상 결제는 " + java.text.NumberFormat
+                .getNumberInstance(java.util.Locale.KOREA).format(AMOUNT) + "원입니다.";
+
+        var draft = serviceWith(forgetsAmountThenFixes(ok, "이 값은 쓰이면 안 된다"))
+                .draftFor(REVIEW_ID).orElseThrow();
+
+        assertThat(draft.text()).isEqualTo(ok);
     }
 }

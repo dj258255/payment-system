@@ -25,6 +25,19 @@ public interface FraudReviewDraftPort {
      */
     Optional<String> draft(FraudReviewFacts facts);
 
+    /**
+     * 지적을 붙여 다시 쓰게 한다. <b>고칠 게 없으면 부르지 않는다.</b>
+     *
+     * <p>{@code assist.draft.DraftPort.revise} 와 같은 자리다. 상담 초안에서 필수 금액이
+     * 빠지던 것을 이 되묻기로 잡았고(같은 12건에서 75% 에서 0%), 심사 초안에도 같은 구멍이
+     * 있었다. 열두 건을 돌려 보니 둘이 금액을 통째로 빠뜨린 채 출처 검증을 통과했다.
+     *
+     * @return 수정본. 못 고치면 {@link Optional#empty()} — 부르는 쪽이 원본을 유지한다
+     */
+    default Optional<String> revise(FraudReviewFacts facts, String original, java.util.List<String> issues) {
+        return Optional.empty();
+    }
+
     /** 어느 구현이 만들었는지. 초안에 실어 심사자가 출처를 알게 한다. */
     String name();
 }

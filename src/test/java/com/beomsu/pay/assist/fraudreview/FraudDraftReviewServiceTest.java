@@ -97,7 +97,7 @@ class FraudDraftReviewServiceTest {
         rows.clear();
         service = new FraudDraftReviewService(port(),
                 List.of(fixed("모델이 쓴 문장", "ollama:qwen3:8b"), new TemplateFraudReviewAdapter()),
-                new TemplateFraudReviewAdapter(), repository());
+                new TemplateFraudReviewAdapter(), repository(), drafts(port()));
     }
 
     @Test
@@ -141,7 +141,7 @@ class FraudDraftReviewServiceTest {
     @DisplayName("모델 초안이 비면 공개하지 않는다 — 한쪽만 있는 화면은 비교가 아니다")
     void oneSidedRevealIsRefused() {
         service = new FraudDraftReviewService(port(), List.of(fixed(null, "ollama")),
-                new TemplateFraudReviewAdapter(), repository());
+                new TemplateFraudReviewAdapter(), repository(), drafts(port()));
         service.open(REVIEW_ID, ME);
         service.blind(REVIEW_ID, ME, "메모");
 
@@ -197,7 +197,7 @@ class FraudDraftReviewServiceTest {
     void withoutModelThereIsNoComparison() {
         var onlyTemplate = new FraudDraftReviewService(port(),
                 List.of(new TemplateFraudReviewAdapter()),
-                new TemplateFraudReviewAdapter(), repository());
+                new TemplateFraudReviewAdapter(), repository(), drafts(port()));
 
         assertThat(onlyTemplate.modelAvailable())
                 .as("표본 0건과 모델이 꺼진 것을 화면이 구별해야 한다")
@@ -218,5 +218,17 @@ class FraudDraftReviewServiceTest {
 
         assertThat(row.getModelSource()).isNotEqualTo(row.getBaselineSource());
         assertThat(row.getModelDraft()).isNotEqualTo(row.getBaselineDraft());
+    }
+
+    /**
+     * 비교가 <b>화면에 나갈 때와 같은 처리</b>를 태우므로 그 서비스를 함께 준다.
+     * provider 이름은 템플릿으로 둔다 — 비교 쪽은 포트를 명시적으로 넘기므로 여기 값은 안 쓰인다.
+     */
+    private static FraudReviewDraftService drafts(FraudReviewFactsPort port) {
+        return new FraudReviewDraftService(port, java.util.List.of(new TemplateFraudReviewAdapter()),
+                new TemplateFraudReviewAdapter(),
+                new com.beomsu.pay.assist.draft.NumericProvenanceGuard(),
+                new com.beomsu.pay.assist.draft.AmountCoverageGuard(),
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), "template");
     }
 }
