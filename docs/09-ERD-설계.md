@@ -111,7 +111,7 @@ CREATE TABLE payments (
     version         BIGINT       NOT NULL DEFAULT 0,
     requested_at    DATETIME(6)  NOT NULL,
     approved_at     DATETIME(6)  NULL,
-    UNIQUE KEY uk_payments_payment_key (payment_key),
+    KEY idx_payments_payment_key (payment_key),          -- 유니크가 아니다. 조회용 인덱스(V38)
     KEY idx_payments_order (order_id),
     KEY idx_payments_status_requested (status, requested_at)  -- 복구 배치: UNKNOWN/IN_PROGRESS 방치 건 스캔
 );
@@ -295,9 +295,10 @@ CREATE TABLE ledger_transactions (
     tx_type         VARCHAR(40)  NOT NULL,             -- PAYMENT_APPROVED / PAYMENT_CANCELED / SETTLEMENT_PAID ...
     source_type     VARCHAR(30)  NOT NULL,             -- PAYMENT / SETTLEMENT / ADMIN
     source_id       BIGINT       NOT NULL,             -- 원천 레코드 역참조 (Completeness 검증용)
+    source_seq      INT          NOT NULL DEFAULT 0,   -- 같은 원천의 몇 번째 분개인가 (V20)
     description     VARCHAR(200) NULL,
     created_at      DATETIME(6)  NOT NULL,
-    UNIQUE KEY uk_ledger_tx_source (tx_type, source_type, source_id)  -- 같은 원천으로 같은 분개 중복 생성 방지
+    UNIQUE KEY uk_ledger_tx_source (tx_type, source_type, source_id, source_seq)  -- 같은 원천의 같은 회차 분개 중복 생성 방지
 );
 
 CREATE TABLE ledger_entries (                           -- ★ append-only. UPDATE/DELETE 권한 회수
@@ -356,7 +357,7 @@ CREATE TABLE settlement_details (   -- 실제 이름: settlement_items
     payment_amount  BIGINT       NOT NULL,
     fee_rate        DECIMAL(5,4) NOT NULL,             -- 수수료율 스냅샷 (요율이 바뀌어도 당시 값 고정)
     fee_amount      BIGINT       NOT NULL,
-    UNIQUE KEY uk_settle_detail (settlement_id, payment_id)
+    UNIQUE KEY uk_settlement_item_payment (payment_id)    -- 결제 하나가 두 번 정산 항목이 되는 것을 막는다
 );
 ```
 
