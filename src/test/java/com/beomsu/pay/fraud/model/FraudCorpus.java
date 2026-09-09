@@ -57,8 +57,92 @@ final class FraudCorpus {
             out.add(ipRotation());
             out.add(nightBurst());
         }
+        // 규칙이 잡는 부정과 규칙이 잘못 잡는 정상. <b>이게 없으면 심사 큐가 빈다.</b>
+        // 큐가 비면 큐 정렬을 잴 수가 없는데, 처음에 이걸 안 넣고 전체 표본에서 잰
+        // P@K 로 큐 정렬을 정당화했다. 평가 대상이 다른 값이었다.
+        for (int i = 0; i < perAxis; i++) {
+            out.add(blatantHighAmount());
+            out.add(velocityBurst());
+        }
+        for (int i = 0; i < normals / 5; i++) {
+            out.add(legitimateBigTicket());
+        }
         java.util.Collections.shuffle(out, random);
         return out;
+    }
+
+    // ── 규칙이 잡는 자리 ────────────────────────────────────────────────────
+
+    /**
+     * <b>대놓고 고액</b> — 임계를 넘긴다. {@code HIGH_AMOUNT} 가 잡는다.
+     *
+     * <p>이 축을 넣는 이유는 모델 성적을 올리려는 것이 아니라 <b>심사 큐를 채우려는</b> 것이다.
+     * 큐가 있어야 그 안에서 순서를 비교할 수 있다.
+     */
+    private Case blatantHighAmount() {
+        String card = "card-h" + (seq++);
+        String device = "dev-" + card;
+        String ip = "10.7." + random.nextInt(255) + ".7";
+        // 새벽. 훔친 카드로 한도를 긁는 쪽이다.
+        Instant base = day().plus(Duration.ofHours(random.nextInt(5)));
+
+        // 그 카드에 소액 몇 건뿐이다. 갑자기 수백만원이 나간다.
+        List<TxnRecord> w = new ArrayList<>();
+        int prior = random.nextInt(3);
+        for (int i = 0; i < prior; i++) {
+            w.add(new TxnRecord(10_000L + random.nextInt(40_000),
+                    base.plus(Duration.ofMinutes(10L * i)), device, ip));
+        }
+        // 고액 + 장기할부 = 30 + 20 = 50점. CHALLENGE 임계를 넘어 큐에 들어간다.
+        var main = new TxnRecord(AMOUNT_THRESHOLD + 500_000L + random.nextInt(3_000_000),
+                base.plus(Duration.ofMinutes(10L * prior)), device, ip, 12);
+        w.add(main);
+        return new Case(card, w, main, true, "blatant_high_amount");
+    }
+
+    /** <b>1분 안에 몰아치기</b> — {@code VELOCITY_EXCEEDED} 가 잡는다. */
+    private Case velocityBurst() {
+        String card = "card-v" + (seq++);
+        String device = "dev-" + card;
+        String ip = "10.8." + random.nextInt(255) + ".7";
+        Instant base = day().plus(Duration.ofHours(random.nextInt(24)));
+
+        List<TxnRecord> w = new ArrayList<>();
+        int n = 7 + random.nextInt(4);
+        for (int i = 0; i < n; i++) {
+            // 5초 간격. 1분 창 안에 다 들어간다.
+            w.add(new TxnRecord(80_000L + random.nextInt(200_000),
+                    base.plusSeconds(5L * i), device, ip));
+        }
+        return new Case(card, w, w.getLast(), true, "velocity_burst");
+    }
+
+    /**
+     * <b>정상인데 고액</b> — 규칙이 잘못 잡는다. 큐에 오탐이 섞여야 정렬을 잴 수 있다.
+     *
+     * <p>혼수·가전·여행처럼 백만원을 넘기는 정상 결제가 있다. 규칙은 금액만 보므로 이걸 건다.
+     * 심사자가 실제로 겪는 큐가 이런 모양이고, <b>모델이 이것을 아래로 내려보내는지</b>가
+     * 정렬을 켤 근거다.
+     */
+    private Case legitimateBigTicket() {
+        String card = "card-g" + (seq++);
+        String device = "dev-" + card;
+        String ip = "10.9." + random.nextInt(255) + ".7";
+        Instant base = day().plus(Duration.ofHours(11 + random.nextInt(9)));   // 낮 시간
+
+        List<TxnRecord> w = new ArrayList<>();
+        // 평소 씀씀이도 제법 큰 사람이다. amountToMedian 이 안 튀어야 정상답다.
+        int prior = 2 + random.nextInt(4);
+        for (int i = 0; i < prior; i++) {
+            w.add(new TxnRecord(400_000L + random.nextInt(600_000),
+                    base.plus(Duration.ofMinutes(30L * i)), device, ip));
+        }
+        // 혼수·가전을 장기할부로 사는 거래. 위 blatant 와 <b>규칙에는 똑같이 보인다.</b>
+        // 같은 50점으로 같은 큐에 들어간다. 가르는 것은 흐름뿐이다.
+        var main = new TxnRecord(AMOUNT_THRESHOLD + 100_000L + random.nextInt(2_000_000),
+                base.plus(Duration.ofMinutes(30L * prior)), device, ip, 12);
+        w.add(main);
+        return new Case(card, w, main, false, "legit_big_ticket");
     }
 
     // ── 정상 ────────────────────────────────────────────────────────────────

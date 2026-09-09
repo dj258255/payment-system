@@ -257,11 +257,19 @@ class FraudModelEvalTest {
 
     // ── 시험 ────────────────────────────────────────────────────────────────
 
+    /** 규칙을 피해 가게 만든 여섯 축. 규칙이 잡으라고 만든 두 축은 뺀다. */
+    private static final java.util.Set<String> EVASIVE_AXES = java.util.Set.of(
+            "structuring", "card_testing", "escalation",
+            "device_rotation", "ip_rotation", "night_burst");
+
     @Test
-    @DisplayName("규칙은 이 패턴들을 거의 못 잡는다 — 그래서 모델을 붙일 자리가 있다")
+    @DisplayName("규칙은 피해 가게 만든 여섯 축을 거의 못 잡는다 — 그래서 모델을 붙일 자리가 있다")
     void rulesCatchNothingByDesign() {
         var corpus = new FraudCorpus(SEED).build(NORMALS, PER_AXIS);
-        var frauds = corpus.stream().filter(FraudCorpus.Case::fraud).toList();
+        var frauds = corpus.stream()
+                .filter(FraudCorpus.Case::fraud)
+                .filter(c -> EVASIVE_AXES.contains(c.axis()))
+                .toList();
 
         long caught = frauds.stream().filter(FraudModelEvalTest::ruleFlags).count();
         double recall = (double) caught / frauds.size();
@@ -356,6 +364,173 @@ class FraudModelEvalTest {
                 .isLessThan(0.15);
     }
 
+    /**
+     * <b>손으로 쓴 시간창 규칙.</b> 모델을 고른 이유를 대려면 이것으로 안 되는지를 먼저 봐야 한다.
+     *
+     * <p>지금 규칙 여섯이 못 보는 것은 "긴 창"이라는 축이다. 그러면 창만 늘린 규칙 몇 개로
+     * 되는지가 먼저 나올 질문이다. 여기서 만든 것은 사람이 눈으로 짤 만한 수준의 조건이다.
+     */
+    private static boolean windowRuleFlags(FraudCorpus.Case c) {
+        var w = c.window();
+        long micro = w.stream().filter(t -> t.amount() <= SequenceFeatures.MICRO_AMOUNT).count();
+        long near = w.stream()
+                .filter(t -> t.amount() >= FraudCorpus.AMOUNT_THRESHOLD * 9 / 10
+                        && t.amount() < FraudCorpus.AMOUNT_THRESHOLD).count();
+        long distinctDevices = w.stream().map(TxnRecord::deviceId)
+                .filter(java.util.Objects::nonNull).distinct().count();
+        return micro >= 3            // 소액을 세 번 이상 떠봤다
+                || near >= 3         // 임계 바로 밑을 세 번 이상 밀었다
+                || distinctDevices >= 5;   // 기기를 다섯 개 이상 썼다
+    }
+
+    @Test
+    @DisplayName("손으로 쓴 시간창 규칙과 견준다 — 모델을 고른 이유를 대려면 이게 먼저다")
+    void comparedAgainstAHandWrittenWindowRule() {
+        var corpus = new FraudCorpus(SEED).build(NORMALS, PER_AXIS);
+        int cut = corpus.size() / 2;
+        var model = train(corpus.subList(0, cut), 4_000, 3.0);
+        double threshold = thresholdAt(model, corpus.subList(0, cut));
+        var holdout = corpus.subList(cut, corpus.size());
+
+        var results = List.of(
+                score("규칙 여섯", holdout, FraudModelEvalTest::ruleFlags),
+                score("시간창 규칙", holdout, FraudModelEvalTest::windowRuleFlags),
+                score("모델", holdout, c -> model.risk(featuresOf(c)) >= threshold));
+
+        System.out.printf("%n  [손으로 쓴 시간창 규칙과 견주기]%n");
+        System.out.printf("  %-12s %8s %8s %10s%n", "", "재현율", "정밀도", "정상오탐");
+        for (var s : results) {
+            System.out.printf("  %-12s %7.1f%% %7.1f%% %8.1f%%%n",
+                    s.name(), s.recall() * 100, s.precision() * 100, s.falseAlarmRate() * 100);
+        }
+
+        var windowRule = results.get(1);
+        var m = results.get(2);
+        System.out.printf("  축별 (시간창 규칙 / 모델)%n");
+        for (String axis : List.of("structuring", "card_testing", "escalation",
+                                   "device_rotation", "ip_rotation", "night_burst")) {
+            var axisCases = holdout.stream().filter(c -> c.axis().equals(axis)).toList();
+            long byRule = axisCases.stream().filter(FraudModelEvalTest::windowRuleFlags).count();
+            long byModel = axisCases.stream()
+                    .filter(c -> model.risk(featuresOf(c)) >= threshold).count();
+            System.out.printf("    %-16s %2d/%2d  /  %2d/%2d%n",
+                    axis, byRule, axisCases.size(), byModel, axisCases.size());
+        }
+
+        // 이 시험은 어느 쪽이 이기는지를 고정하지 않는다. <b>둘을 나란히 적는 것</b>이 목적이다.
+        // 시간창 규칙이 더 나으면 그건 모델을 끄라는 뜻이고, 그 판단도 숫자로 해야 한다.
+        assertThat(windowRule.recall()).as("이 규칙이 아무것도 못 잡으면 비교가 안 된다").isGreaterThan(0.0);
+        assertThat(m.recall()).isGreaterThan(0.0);
+    }
+
+    @Test
+    @DisplayName("규칙이 올린 큐 안에서 기존 순서와 모델 순서를 비교한다")
+    void rankingInsideTheRuleFlaggedQueue() {
+        var corpus = new FraudCorpus(SEED).build(NORMALS, PER_AXIS);
+        int cut = corpus.size() / 2;
+        var model = train(corpus.subList(0, cut), 4_000, 3.0);
+        var holdout = corpus.subList(cut, corpus.size());
+
+        // <b>여기가 정렬을 켤 근거가 나오는 자리다.</b> 전체 표본에서 잰 P@K 는 규칙이
+        // 올리지도 않은 건들을 포함해서, 큐 정렬이 나은지에 대해 아무 말도 못 한다.
+        var queue = holdout.stream().filter(FraudModelEvalTest::ruleFlags).toList();
+        long fraudInQueue = queue.stream().filter(FraudCorpus.Case::fraud).count();
+
+        System.out.printf("%n  [큐 정렬] 규칙이 올린 %d건 중 부정 %d건 (%.1f%%)%n",
+                queue.size(), fraudInQueue, 100.0 * fraudInQueue / queue.size());
+
+        assertThat(queue).as("큐가 비면 정렬을 잴 수 없다").isNotEmpty();
+        assertThat(fraudInQueue).as("큐에 오탐이 섞여야 정렬에 의미가 있다")
+                .isLessThan(queue.size());
+
+        // 기존 순서: 최근 것부터. 지금 화면의 기본 정렬(id DESC)과 같은 뜻이다.
+        var byRecency = queue.stream()
+                .sorted(java.util.Comparator.comparing(
+                        (FraudCorpus.Case c) -> c.current().at()).reversed())
+                .toList();
+        var byModel = queue.stream()
+                .sorted(java.util.Comparator.comparingDouble(
+                        (FraudCorpus.Case c) -> model.risk(featuresOf(c))).reversed())
+                .toList();
+
+        // <b>무작위 순서가 진짜 기준선이다.</b> 최신순은 이 코퍼스의 시각 분포에 휘둘려
+        // 실 트래픽의 도착 순서를 재현하지 못한다. 무작위 순서의 P@K 는 큐의 부정 비율로
+        // 수렴하므로, 그 값을 넘겨야 정렬이 일을 한 것이다.
+        var shuffled = new ArrayList<>(queue);
+        java.util.Collections.shuffle(shuffled, new java.util.Random(SEED));
+
+        System.out.printf("  %-12s %8s %8s %8s%n", "", "P@5", "P@10", "P@20");
+        for (var pair : List.of(java.util.Map.entry("무작위", (List<FraudCorpus.Case>) shuffled),
+                                java.util.Map.entry("기존(최신순)", byRecency),
+                                java.util.Map.entry("모델 점수순", byModel))) {
+            System.out.printf("  %-12s", pair.getKey());
+            for (int k : new int[]{5, 10, 20}) {
+                System.out.printf(" %7.0f%%", precisionInOrder(pair.getValue(), k) * 100);
+            }
+            System.out.println();
+        }
+
+        double modelAt10 = precisionInOrder(byModel, 10);
+        double recencyAt10 = precisionInOrder(byRecency, 10);
+        System.out.printf("  큐 전체 부정 비율 %.0f%% 대비 모델 상위 10건 %.0f%%%n",
+                100.0 * fraudInQueue / queue.size(), modelAt10 * 100);
+
+        assertThat(modelAt10)
+                .as("큐 안에서 모델 순서가 기존 순서보다 나아야 정렬을 켤 근거가 된다")
+                .isGreaterThan(recencyAt10);
+        assertThat(modelAt10)
+                .as("무작위 순서는 큐의 부정 비율로 수렴한다. 그것보다 나아야 정렬이 일을 한 것이다")
+                .isGreaterThan((double) fraudInQueue / queue.size());
+    }
+
+    /** 이미 정렬된 목록의 상위 {@code k} 건 정밀도. */
+    private static double precisionInOrder(List<FraudCorpus.Case> ordered, int k) {
+        var top = ordered.stream().limit(k).toList();
+        return top.isEmpty() ? 0 : (double) top.stream().filter(FraudCorpus.Case::fraud).count() / top.size();
+    }
+
+    @Test
+    @DisplayName("런타임 조건으로 다시 잰다 — 기기·IP 신호가 없으면 피처 여덟 중 여섯이다")
+    void runtimeConditionWithoutRequestSignals() {
+        var corpus = new FraudCorpus(SEED).build(NORMALS, PER_AXIS);
+        int cut = corpus.size() / 2;
+        var train = corpus.subList(0, cut);
+        var holdout = corpus.subList(cut, corpus.size());
+
+        // 결제 완료 이벤트가 Zero-Payload 라 런타임에는 ip·deviceId 가 없다.
+        // 창을 그대로 두고 그 두 값만 지워 <b>같은 조건으로 다시 학습하고 다시 잰다.</b>
+        var trainRt = train.stream().map(FraudModelEvalTest::withoutRequestSignals).toList();
+        var holdoutRt = holdout.stream().map(FraudModelEvalTest::withoutRequestSignals).toList();
+
+        var full = train(train, 4_000, 3.0);
+        var runtime = train(trainRt, 4_000, 3.0);
+        double thFull = thresholdAt(full, train);
+        double thRt = thresholdAt(runtime, trainRt);
+
+        var sFull = score("피처 여덟", holdout, c -> full.risk(featuresOf(c)) >= thFull);
+        var sRt = score("피처 여섯", holdoutRt, c -> runtime.risk(featuresOf(c)) >= thRt);
+
+        System.out.printf("%n  [런타임 조건] 기기·IP 신호를 지우고 다시 학습·측정%n");
+        for (var s : List.of(sFull, sRt)) {
+            System.out.printf("    %-10s 재현율 %5.1f%% · 정밀도 %5.1f%% · 정상오탐 %4.1f%%%n",
+                    s.name(), s.recall() * 100, s.precision() * 100, s.falseAlarmRate() * 100);
+        }
+
+        assertThat(sRt.recall())
+                .as("여섯 개 조건에서도 규칙(재현율 0)보다는 나아야 한다")
+                .isGreaterThan(0.0);
+    }
+
+    /** 요청 시점 신호를 지운 사본. 창의 시각과 금액은 그대로 둔다. */
+    private static FraudCorpus.Case withoutRequestSignals(FraudCorpus.Case c) {
+        var window = c.window().stream()
+                .map(t -> new TxnRecord(t.amount(), t.at(), null, null, t.installmentMonths()))
+                .toList();
+        var current = new TxnRecord(c.current().amount(), c.current().at(), null, null,
+                c.current().installmentMonths());
+        return new FraudCorpus.Case(c.cardKey(), window, current, c.fraud(), c.axis());
+    }
+
     @Test
     @DisplayName("어느 축을 잡고 어느 축을 놓치는지 갈라 본다 — 전체 재현율 하나로는 못 고른다")
     void perAxisRecall() {
@@ -377,7 +552,7 @@ class FraudModelEvalTest {
         byAxis.forEach((axis, t) -> System.out.printf("    %-16s %2d/%2d (%.0f%%)%n",
                 axis, t[0], t[1], 100.0 * t[0] / t[1]));
 
-        assertThat(byAxis).as("여섯 축이 홀드아웃에 다 있어야 한다").hasSize(6);
+        assertThat(byAxis).as("여덟 축이 홀드아웃에 다 있어야 한다").hasSize(8);
     }
 
     @Test
