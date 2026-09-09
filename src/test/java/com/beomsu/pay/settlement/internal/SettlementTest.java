@@ -15,11 +15,12 @@ class SettlementTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 7, 5);
     private static final LocalDate PAYOUT = LocalDate.of(2026, 7, 7);
+    private static final long PLATFORM = com.beomsu.pay.seller.SellerPayoutGate.PLATFORM_SELLER_ID;
 
     @Test
     @DisplayName("불변식: netAmount = grossAmount - feeAmount - feeVatAmount")
     void netEqualsGrossMinusFeeAndVat() {
-        Settlement settlement = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 2, PAYOUT);
+        Settlement settlement = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 2, PAYOUT, PLATFORM);
 
         assertThat(settlement.getNetAmount()).isEqualTo(97_030);
         assertThat(settlement.getNetAmount())
@@ -33,21 +34,21 @@ class SettlementTest {
     @Test
     @DisplayName("수수료+부가세가 총액보다 크면 정산을 만들 수 없다")
     void feePlusVatCannotExceedGross() {
-        assertThatThrownBy(() -> Settlement.of(DATE, "KRW", 1_000, 900, 200, 1, PAYOUT))
+        assertThatThrownBy(() -> Settlement.of(DATE, "KRW", 1_000, 900, 200, 1, PAYOUT, PLATFORM))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     @DisplayName("음수 금액으로는 정산을 만들 수 없다")
     void negativeAmountRejected() {
-        assertThatThrownBy(() -> Settlement.of(DATE, "KRW", -1, 0, 0, 0, PAYOUT))
+        assertThatThrownBy(() -> Settlement.of(DATE, "KRW", -1, 0, 0, 0, PAYOUT, PLATFORM))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     @DisplayName("markPaidOut: CREATED → PAID_OUT 전이하고 paidOutAt 세팅")
     void markPaidOutTransitions() {
-        Settlement settlement = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 2, PAYOUT);
+        Settlement settlement = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 2, PAYOUT, PLATFORM);
 
         settlement.markPaidOut();
 
@@ -58,7 +59,7 @@ class SettlementTest {
     @Test
     @DisplayName("markPaidOut 멱등: 이미 PAID_OUT이면 상태·시각을 덮어쓰지 않는다")
     void markPaidOutIsIdempotent() {
-        Settlement settlement = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 2, PAYOUT);
+        Settlement settlement = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 2, PAYOUT, PLATFORM);
         settlement.markPaidOut();
         Instant firstPaidOutAt = settlement.getPaidOutAt();
 

@@ -16,18 +16,32 @@ import org.springframework.transaction.annotation.Transactional;
  * 판매자를 못 찾으면 <b>막는다.</b> 없는 판매자에게 돈이 나가는 것이 잘못된 보류보다 나쁘다.
  * 아직 심사 안 한 판매자({@code PENDING_SCREENING})도 막는다 —
  * <b>안 본 것과 통과는 다르다.</b> 이 시스템이 결제 미확정을 실패로 안 적는 것과 같은 이유다.
+ *
+ * <h3>플랫폼 직판은 이 게이트가 막는 대상이 아니다</h3>
+ * 이 게이트가 보는 것은 <b>외부로 나가는 지급</b>이다. 플랫폼이 자기 매출을 자기 장부에
+ * 적는 것은 거기 해당하지 않는다. 예전에는 {@code sellerId == null} 이 그 판단을 했고,
+ * 플랫폼이 자기 판매자 행을 갖게 된 뒤(V49)에는 {@link #PLATFORM_SELLER_ID} 가 이어받았다.
+ * <b>컬럼 nullable 을 고치면서 누가 제재 명단 대조를 받는지까지 바뀌면 안 된다.</b>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class SellerPayoutGate {
 
+    /**
+     * 플랫폼 자신의 판매자 행. <b>{@code V49} 가 이 id 로 박아 넣는다.</b>
+     *
+     * <p>플랫폼 직판을 {@code null} 로 적던 것을 대신한다. 판매자가 없는 것이 아니라
+     * <b>파는 쪽이 플랫폼인 것</b>이라, 그 사실을 행 하나로 적었다.
+     */
+    public static final long PLATFORM_SELLER_ID = 1L;
+
     private final SellerRepository sellers;
 
-    /** @param sellerId {@code null} 이면 플랫폼 직판이라 대조할 판매자가 없다 */
+    /** @param sellerId 정산을 받을 판매자. 플랫폼 직판이면 {@link #PLATFORM_SELLER_ID} 다 */
     @Transactional(readOnly = true)
-    public Decision check(Long sellerId) {
-        if (sellerId == null) {
+    public Decision check(long sellerId) {
+        if (sellerId == PLATFORM_SELLER_ID) {
             return Decision.allowed("플랫폼 직판 — 외부로 나가는 지급이 아니다");
         }
         return sellers.findById(sellerId)

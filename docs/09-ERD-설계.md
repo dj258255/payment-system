@@ -336,7 +336,7 @@ CREATE TABLE ledger_entries (                           -- ★ append-only. UPDA
 ```sql
 CREATE TABLE settlements (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    seller_id       BIGINT       NULL,          -- NULL 이면 플랫폼 직판(V37)
+    seller_id       BIGINT       NOT NULL,      -- 플랫폼 직판도 자기 판매자 행을 갖는다(V49)
     settlement_date DATE         NOT NULL,             -- 정산 기준일
     currency        VARCHAR(3)   NOT NULL,             -- ISO 4217. 정산은 통화별로 따로 만든다
     gross_amount    BIGINT       NOT NULL,             -- 거래 총액(해당 통화의 최소 단위)
@@ -344,8 +344,7 @@ CREATE TABLE settlements (
     net_amount      BIGINT       NOT NULL,             -- 지급액 (gross - fee) — 불변식 검증 대상
     status          VARCHAR(20)  NOT NULL,             -- CREATED / CONFIRMED / PAID
     created_at      DATETIME(6)  NOT NULL,
-    seller_key      BIGINT       AS (COALESCE(seller_id,0)) STORED,  -- 유니크 전용(V42)
-    UNIQUE KEY uk_settlement_date_currency_seller (settlement_date, currency, seller_key)   -- ★ 배치 재실행 멱등성의 핵심
+    UNIQUE KEY uk_settlement_date_currency_seller (settlement_date, currency, seller_id)   -- ★ 배치 재실행 멱등성의 핵심
     -- 통화가 키에 없으면 같은 날 KRW·USD 정산이 둘 다 못 나온다. 그렇다고 제약을 풀면
     -- 같은 날짜를 두 번 집계해 지급이 두 배가 되는 것을 못 막는다(ADR-016).
 );
@@ -363,7 +362,7 @@ CREATE TABLE settlement_details (   -- 실제 이름: settlement_items
 
 **설계 결정**
 - `uk_settlement_date_currency_seller`: 정산 배치가 같은 날짜로 재실행되면 UPSERT 또는 삭제-재생성한다. **배치 멱등성**을 스키마가 보장.
-  판매자가 NULL(플랫폼 직판)이면 MySQL 이 NULL 을 서로 다른 값으로 봐서 제약이 안 걸리므로, **V42 가 생성 컬럼 `seller_key` 로 NULL 을 0 에 모아** 제약을 완성했다
+  판매자를 NULL 로 두던 동안에는 MySQL 이 NULL 을 서로 다른 값으로 봐서 제약이 그 자리만 안 걸렸다. V42 가 생성 컬럼으로 덮었고, **V49 가 플랫폼에 판매자 행을 줘서 NULL 자체를 없앴다**
 - 집계 기간은 `start ≤ approved_at < end` 반개구간 (배민 정산 방식으로 경계 중복/누락 방지)
 - `fee_rate` 스냅샷: 수수료율 변경 이력과 무관하게 "그 거래에 적용된 요율"을 고정
 
@@ -739,22 +738,32 @@ CREATE TABLE narrative_preferences (
 직판이라 기본값이었고, 같은 날짜 정산이 몇 줄이든 들어갔다. 생성 컬럼
 `seller_key = COALESCE(seller_id, 0)` 으로 NULL 을 하나로 모아 되살렸다 (V42).
 
+그리고 V49 에서 **NULL 을 아예 없앴다.** V42 까지는 "가짜 판매자를 지어내지 않는다"를 이유로
+`seller_id` 를 NULL 로 뒀는데, 그 이유가 막는 것은 *기존 행에 없는 판매자를 소급해 채우기*다.
+플랫폼은 지어낸 판매자가 아니라 **실제로 판 쪽이고 사업자등록번호를 갖는 법적 주체**다.
+그 사실을 판매자 행 하나로 적으면 NULL 이 하던 일을 실제 값이 대신한다.
+
 ```sql
-ALTER TABLE settlements
-    ADD COLUMN seller_key BIGINT
-        GENERATED ALWAYS AS (COALESCE(seller_id, 0)) STORED NOT NULL
-        COMMENT '유니크 제약 전용. NULL 판매자(플랫폼 직판)를 0 으로 모은다';
+INSERT INTO sellers (id, business_number, legal_name, ...) VALUES (1, 'PLATFORM', '플랫폼 직판', ...);
+UPDATE settlements SET seller_id = 1 WHERE seller_id IS NULL;
 
 ALTER TABLE settlements DROP INDEX uk_settlement_date_currency_seller;
-
+ALTER TABLE settlements DROP COLUMN seller_key;
+ALTER TABLE settlements MODIFY COLUMN seller_id BIGINT NOT NULL;
 ALTER TABLE settlements
     ADD CONSTRAINT uk_settlement_date_currency_seller
-        UNIQUE (settlement_date, currency, seller_key);
+        UNIQUE (settlement_date, currency, seller_id);
 ```
 
-**가짜 판매자 행을 만들지 않았다.** V37 이 NULL 을 고른 이유가 그것이라, 여기서 `seller_id` 를 0 으로
-채우면 없던 판매자를 지어내는 셈이 된다. 생성 컬럼으로 NULL 을 0 에 대응시켜 **그 컬럼에만** 유니크를
-걸었다. `seller_id` 자체는 NULL 그대로다.
+**NULL 이 만든 비용이 세 군데였다.** 유니크 제약이 그 자리만 안 걸렸고(V42 가 덮음),
+존재 검사가 `:sellerId is null and s.sellerId is null or ...` 로 갈렸고, 집계가
+`Collectors.groupingBy` 를 못 써서 손으로 맵을 채웠다(널 키를 거부한다). 셋 다
+"판매자를 모른다"가 아니라 **"판매자가 플랫폼이다"를 NULL 로 적은 대가**였고, V49 뒤에 셋 다 사라졌다.
+
+**지급 게이트 동작은 안 바꿨다.** 게이트가 막는 것은 *외부로 나가는 지급*이고 플랫폼 직판은
+거기 해당하지 않는다. `sellerId == null` 이 하던 그 판단을 `SellerPayoutGate.PLATFORM_SELLER_ID`
+검사가 그대로 이어받는다. 컬럼 nullable 을 고치면서 **누가 제재 명단 대조를 받는지까지
+조용히 바뀌면 안 된다.**
 
 **V37 이 남긴 방어가 왜 부족했나.** V37 은 이걸 알고 "제약만으로는 못 막는 자리라 코드가 함께 지킨다"고
 적어 뒀다. 그런데 코드가 지키는 방식이 집계 전 존재 검사(`SettlementRepository.existsFor`)였고,
@@ -763,6 +772,7 @@ ALTER TABLE settlements
 `(2099-01-01, KRW, NULL)` 을 두 번 넣으면 두 줄 다 들어간다는 것이다.
 
 **여기서 배운 것**: 유니크 키에 nullable 컬럼을 넣으면 그 키는 NULL 행에 대해 아무것도 막지 않는다.
+그리고 NULL 을 "값이 없다"가 아니라 **"특정한 값이다"** 로 쓰면, 그 뜻을 아는 분기가 코드 곳곳에 생긴다.
 같은 함정이 `cash_receipts` 에 남아 있다 (§12.4).
 
 ## 확장 여지로 남긴 것

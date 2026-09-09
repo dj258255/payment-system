@@ -15,9 +15,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.stream.Collectors;
+import com.beomsu.pay.seller.SellerPayoutGate;
 import java.util.Map;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Optional;
 
 /**
@@ -57,7 +56,7 @@ public class SettlementService {
     private final SettlementAdjustmentRepository adjustmentRepository;
     private final MeterRegistry meterRegistry;
     /** 이 판매자에게 돈을 내보내도 되는가. 판매자 모듈이 답한다 — 정산이 심사 규칙을 알 필요는 없다. */
-    private final com.beomsu.pay.seller.SellerPayoutGate payoutGate;
+    private final SellerPayoutGate payoutGate;
 
     /**
      * 이 시스템이 만드는 정산의 통화.
@@ -78,7 +77,7 @@ public class SettlementService {
                              SettlementRepository settlementRepository,
                              SettlementAdjustmentRepository adjustmentRepository,
                              MeterRegistry meterRegistry,
-                             com.beomsu.pay.seller.SellerPayoutGate payoutGate,
+                             SellerPayoutGate payoutGate,
                              @Value("${app.settlement.fee-bps:270}") long feeBps,
                              @Value("${app.settlement.payout-business-days:2}") int payoutDays) {
         this.itemRepository = itemRepository;
@@ -105,8 +104,10 @@ public class SettlementService {
         // 기준일은 구매확정(릴리스) 시 confirmSettlement가 릴리스일로 재스탬프한다.
         LocalDate approvalDate = LocalDate.ofInstant(event.approvedAt(), SETTLEMENT_ZONE);
         // 최초 INSERT는 save로 충분(신규 영속 → flush는 트랜잭션 커밋이 처리).
+        // 판매자를 따로 안 실어 보내는 주문은 플랫폼이 판 것이다. 그 사실을 판매자 id 로 적는다.
         itemRepository.save(SettlementItem.of(
-                event.paymentId(), event.orderNo(), event.amount(), approvalDate));
+                event.paymentId(), event.orderNo(), event.amount(), approvalDate,
+                SellerPayoutGate.PLATFORM_SELLER_ID));
     }
 
     /**
@@ -201,15 +202,12 @@ public class SettlementService {
         }
 
         // <b>판매자별로 가른다.</b> 정산은 누군가에게 하는 것이고, 받는 쪽이 다르면 다른 정산이다.
-        // sellerId 가 null 인 묶음은 플랫폼 직판이다.
+        // 플랫폼 직판도 자기 판매자 id 로 묶인다.
         //
-        // <b>Collectors.groupingBy 를 못 쓴다.</b> HashMap 은 null 키를 허용하지만 groupingBy 가
-        // 맵에 넣기 전에 키를 검사해 거부한다(element cannot be mapped to a null key).
-        // 처음에 그걸 모르고 썼다가 기존 정산 테스트가 전부 깨졌다. 손으로 모은다.
-        Map<Long, List<SettlementItem>> bySeller = new HashMap<>();
-        for (SettlementItem item : all) {
-            bySeller.computeIfAbsent(item.getSellerId(), k -> new ArrayList<>()).add(item);
-        }
+        // 예전에는 직판을 null 로 적어 이 자리에서 groupingBy 를 못 썼다 — 맵에 넣기 전에
+        // 키를 검사해 거부한다(element cannot be mapped to a null key). 값이 늘 있어서 풀렸다.
+        Map<Long, List<SettlementItem>> bySeller = all.stream()
+                .collect(Collectors.groupingBy(SettlementItem::getSellerId));
 
         Settlement first = null;
         for (Map.Entry<Long, List<SettlementItem>> e : bySeller.entrySet()) {
@@ -228,8 +226,9 @@ public class SettlementService {
      * 정산이 영영 안 나간다. 이 키는 이미 한 번 조용히 틀려서 지급이 통째로 빠진 적이 있는
      * 자리라, 판매자를 더하면서 검사도 같이 옮겼다.
      */
-    private Settlement settleOne(LocalDate date, Long sellerId, List<SettlementItem> items) {
-        if (settlementRepository.existsFor(date, SETTLEMENT_CURRENCY, sellerId)) {
+    private Settlement settleOne(LocalDate date, long sellerId, List<SettlementItem> items) {
+        if (settlementRepository.existsBySettlementDateAndCurrencyAndSellerId(
+                date, SETTLEMENT_CURRENCY, sellerId)) {
             log.info("정산 재실행 감지 → 건너뜀 date={} sellerId={}", date, sellerId);
             return null;
         }
