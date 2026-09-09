@@ -69,7 +69,8 @@ print(rows[0]["id"] if rows else "")')
       -d "$(python3 -c 'import json,sys;print(json.dumps({"reviewer":sys.argv[1],"reply":sys.argv[2]}))' "$REVIEWER" "$MEMO")" >/dev/null
 
   echo; echo "  2) 초안 A·B 다. 어느 쪽이 모델인지는 안 알려준다."
-  api -X POST "$BASE/$ID/draft-review/reveal" -d "{\"reviewer\":\"$REVIEWER\"}" | python3 -m json.tool
+  # json.tool 은 기본이 ASCII 이스케이프라 한글이 \uce74\ub4dc 로 나온다.
+  api -X POST "$BASE/$ID/draft-review/reveal" -d "{\"reviewer\":\"$REVIEWER\"}" | python3 tools/render-fraud-pair.py
 
   echo; echo "  3) A 를 발송 가능하게 고친다. Ctrl-D."; A=$(cat)
   echo;    echo "  4) B 를 발송 가능하게 고친다. Ctrl-D."; B=$(cat)
