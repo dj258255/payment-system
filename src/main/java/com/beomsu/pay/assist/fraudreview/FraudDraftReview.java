@@ -53,7 +53,7 @@ public class FraudDraftReview {
      * 섞으면 나중에 "그 12 건이 누구 것이었나"에 기록이 답을 못 한다.
      */
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 16)
+    @Column(nullable = false, length = 24)
     private EvaluatorKind evaluatorKind = EvaluatorKind.HUMAN;
 
     // <b>{@code @Lob} 를 안 쓴다.</b> Hibernate 가 MySQL 에서 longtext 를 기대해
@@ -84,8 +84,17 @@ public class FraudDraftReview {
     @Column(nullable = false)
     private Instant createdAt;
 
-    /** 평가 주체. 늘리려면 여기에 더한다 — 문자열로 두면 오타가 조용히 새 종류가 된다. */
-    public enum EvaluatorKind { HUMAN, AI }
+    /**
+     * 평가 주체. 늘리려면 여기에 더한다 — 문자열로 두면 오타가 조용히 새 종류가 된다.
+     *
+     * <p><b>{@code HUMAN} 만 전환 조건을 채운다.</b> 조건이 묻는 것은 사람 심사자가
+     * <b>혼자</b> 초안을 얼마나 고쳐야 하는지다.
+     *
+     * <p>{@code HUMAN_AI_ASSISTED} 는 사람이 판정했지만 그 과정에서 외부 AI 의 도움을 받은
+     * 것이다. 편집량이 보조의 영향을 받고, <b>경과 시간에는 AI 에 문의한 시간이 들어간다.</b>
+     * 그래서 사람 것과 같은 칸에 놓을 수 없다.
+     */
+    public enum EvaluatorKind { HUMAN, AI, HUMAN_AI_ASSISTED }
 
     private FraudDraftReview(long fraudReviewId, String reviewer, EvaluatorKind evaluatorKind) {
         this.evaluatorKind = evaluatorKind;
