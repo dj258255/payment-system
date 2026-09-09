@@ -186,6 +186,22 @@ com.beomsu.pay
 | `APP_PG_ROUTING_ENABLED` | 멀티 PG 가중치 라우팅 + failover | — |
 | `APP_RATELIMIT_ENABLED` | 유입 제어(**기본 on**) | — |
 
+AI 를 붙인 자리는 **도는 것**과 **화면에 나가는 것**을 따로 켠다. 하나로 두면 켤 근거를 모으려고
+모델을 켜는 순간 화면까지 바뀌어, **근거를 모으기도 전에 켜 버리는 셈**이 된다.
+
+| 환경변수 | 하는 일 | 기본 |
+|---|---|---|
+| `APP_ASSIST_INCIDENT_PROVIDER` | 장애 로그 원인 분석 — 화면에 무엇이 나갈지 | `rule-first` |
+| `APP_ASSIST_DRAFT_PROVIDER` | 고객 상담 초안 — 화면에 무엇이 나갈지 | `ollama` |
+| `APP_ASSIST_RESIDUAL_PROVIDER` | 대사 원인 분류 — **규칙 대비 개선이 0 이라 껐다** | `template` |
+| `APP_ASSIST_FRAUD_REVIEW_PROVIDER` | 이상거래 심사 초안 — 화면에 무엇이 나갈지 | `template` |
+| `APP_ASSIST_FRAUD_REVIEW_MODEL_ENABLED` | 심사 초안 **모델을 돌릴지**(화면은 안 바뀐다) | `false` |
+
+심사 초안이 `template` 인 이유는 만들다 만 것이 아니라 **켤 조건을 못 넘겨서**다. 판정 12건
+이상에서 모델 초안의 편집률 중앙값이 템플릿보다 낮아야 하는데 표본이 아직 0 건이다
+([docs/27](docs/27-FDS-모델-평가와-켤-조건.md) 7절). 표본을 모으려면 모델은 돌아야 하므로
+플래그가 둘이다.
+
 **실측으로 확인한 것**: 위 배치를 실제로 켜서 각각이 일감을 처리하는 것까지 봤다.
 로그만으로는 부족하다 — 대부분 처리 건수가 0이면 로그를 남기지 않으므로, "로그가 없다"가
 "안 돌았다"를 뜻하지 않는다. 그래서 각 배치의 대상 조건에 맞는 데이터를 심고 처리 결과를
@@ -247,9 +263,18 @@ BENCH_INFRA=external BENCH_DB_PORT=3307 BENCH_ALLOW_DB_RESET=1 ./gradlew bench -
 - [docs/03 아키텍처 설계](docs/03-아키텍처-설계.md): 멱등성, Saga/Outbox, 원장, 웹훅, 정산/대사
 - [docs/04 장애 시나리오 설계](docs/04-장애-시나리오-설계.md): 외부 API 실패 처리 전반
 - [docs/05 성능 전략](docs/05-성능개선-전략.md): 동시성 제어, 부하테스트, 관측성
-- [docs/09 ERD](docs/09-ERD-설계.md) ([핵심 다이어그램](docs/images/erd-core.svg)) — 39개 테이블. 돈이 지나가는 경로와 **두 번 처리되면 안 되는 자리마다 걸린 유니크 제약**, [docs/10 API 스펙](docs/10-API-스펙.md)
+- [docs/09 ERD](docs/09-ERD-설계.md) ([핵심 다이어그램](docs/images/erd-core.svg)) — 44개 테이블. 돈이 지나가는 경로와 **두 번 처리되면 안 되는 자리마다 걸린 유니크 제약**, [docs/10 API 스펙](docs/10-API-스펙.md)
 - [docs/11 AI 운영 자동화 검토](docs/11-AI-운영자동화-검토.md): **결정** — 대사 원인 8개 중 6개는 산수, 설계 원칙 4가지, 자동 확정 등급, 만들기 전에 정할 것(홀드아웃·인젝션 전제)
 - [docs/12 AI 운영 자동화 사례 연구](docs/12-AI-운영자동화-사례연구.md): **근거** — Klarna·Amex·DoorDash·eBay·Zalando·Meta·Uber·Stripe·PayPal·Nubank·Monzo·카카오뱅크·토스. 출처 신뢰도와 미공개 항목까지 표시
+- AI 를 붙인 자리 — **자리마다 채점 기준을 먼저 만들고 기존 방식과 견줬다**:
+  [docs/14 잔여 원인 후보 제안](docs/14-백오피스-AI-잔여후보-사례조사.md) ·
+  [docs/15 잔여 후보 홀드아웃 실측](docs/15-잔여후보-홀드아웃-실측.md) (**규칙 대비 개선이 0 이라 껐다**. 판정 조건을 코드로 강제하니 그 조건을 통과하는 자리에서는 규칙이 이미 같은 답을 낸다) ·
+  [docs/18 운영자용 타임라인 서술](docs/18-운영자용-타임라인-서술.md) ·
+  [docs/19 장애 로그 원인 분석](docs/19-장애-로그-원인분석.md) (규칙이 답을 못 낸 건만 모델이 후보를 낸다)
+- 도메인·기구:
+  [docs/16 할부](docs/16-할부-도메인.md) ·
+  [docs/20 분쟁 증빙 조립](docs/20-분쟁-증빙-조립.md) ·
+  [docs/21 자동확정 승격 기구](docs/21-자동확정-승격-기구.md)
 - 실측 기록 — 최근 것들:
   [docs/17 FDS 지연 예산](docs/17-FDS-지연예산-실측.md) (판정 단독 대 승인과 합산, 합의 p99 는 p99 의 합이 아니다) ·
   [docs/22 제재 스크리닝 이름 매칭](docs/22-제재-스크리닝-이름매칭.md) ·
@@ -257,7 +282,7 @@ BENCH_INFRA=external BENCH_DB_PORT=3307 BENCH_ALLOW_DB_RESET=1 ./gradlew bench -
   [docs/24 조회 인덱스 실측](docs/24-조회-인덱스-실측.md) (추정 50행 대 실제 30만 행, 22쌍 전수 감사) ·
   [docs/25 알림 소음 억제와 표본 바닥](docs/25-알림-소음-억제와-표본바닥.md) ·
   [docs/26 FDS 규칙별 오탐](docs/26-FDS-규칙별-오탐.md) ·
-  [docs/27 FDS 모델 평가와 켤 조건](docs/27-FDS-모델-평가와-켤-조건.md) (규칙이 못 보는 축 여섯, 정밀도 91.7% 를 실 기저율로 환산하면 20.6%, 정답의 입구는 차지백)
+  [docs/27 FDS 모델 평가와 켤 조건](docs/27-FDS-모델-평가와-켤-조건.md) (규칙이 못 보는 축 여섯, 정밀도 79.3% 는 이 코퍼스의 부정 비율 30.4% 에 끌려간 값이라 가정 기저율 1% 로 환산하면 8.1%, 정답의 입구는 차지백)
 - [docs/adr](docs/adr/): 아키텍처 결정 기록 — 최근 것들:
   [ADR-010 무엇을 만들지 않을지](docs/adr/ADR-010-what-not-to-build.md) ·
   [ADR-011 주문 타임라인](docs/adr/ADR-011-order-timeline-assembly.md) ·
@@ -267,7 +292,10 @@ BENCH_INFRA=external BENCH_DB_PORT=3307 BENCH_ALLOW_DB_RESET=1 ./gradlew bench -
   [ADR-015 구독 청구 앵커](docs/adr/ADR-015-subscription-billing-anchor.md) ·
   [ADR-016 금액과 통화](docs/adr/ADR-016-money-with-currency.md) ·
   [ADR-017 애그리거트 경계](docs/adr/ADR-017-aggregate-boundaries.md) ·
-  [ADR-018 모듈 내부 패키지](docs/adr/ADR-018-module-internal-packages.md)
+  [ADR-018 모듈 내부 패키지](docs/adr/ADR-018-module-internal-packages.md) ·
+  [ADR-019 카드를 안 만져 PCI 범위를 줄인다](docs/adr/ADR-019-pci-scope-by-not-touching-cards.md) ·
+  [ADR-020 멀티 PG 라우팅은 기본 끔](docs/adr/ADR-020-multi-pg-routing-off-by-default.md) ·
+  [ADR-021 신원을 안 들고 있어 AML 스크리닝을 안 한다](docs/adr/ADR-021-no-aml-screening-by-not-holding-identity.md)
 
 실측 기록: [13 상담 초안 실측](docs/13-상담초안-실측.md) — 실데이터와 실제 로컬 모델(Qwen3 8B)을 붙여
   검증기 결함 3건을 찾아 고친 과정. 오반려 50%→0%, 모델 초안 통과율 58%→100%,
@@ -287,6 +315,12 @@ BENCH_INFRA=external BENCH_DB_PORT=3307 BENCH_ALLOW_DB_RESET=1 ./gradlew bench -
   반환해, 전 모듈의 `Long.parseLong(principal.getName())` 소유권 계약을 그대로 유지한다(회원 id는 데모 계정과
   충돌하지 않게 1000부터). 데모/운영 계정(admin/admin2/1/2)은 InMemory로 병행 유지한다. 이메일 인증·비밀번호
   재설정·소셜 로그인·회원 비활성화는 범위 밖.
+- **카드 식별**: 카드번호는 우리 서버를 지나지 않는다(ADR-019). 대신 승인 응답의 **마스킹된
+  번호와 발급사 코드를 단방향 해시**로 바꿔 `payments.card_fingerprint` 에 적고, 사후 탐지가
+  같은 카드의 과거 결제를 그것으로 묶는다. 원문은 어디에도 안 남긴다. **이 키는 카드를 유일하게
+  가리키지 않는다** — 마스킹이 앞뒤 일부만 남기므로 같은 발급사·같은 BIN 의 다른 카드가 같은
+  키를 받을 수 있다. 과하게 묶일 수는 있어도 갈라지지는 않는다. 유일한 키가 필요하면 빌링키를
+  받아야 하고 그것은 자동결제 연동이 따로 필요하다.
 - **통화**: 단일 KRW(long, 원 단위)만 다룬다. 다통화는 미지원이다. 실서비스라면 통화 코드와 최소단위
   스케일을 값 타입에 담아 확장한다.
 - **시크릿**: JWT·필드 암호화·웹훅 서명 키 등은 로컬 개발용 기본값을 제공하되, 미설정/약한 키면
