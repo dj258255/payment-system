@@ -424,12 +424,17 @@ class FraudModelEvalTest {
     }
 
     @Test
-    @DisplayName("규칙이 올린 큐 안에서 기존 순서와 모델 순서를 비교한다")
+    @DisplayName("규칙이 올린 큐 안에서 순서를 비교한다 — 런타임과 같은 여섯 피처로 잰다")
     void rankingInsideTheRuleFlaggedQueue() {
         var corpus = new FraudCorpus(SEED).build(NORMALS, PER_AXIS);
         int cut = corpus.size() / 2;
-        var model = train(corpus.subList(0, cut), 4_000, 3.0);
-        var holdout = corpus.subList(cut, corpus.size());
+        // <b>런타임에 실제로 도는 조건으로 잰다.</b> 여덟 피처 모델로 재면 운영에서 못 내는
+        // 성적을 정렬의 근거로 쓰게 된다. 기기·IP 신호를 지우고 학습한 모델을 쓴다.
+        var trainRt = corpus.subList(0, cut).stream()
+                .map(FraudModelEvalTest::withoutRequestSignals).toList();
+        var model = train(trainRt, 4_000, 3.0);
+        var holdout = corpus.subList(cut, corpus.size()).stream()
+                .map(FraudModelEvalTest::withoutRequestSignals).toList();
 
         // <b>여기가 정렬을 켤 근거가 나오는 자리다.</b> 전체 표본에서 잰 P@K 는 규칙이
         // 올리지도 않은 건들을 포함해서, 큐 정렬이 나은지에 대해 아무 말도 못 한다.
@@ -453,34 +458,56 @@ class FraudModelEvalTest {
                         (FraudCorpus.Case c) -> model.risk(featuresOf(c))).reversed())
                 .toList();
 
-        // <b>무작위 순서가 진짜 기준선이다.</b> 최신순은 이 코퍼스의 시각 분포에 휘둘려
-        // 실 트래픽의 도착 순서를 재현하지 못한다. 무작위 순서의 P@K 는 큐의 부정 비율로
-        // 수렴하므로, 그 값을 넘겨야 정렬이 일을 한 것이다.
-        var shuffled = new ArrayList<>(queue);
-        java.util.Collections.shuffle(shuffled, new java.util.Random(SEED));
+        // <b>무작위는 한 번 섞은 값을 쓰면 안 된다.</b> 처음에 그렇게 해서 P@10 이 10% 로
+        // 나왔는데, 균등 무작위의 기댓값은 큐의 부정 비율(38%)이다. 한 번의 결과를 그 방식의
+        // 대표 성능으로 쓰면 모델과의 차이가 과장된다. 200회 섞어 평균을 낸다.
+        System.out.printf("  %-14s %8s %8s %8s%n", "", "P@5", "P@10", "P@20");
+        System.out.printf("  %-14s", "무작위(200회 평균)");
+        for (int k : new int[]{5, 10, 20}) {
+            System.out.printf(" %7.1f%%", averageRandomPrecision(queue, k, 200) * 100);
+        }
+        System.out.printf("   기댓값 %.1f%%%n", 100.0 * fraudInQueue / queue.size());
 
-        System.out.printf("  %-12s %8s %8s %8s%n", "", "P@5", "P@10", "P@20");
-        for (var pair : List.of(java.util.Map.entry("무작위", (List<FraudCorpus.Case>) shuffled),
-                                java.util.Map.entry("기존(최신순)", byRecency),
+        for (var pair : List.of(java.util.Map.entry("기존(최신순)", byRecency),
                                 java.util.Map.entry("모델 점수순", byModel))) {
-            System.out.printf("  %-12s", pair.getKey());
+            System.out.printf("  %-14s", pair.getKey());
             for (int k : new int[]{5, 10, 20}) {
-                System.out.printf(" %7.0f%%", precisionInOrder(pair.getValue(), k) * 100);
+                System.out.printf(" %7.1f%%", precisionInOrder(pair.getValue(), k) * 100);
             }
             System.out.println();
         }
 
         double modelAt10 = precisionInOrder(byModel, 10);
         double recencyAt10 = precisionInOrder(byRecency, 10);
-        System.out.printf("  큐 전체 부정 비율 %.0f%% 대비 모델 상위 10건 %.0f%%%n",
+        System.out.printf("  큐 부정 비율 %.1f%% 대비 모델 상위 10건 %.1f%%%n",
                 100.0 * fraudInQueue / queue.size(), modelAt10 * 100);
 
         assertThat(modelAt10)
                 .as("큐 안에서 모델 순서가 기존 순서보다 나아야 정렬을 켤 근거가 된다")
                 .isGreaterThan(recencyAt10);
         assertThat(modelAt10)
-                .as("무작위 순서는 큐의 부정 비율로 수렴한다. 그것보다 나아야 정렬이 일을 한 것이다")
+                .as("무작위의 기댓값은 큐의 부정 비율이다. 그것보다 나아야 정렬이 일을 한 것이다")
                 .isGreaterThan((double) fraudInQueue / queue.size());
+        assertThat(averageRandomPrecision(queue, 10, 200))
+                .as("무작위 평균은 큐의 부정 비율 근처로 수렴해야 한다")
+                .isCloseTo((double) fraudInQueue / queue.size(), org.assertj.core.data.Offset.offset(0.08));
+    }
+
+    /**
+     * 무작위 순서의 상위 {@code k} 정밀도를 {@code trials} 회 평균한다.
+     *
+     * <p>한 번 섞은 값은 표본 하나다. 그 방식의 대표 성능으로 쓰면 비교가 과장된다.
+     * 평균은 큐의 부정 비율로 수렴하므로 그것이 진짜 기준선이다.
+     */
+    private static double averageRandomPrecision(List<FraudCorpus.Case> queue, int k, int trials) {
+        var rng = new java.util.Random(SEED);
+        var pool = new ArrayList<>(queue);
+        double sum = 0;
+        for (int t = 0; t < trials; t++) {
+            java.util.Collections.shuffle(pool, rng);
+            sum += precisionInOrder(pool, k);
+        }
+        return sum / trials;
     }
 
     /** 이미 정렬된 목록의 상위 {@code k} 건 정밀도. */

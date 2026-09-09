@@ -5,7 +5,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -44,14 +43,17 @@ public class FraudDraftReview {
     @Column(nullable = false)
     private String reviewer;
 
-    @Lob
+    // <b>{@code @Lob} 를 안 쓴다.</b> Hibernate 가 MySQL 에서 longtext 를 기대해
+    // TEXT 로 만든 마이그레이션과 어긋나 ddl-auto=validate 가 기동을 막는다.
+    // 같은 이유로 V26 의 blind_reviews 도 columnDefinition 을 명시한다.
+    @Column(columnDefinition = "TEXT")
     private String blindReply;
     private Instant blindAt;
 
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String modelDraft;
     private String modelSource;
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String baselineDraft;
     private String baselineSource;
 
@@ -59,10 +61,10 @@ public class FraudDraftReview {
     private boolean baselineFirst;
     private Instant revealedAt;
 
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String editedDraft;
     private Instant editedAt;
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String editedBaseline;
     private Instant baselineEditedAt;
 
