@@ -43,7 +43,7 @@ class FraudReviewDraftServiceTest {
         FraudReviewFactsPort port = id -> id == REVIEW_ID ? Optional.of(facts()) : Optional.empty();
         // provider 이름으로 고르므로 그 이름을 그대로 준다.
         return new FraudReviewDraftService(port, List.of(primary, template), template,
-                guard, new com.beomsu.pay.assist.draft.AmountCoverageGuard(), registry, primary.name());
+                guard, new com.beomsu.pay.assist.draft.AmountCoverageGuard(), new FactWideningGuard(), registry, primary.name());
     }
 
     /** 고정된 문장을 돌려주는 가짜 모델. */

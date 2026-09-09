@@ -55,6 +55,7 @@ public class FraudReviewDraftService {
     private final TemplateFraudReviewAdapter template;
     private final NumericProvenanceGuard guard;
     private final AmountCoverageGuard coverage;
+    private final FactWideningGuard widening;
     private final MeterRegistry registry;
 
     /**
@@ -70,12 +71,14 @@ public class FraudReviewDraftService {
                                    TemplateFraudReviewAdapter template,
                                    NumericProvenanceGuard guard,
                                    AmountCoverageGuard coverage,
+                                   FactWideningGuard widening,
                                    MeterRegistry registry,
                                    @Value("${app.assist.fraud-review-provider:template}") String provider) {
         this.facts = facts;
         this.template = template;
         this.guard = guard;
         this.coverage = coverage;
+        this.widening = widening;
         this.registry = registry;
         this.primary = ports.stream()
                 .filter(p -> p.name().startsWith(provider))
@@ -122,6 +125,14 @@ public class FraudReviewDraftService {
      */
     Optional<String> guarded(FraudReviewDraftPort port, FraudReviewFacts f, String original) {
         String text = reviseIfAmountMissing(port, f, original);
+        // 사실을 넓혀 말한 자리. 숫자가 맞아 출처 검증에는 안 걸린다.
+        List<String> widened = widening.verify(text, f);
+        if (!widened.isEmpty()) {
+            log.warn("[fraud-review] 사실을 넓혀 쓴 초안을 버립니다 review={} port={} bad={}",
+                    f.reviewId(), port.name(), widened);
+            count("widened", port.name());
+            return Optional.empty();
+        }
         List<String> bad = guard.verify(text, allowed(f));
         if (!bad.isEmpty()) {
             // 걸린 값을 로그에 남긴다. 무엇을 지어냈는지 안 남기면 프롬프트를 못 고친다.

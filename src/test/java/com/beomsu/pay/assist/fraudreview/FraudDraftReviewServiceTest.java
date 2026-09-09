@@ -228,7 +228,7 @@ class FraudDraftReviewServiceTest {
         return new FraudReviewDraftService(port, java.util.List.of(new TemplateFraudReviewAdapter()),
                 new TemplateFraudReviewAdapter(),
                 new com.beomsu.pay.assist.draft.NumericProvenanceGuard(),
-                new com.beomsu.pay.assist.draft.AmountCoverageGuard(),
+                new com.beomsu.pay.assist.draft.AmountCoverageGuard(), new FactWideningGuard(),
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), "template");
     }
 }
