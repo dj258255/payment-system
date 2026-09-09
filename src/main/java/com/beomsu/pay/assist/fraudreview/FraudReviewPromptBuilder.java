@@ -35,6 +35,8 @@ public class FraudReviewPromptBuilder {
                3. 사실에 없는 정보를 추측해 채우지 마라. 모르는 것은 모른다고 쓴다.
                4. 다섯 문장 이내. 표나 목록 없이 줄글로 쓴다.
                5. 한국어로 쓴다.
+               6. 금액은 사실에 적힌 자릿수 그대로 쓴다(980,000원). 만·억 단위로 줄이지 마라.
+                  줄여 쓰면 심사자가 원래 값을 다시 찾아야 하고, 금액 결손 검사에도 걸린다.
                """;
     }
 
@@ -71,6 +73,23 @@ public class FraudReviewPromptBuilder {
         }
         sb.append("</사실>\n\n");
         sb.append("위 사실로 심사자가 무엇을 확인해야 하는지 정리해라.");
+        return sb.toString();
+    }
+
+    /**
+     * 되묻기. <b>지적만 주고 새로 쓰라고는 안 한다.</b>
+     *
+     * <p>새로 쓰게 하면 멀쩡하던 문장이 흔들려 무엇이 나아졌는지 못 가른다. 원본을 주고
+     * 지적한 자리만 고치게 한다. {@code assist.draft} 의 되묻기와 같은 모양이다.
+     */
+    String revise(FraudReviewFacts f, String original, java.util.List<String> issues) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("아래 초안에서 지적한 자리만 고쳐 다시 써라. 지적이 없는 문장은 그대로 둔다.\n\n");
+        sb.append("[지적]\n");
+        for (String i : issues) {
+            sb.append("- ").append(i).append('\n');
+        }
+        sb.append("\n[초안]\n").append(original).append("\n\n[사실]\n").append(user(f));
         return sb.toString();
     }
 }

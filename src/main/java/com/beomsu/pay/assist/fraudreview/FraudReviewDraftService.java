@@ -1,6 +1,7 @@
 package com.beomsu.pay.assist.fraudreview;
 
 import com.beomsu.pay.assist.draft.FactPack;
+import com.beomsu.pay.assist.draft.AmountCoverageGuard;
 import com.beomsu.pay.assist.draft.NumericProvenanceGuard;
 import com.beomsu.pay.fraud.FraudReviewFacts;
 import com.beomsu.pay.fraud.FraudReviewFactsPort;
@@ -53,6 +54,7 @@ public class FraudReviewDraftService {
     private final FraudReviewDraftPort primary;
     private final TemplateFraudReviewAdapter template;
     private final NumericProvenanceGuard guard;
+    private final AmountCoverageGuard coverage;
     private final MeterRegistry registry;
 
     /**
@@ -67,11 +69,13 @@ public class FraudReviewDraftService {
                                    List<FraudReviewDraftPort> ports,
                                    TemplateFraudReviewAdapter template,
                                    NumericProvenanceGuard guard,
+                                   AmountCoverageGuard coverage,
                                    MeterRegistry registry,
                                    @Value("${app.assist.fraud-review-provider:template}") String provider) {
         this.facts = facts;
         this.template = template;
         this.guard = guard;
+        this.coverage = coverage;
         this.registry = registry;
         this.primary = ports.stream()
                 .filter(p -> p.name().startsWith(provider))
@@ -96,15 +100,86 @@ public class FraudReviewDraftService {
             return fallback(f, "no_draft");
         }
 
-        List<String> bad = guard.verify(text.get(), allowed(f));
-        if (!bad.isEmpty()) {
-            // 걸린 값을 로그에 남긴다. 무엇을 지어냈는지 안 남기면 프롬프트를 못 고친다.
-            log.warn("[fraud-review] 출처 없는 값으로 초안을 버립니다 review={} bad={}", f.reviewId(), bad);
+        text = guarded(primary, f, text.get());
+        if (text.isEmpty()) {
             return fallback(f, "guard_rejected");
         }
 
         count("ok", primary.name());
         return new FraudReviewDraft(f.reviewId(), text.get(), primary.name(), List.of());
+    }
+
+    /**
+     * 어느 포트가 만든 초안이든 <b>화면에 나갈 때와 같은 처리를 태운다</b>. 폴백은 안 한다.
+     *
+     * <p><b>블라인드 비교가 이걸 부른다.</b> 전에는 비교가 포트를 직접 불러 <b>가드를 안 거친
+     * 날것</b>을 재고 있었다. 그러면 "모델이 낫다"가 나와도 켠 뒤 화면에는 다른 문장이 나간다.
+     * 재는 것과 나가는 것이 달랐다.
+     *
+     * <p><b>여기서 템플릿으로 안 떨어뜨리는 것이 요점이다.</b> 폴백까지 태우면 모델 쪽이
+     * 가드에 걸릴 때 템플릿이 들어가 <b>템플릿 대 템플릿</b>을 비교하게 된다. 그건 비교를
+     * 안 한 것인데 했다고 착각하는 형태다. 비면 비운 채로 돌려주고 부르는 쪽이 공개를 접는다.
+     */
+    Optional<String> guarded(FraudReviewDraftPort port, FraudReviewFacts f, String original) {
+        String text = reviseIfAmountMissing(port, f, original);
+        List<String> bad = guard.verify(text, allowed(f));
+        if (!bad.isEmpty()) {
+            // 걸린 값을 로그에 남긴다. 무엇을 지어냈는지 안 남기면 프롬프트를 못 고친다.
+            log.warn("[fraud-review] 출처 없는 값으로 초안을 버립니다 review={} port={} bad={}",
+                    f.reviewId(), port.name(), bad);
+            return Optional.empty();
+        }
+        return Optional.of(text);
+    }
+
+    /** 포트가 초안을 만들고 같은 처리를 태운다. 비교 쪽이 부르는 입구다. */
+    public Optional<String> guardedDraft(FraudReviewDraftPort port, FraudReviewFacts f) {
+        return port.draft(f).flatMap(t -> guarded(port, f, t));
+    }
+
+    /**
+     * 심사 금액이 초안에 없으면 한 번 되묻는다.
+     *
+     * <p><b>출처 검증과 방향이 반대다.</b> {@code NumericProvenanceGuard} 는 <b>없는 숫자를
+     * 지어냈는지</b>를 보고, 이쪽은 <b>있는 숫자를 버렸는지</b>를 본다. 지어낸 값은 버리면 되는데
+     * 빠뜨린 값은 버려도 안 생기므로 다시 쓰게 해야 한다.
+     *
+     * <p><b>왜 붙였는지는 재고 알았다.</b> 심사 열두 건에 초안을 뽑아 보니 둘이 금액을 통째로
+     * 빠뜨린 채 출처 검증을 통과했다. 심사자가 제일 먼저 봐야 할 것이 그 금액인데 거기서 빠진다.
+     * 상황 5.2 의 상담 초안에서 같은 구멍을 같은 방법으로 막았다.
+     *
+     * <p><b>나빠지면 원본을 쓴다.</b> 수정본이 지어낸 값을 넣었거나 빠진 금액이 안 줄었으면
+     * 그대로 둔다. 되묻기가 멀쩡한 문장을 흔드는 쪽으로 가면 안 된다.
+     */
+    private String reviseIfAmountMissing(FraudReviewDraftPort port, FraudReviewFacts f, String original) {
+        var facts = allowed(f);
+        List<Long> missing = coverage.missing(original, facts);
+        if (missing.isEmpty()) {
+            return original;
+        }
+        List<String> issues = missing.stream()
+                .map(a -> "금액 " + java.text.NumberFormat.getNumberInstance(java.util.Locale.KOREA).format(a)
+                        + "원이 초안에 없다")
+                .toList();
+        Optional<String> revised = port.revise(f, original, issues);
+        if (revised.isEmpty() || revised.get().isBlank()) {
+            count("amount_missing_not_revised", port.name());
+            return original;
+        }
+        if (!guard.verify(revised.get(), facts).isEmpty()) {
+            log.info("[fraud-review] 수정본이 출처 검증에 걸려 원본 유지 review={}", f.reviewId());
+            count("amount_missing_not_revised", port.name());
+            return original;
+        }
+        int after = coverage.missing(revised.get(), facts).size();
+        if (after >= missing.size()) {
+            count("amount_missing_not_revised", port.name());
+            return original;
+        }
+        log.info("[fraud-review] 되묻기로 금액을 채웠습니다 review={} 빠진 금액 {} -> {}",
+                f.reviewId(), missing.size(), after);
+        count("amount_missing_revised", port.name());
+        return revised.get();
     }
 
     /**
@@ -134,9 +209,29 @@ public class FraudReviewDraftService {
      * 점수와 비율은 {@code 원} 이 없어 그대로 지나간다. 그 경계를 넓히면 "규칙 3개" 같은
      * 세는 말까지 반려되고, 좁히면 지어낸 금액이 샌다.
      */
+    /**
+     * 초안이 인용해도 되는 사실.
+     *
+     * <p><b>규칙 근거에 적힌 숫자도 사실이다.</b> 결제 금액만 넣어 뒀더니 임계 근처 규칙에서
+     * 모델이 "100만원에 가깝다"고 쓰는 족족 가드에 걸렸다. 열두 건 중 넷이 그랬다. 그 값은
+     * 지어낸 것이 아니라 {@code NEAR_THRESHOLD(980000/1000000)} 처럼 근거 문자열에 이미
+     * 우리가 실어 보낸 것이다. 인용을 막을 이유가 없다.
+     *
+     * <p>근거에서 뽑는 것은 <b>숫자뿐이다.</b> 규칙 이름은 금액이 아니므로 안 넣는다.
+     */
     private FactPack allowed(FraudReviewFacts f) {
         Set<Long> amounts = new LinkedHashSet<>();
         amounts.add(f.amount());
+        for (var rule : f.firedRules()) {
+            if (rule.detail() == null) {
+                continue;
+            }
+            for (String token : rule.detail().split("[^0-9]+")) {
+                if (!token.isEmpty() && token.length() <= 18) {
+                    amounts.add(Long.parseLong(token));
+                }
+            }
+        }
         Set<LocalDate> dates = new LinkedHashSet<>();
         if (f.detectedAt() != null) {
             dates.add(f.detectedAt().atZone(KST).toLocalDate());

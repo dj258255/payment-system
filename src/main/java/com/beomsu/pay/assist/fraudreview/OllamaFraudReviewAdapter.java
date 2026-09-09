@@ -59,6 +59,11 @@ public class OllamaFraudReviewAdapter implements FraudReviewDraftPort {
         if (facts == null || facts.firedRules().isEmpty()) {
             return Optional.empty();
         }
+        return call(prompts.user(facts), facts.reviewId());
+    }
+
+    /** 한 번 부른다. 실패하면 빈손으로 돌려주고 부르는 쪽이 정한다. */
+    private Optional<String> call(String userMessage, long reviewId) {
         try {
             Map<?, ?> res = client.post().uri("/api/chat")
                     .body(Map.of(
@@ -70,7 +75,7 @@ public class OllamaFraudReviewAdapter implements FraudReviewDraftPort {
                             "options", Map.of("temperature", 0.2),
                             "messages", List.of(
                                     Map.of("role", "system", "content", prompts.system()),
-                                    Map.of("role", "user", "content", prompts.user(facts)))))
+                                    Map.of("role", "user", "content", userMessage))))
                     .retrieve().body(Map.class);
 
             String text = Optional.ofNullable(res)
@@ -83,9 +88,17 @@ public class OllamaFraudReviewAdapter implements FraudReviewDraftPort {
 
             return Optional.ofNullable(text);
         } catch (RuntimeException e) {
-            log.warn("[ollama] 심사 초안 실패 model={} review={}", model, facts.reviewId(), e);
+            log.warn("[ollama] 심사 초안 실패 model={} review={}", model, reviewId, e);
             return Optional.empty();
         }
+    }
+
+    @Override
+    public Optional<String> revise(FraudReviewFacts facts, String original, java.util.List<String> issues) {
+        if (facts == null || original == null || issues == null || issues.isEmpty()) {
+            return Optional.empty();
+        }
+        return call(prompts.revise(facts, original, issues), facts.reviewId());
     }
 
     @Override

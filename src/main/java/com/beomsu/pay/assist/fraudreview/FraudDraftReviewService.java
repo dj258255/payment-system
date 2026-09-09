@@ -31,6 +31,7 @@ public class FraudDraftReviewService {
     private final FraudReviewDraftPort model;
     private final TemplateFraudReviewAdapter baseline;
     private final FraudDraftReviewRepository repository;
+    private final FraudReviewDraftService drafts;
 
     /**
      * <b>모델 구현을 명시적으로 고른다.</b> 주입에 맡기면 안 된다.
@@ -45,10 +46,12 @@ public class FraudDraftReviewService {
     public FraudDraftReviewService(FraudReviewFactsPort facts,
                                    List<FraudReviewDraftPort> ports,
                                    TemplateFraudReviewAdapter baseline,
-                                   FraudDraftReviewRepository repository) {
+                                   FraudDraftReviewRepository repository,
+                                   FraudReviewDraftService drafts) {
         this.facts = facts;
         this.baseline = baseline;
         this.repository = repository;
+        this.drafts = drafts;
         this.model = ports.stream()
                 .filter(p -> !p.name().equals(baseline.name()))
                 .findFirst()
@@ -94,8 +97,11 @@ public class FraudDraftReviewService {
         if (f == null) {
             return Optional.empty();
         }
-        String modelText = model.draft(f).orElse(null);
-        String baselineText = baseline.draft(f).orElse(null);
+        // <b>화면에 나갈 때와 같은 처리를 태운다.</b> 전에는 포트를 직접 불러 가드를 안 거친
+        // 날것을 쟀다. 그러면 "모델이 낫다"가 나와도 켠 뒤 화면에는 다른 문장이 나간다.
+        // 재는 것과 나가는 것이 같아야 이 표본이 켤 근거가 된다.
+        String modelText = drafts.guardedDraft(model, f).orElse(null);
+        String baselineText = drafts.guardedDraft(baseline, f).orElse(null);
         if (modelText == null || baselineText == null) {
             return Optional.empty();
         }
