@@ -195,7 +195,11 @@ public class TossPgClient implements PgClient {
             throw new IllegalStateException(
                     "승인 금액 불일치: 요청 " + expectedAmount + ", 응답 " + resp.totalAmount());
         }
-        return PgApproveResult.success(resp.method());
+        // 같은 카드를 결제 여러 건에 걸쳐 묶을 키. 카드 결제가 아니면 card 가 없어 null 이 된다.
+        String fingerprint = resp.card() == null
+                ? null
+                : CardFingerprint.of(resp.card().number(), resp.card().issuerCode());
+        return PgApproveResult.success(resp.method(), null, fingerprint);
     }
 
     /**
@@ -246,9 +250,17 @@ public class TossPgClient implements PgClient {
     /** 토스 Payment 응답 중 우리가 쓰는 필드. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     record TossPayment(String status, String method, Long totalAmount, Long balanceAmount,
-                       List<Cancel> cancels) {
+                       List<Cancel> cancels, Card card) {
         @JsonIgnoreProperties(ignoreUnknown = true)
         record Cancel(String transactionKey, Long cancelAmount) {
+        }
+
+        /**
+         * 카드 결제일 때만 온다. <b>여기서 쓰는 것은 마스킹된 번호와 발급사 코드 둘뿐이고,
+         * 그대로 저장하지 않는다.</b> {@link CardFingerprint} 가 해시로 바꾼 값만 남는다.
+         */
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        record Card(String number, String issuerCode) {
         }
     }
 }

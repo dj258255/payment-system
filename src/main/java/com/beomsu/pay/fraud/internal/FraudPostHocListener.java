@@ -55,7 +55,9 @@ public class FraudPostHocListener {
     @ApplicationModuleListener
     void onConfirmed(PaymentConfirmedEvent e) {
         // 이벤트는 카드 키를 싣지 않으므로 paymentId로 되읽는다. 없으면 조용히 skip.
-        String cardKey = paymentService.paymentKeyOf(e.paymentId()).orElse(null);
+        // <b>카드 지문이 있으면 그것으로 묶는다.</b> 없으면 paymentKey 로 떨어지는데, 그때는
+        // 그 건이 자기 자신하고만 묶여 창에 한 줄만 들어온다 — 과거를 못 본 점수가 된다.
+        String cardKey = paymentService.historyKeyOf(e.paymentId()).orElse(null);
         if (cardKey == null) {
             return;
         }

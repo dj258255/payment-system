@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
+import org.springframework.http.ResponseEntity;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -34,6 +35,7 @@ class FraudReviewAdminController {
 
     private final FraudReviewAdminService adminService;
     private final RuleFalsePositiveService ruleFalsePositiveService;
+    private final com.beomsu.pay.fraud.FraudReviewFactsPort facts;
 
     /** 상태별 심사 항목 목록(기본 PENDING = 미결 건). */
     /**
@@ -53,6 +55,20 @@ class FraudReviewAdminController {
             return adminService.listByRisk(status, pageable);
         }
         return adminService.list(status, pageable);
+    }
+
+    /**
+     * 심사 한 건의 사실 묶음 — 발동 규칙과 그 규칙의 최근 성적, 같은 카드의 지난 심사.
+     *
+     * <p><b>블라인드 비교가 이걸 필요로 한다.</b> 심사자는 초안을 보기 전에 사실만 보고 자기
+     * 메모를 써야 하는데, 그 사실을 볼 창구가 없으면 초안부터 열게 된다. 그러면 사람 답이
+     * 초안을 닮아 두 편집률의 차이가 방식 차이가 아니게 된다.
+     *
+     * <p>초안을 안 만든다. 여기서 초안까지 주면 이 호출 하나로 순서가 무너진다.
+     */
+    @GetMapping("/{id}/facts")
+    ResponseEntity<com.beomsu.pay.fraud.FraudReviewFacts> facts(@PathVariable long id) {
+        return facts.factsOf(id).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     /** 승인(정상 거래로 확인). */

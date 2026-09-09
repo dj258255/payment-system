@@ -16,11 +16,18 @@ package com.beomsu.pay.payment;
  * @param method     승인 수단(성공 시), 그 외 null
  * @param failReason 실패/미확정 사유, 성공 시 null
  * @param provider   승인을 처리한 PG 이름. 단일 PG면 null
+ * @param cardFingerprint 같은 카드를 결제 여러 건에 걸쳐 묶는 키. 카드 결제가 아니거나 PG 가
+ *                        카드 정보를 안 주면 null. <b>카드 데이터가 아니라 마스킹 값의 해시다</b>
  */
-public record ApprovalOutcome(Result result, String method, String failReason, String provider) {
+public record ApprovalOutcome(Result result, String method, String failReason, String provider,
+                              String cardFingerprint) {
 
     public ApprovalOutcome(Result result, String method, String failReason) {
-        this(result, method, failReason, null);
+        this(result, method, failReason, null, null);
+    }
+
+    public ApprovalOutcome(Result result, String method, String failReason, String provider) {
+        this(result, method, failReason, provider, null);
     }
 
     public enum Result { SUCCESS, FAILED, TIMEOUT }
