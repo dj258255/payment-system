@@ -60,7 +60,8 @@ print(rows[0]["id"] if rows else "")')
 
   echo; echo "  심사 $ID — 사실을 먼저 본다"
   api -X POST "$BASE/$ID/draft-review/open" -d "{\"reviewer\":\"$REVIEWER\"}" >/dev/null
-  api "$BASE/$ID/facts" | python3 -m json.tool 2>/dev/null || true
+  # 원문 JSON 을 그대로 뿌리면 읽는 데 시간이 걸려 열두 건이 그만큼 늘어난다.
+  api "$BASE/$ID/facts" | python3 tools/render-fraud-facts.py
 
   echo; echo "  1) 초안을 보기 전에 <직접> 심사 메모를 쓴다. 다 쓰면 빈 줄에서 Ctrl-D."
   MEMO=$(cat)
