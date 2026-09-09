@@ -52,7 +52,7 @@ public class FraudReviewPromptBuilder {
         for (var r : f.firedRules()) {
             sb.append("  - ").append(r.name());
             if (r.detail() != null) {
-                sb.append(" (값 ").append(r.detail()).append(')');
+                sb.append(" (").append(explain(r.name(), r.detail())).append(')');
             }
             if (r.normalRatio() != null) {
                 sb.append(": 최근 판정 ").append(r.judged()).append("건 중 ")
@@ -91,5 +91,64 @@ public class FraudReviewPromptBuilder {
         }
         sb.append("\n[초안]\n").append(original).append("\n\n[사실]\n").append(user(f));
         return sb.toString();
+    }
+
+    /**
+     * 규칙 값에 <b>이름을 붙여</b> 준다.
+     *
+     * <p><b>왜 필요한지는 재고 알았다.</b> 값을 {@code 980000/1000000} 꼴로 그대로 주니
+     * 모델이 <b>앞 숫자를 임계값으로</b> 읽어 "임계값 980,000원" 이라고 썼다. 세 건에서 그랬다.
+     * {@code 3/1m} 은 <b>"1만 건 기준"</b> 으로 읽었다 — {@code 1m} 을 백만으로 본 것이다.
+     *
+     * <p><b>템플릿은 안 바꾼다.</b> 템플릿은 이 실험의 기준선이고 사람은 이 표기를 오해하지
+     * 않았다. 둘 다 바꾸면 이번에 잰 값과 다음에 잴 값을 견줄 수 없다.
+     *
+     * <p>모르는 규칙은 값을 그대로 준다. 억지로 풀면 없는 뜻을 붙이게 된다.
+     */
+    static String explain(String rule, String detail) {
+        if (rule == null || detail == null) {
+            return "값 " + detail;
+        }
+        return switch (rule) {
+            case "NEAR_THRESHOLD" -> nearThreshold(detail);
+            case "VELOCITY_EXCEEDED" -> velocity(detail);
+            case "MICRO_PROBE" -> "소액 결제 " + won(detail) + "원";
+            case "HIGH_AMOUNT" -> "결제 금액 " + won(detail) + "원";
+            case "DEVICE_CHURN" -> "쓰인 기기 " + detail + "개";
+            case "IP_CHURN" -> "쓰인 IP " + detail + "개";
+            default -> "값 " + detail;
+        };
+    }
+
+    /** {@code 980000/1000000} 을 <b>결제 금액과 임계로 갈라</b> 준다. */
+    private static String nearThreshold(String detail) {
+        String[] p = detail.split("/");
+        if (p.length != 2) {
+            return "값 " + detail;
+        }
+        return "결제 금액 " + won(p[0]) + "원, 고액 임계 " + won(p[1]) + "원";
+    }
+
+    /** {@code 3/1m} 의 뒤쪽은 <b>백만이 아니라 1분</b>이다. */
+    private static String velocity(String detail) {
+        String[] p = detail.split("/");
+        if (p.length != 2) {
+            return "값 " + detail;
+        }
+        String window = switch (p[1]) {
+            case "1m" -> "1분";
+            case "5m" -> "5분";
+            case "1h" -> "1시간";
+            default -> p[1];
+        };
+        return "최근 " + window + " 안에 " + p[0] + "건";
+    }
+
+    private static String won(String raw) {
+        try {
+            return WON.format(Long.parseLong(raw.trim()));
+        } catch (NumberFormatException e) {
+            return raw;   // 숫자가 아니면 손대지 않는다
+        }
     }
 }
