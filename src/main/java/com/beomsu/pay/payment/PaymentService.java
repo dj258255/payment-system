@@ -82,7 +82,7 @@ public class PaymentService {
                 .increment();
         return new ApprovalOutcome(
                 ApprovalOutcome.Result.valueOf(result.outcome().name()), result.method(),
-                result.failReason(), result.provider());
+                result.failReason(), result.provider(), result.cardFingerprint());
     }
 
     /**
@@ -105,7 +105,7 @@ public class PaymentService {
         ConfirmResult confirmResult = switch (outcome.result()) {
             case SUCCESS -> {
                 // 어느 PG가 승인했는지 함께 적는다. 취소를 어디로 보낼지가 여기서 정해진다
-                payment.approve(outcome.method(), outcome.provider());
+                payment.approve(outcome.method(), outcome.provider(), outcome.cardFingerprint());
                 events.publishEvent(new PaymentConfirmedEvent(
                         payment.getOrderNo(), payment.getId(), payment.getAmount(), payment.getApprovedAt()));
                 yield new ConfirmResult(payment.getId(), payment.getStatus(), outcome.method(), "승인 완료");
@@ -243,6 +243,19 @@ public class PaymentService {
     @Transactional(readOnly = true)
     public Optional<String> paymentKeyOf(long paymentId) {
         return paymentRepository.findById(paymentId).map(Payment::getPaymentKey);
+    }
+
+    /**
+     * 사후 탐지가 이력을 묶을 키 — 카드 지문이 있으면 그것, 없으면 결제 키.
+     *
+     * <p><b>폴백이 뜻하는 것을 알고 써야 한다.</b> 결제 키로 떨어지면 그 건은 <b>자기 자신하고만
+     * 묶이므로</b> 창에 한 줄만 들어온다. 카드 결제가 아니거나 PG 가 카드 정보를 안 주는 경우이고,
+     * 이미 쌓인 결제도 전부 여기에 해당한다. 그 상태에서 나온 점수는 <b>과거를 못 본 점수</b>다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> historyKeyOf(long paymentId) {
+        return paymentRepository.findById(paymentId)
+                .map(p -> p.getCardFingerprint() != null ? p.getCardFingerprint() : p.getPaymentKey());
     }
 
     /** 결제 상세(이력·취소 포함). 엔티티가 아닌 뷰 record로 반환해 모듈 경계를 지킨다. 없으면 empty. */

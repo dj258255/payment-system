@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TossPgClientMappingTest {
 
     private static TossPayment done(long amount) {
-        return new TossPayment("DONE", "카드", amount, amount, null);
+        return new TossPayment("DONE", "카드", amount, amount, null, null);
     }
 
     @Test
@@ -39,7 +39,7 @@ class TossPgClientMappingTest {
     @Test
     @DisplayName("승인 응답이 DONE이 아니면 FAILED, 응답이 비었으면 미확정(TIMEOUT)")
     void confirmNotDone() {
-        assertThat(TossPgClient.mapConfirm(new TossPayment("ABORTED", null, null, null, null), 10_000)
+        assertThat(TossPgClient.mapConfirm(new TossPayment("ABORTED", null, null, null, null, null), 10_000)
                 .outcome()).isEqualTo(PgOutcome.FAILED);
         // 응답 자체가 없으면 승인 여부를 모른다 → 실패로 단정하지 않는다
         assertThat(TossPgClient.mapConfirm(null, 10_000).outcome()).isEqualTo(PgOutcome.TIMEOUT);
@@ -64,11 +64,31 @@ class TossPgClientMappingTest {
     }
 
     @Test
+    @DisplayName("승인 응답의 카드 정보로 지문을 만든다 — 이게 있어야 같은 카드가 묶인다")
+    void confirmCarriesCardFingerprint() {
+        var card = new TossPayment.Card("12345678****123*", "3K");
+        var resp = new TossPayment("DONE", "카드", 10_000L, 10_000L, null, card);
+
+        String key = TossPgClient.mapConfirm(resp, 10_000).cardFingerprint();
+
+        assertThat(key).isEqualTo(CardFingerprint.of("12345678****123*", "3K"));
+        assertThat(key).as("마스킹 값이라도 그대로 실어 나르면 안 된다").doesNotContain("12345678");
+    }
+
+    @Test
+    @DisplayName("카드 결제가 아니면 지문이 없다 — 없는 것을 빈 값으로 묶으면 남남이 한 카드가 된다")
+    void nonCardPaymentHasNoFingerprint() {
+        var resp = new TossPayment("DONE", "계좌이체", 10_000L, 10_000L, null, null);
+
+        assertThat(TossPgClient.mapConfirm(resp, 10_000).cardFingerprint()).isNull();
+    }
+
+    @Test
     @DisplayName("취소 응답에서 PG가 발급한 transactionKey를 꺼낸다")
     void cancelTransactionKey() {
         TossPayment resp = new TossPayment("CANCELED", "카드", 10_000L, 0L,
                 List.of(new TossPayment.Cancel("txn-1", 5_000L),
-                        new TossPayment.Cancel("txn-2", 5_000L)));
+                        new TossPayment.Cancel("txn-2", 5_000L)), null);
         assertThat(TossPgClient.transactionKeyOf(resp, "pk")).isEqualTo("txn-2");
         assertThat(TossPgClient.transactionKeyOf(null, "pk")).isEqualTo("toss-pk");
     }

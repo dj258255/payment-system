@@ -11,27 +11,34 @@ package com.beomsu.pay.payment.pg;
  * @param method     결제수단 (SUCCESS일 때만)
  * @param failReason 실패/타임아웃 사유
  * @param provider   실제로 승인을 처리한 PG 이름. 단일 PG면 null일 수 있다
+ * @param cardFingerprint 같은 카드를 결제 여러 건에 걸쳐 묶는 키({@link CardFingerprint}).
+ *                        카드 결제가 아니거나 PG 가 카드 정보를 안 주면 null 이다
  */
-public record PgApproveResult(PgOutcome outcome, String method, String failReason, String provider) {
+public record PgApproveResult(PgOutcome outcome, String method, String failReason, String provider,
+                              String cardFingerprint) {
 
     public static PgApproveResult success(String method) {
-        return new PgApproveResult(PgOutcome.SUCCESS, method, null, null);
+        return new PgApproveResult(PgOutcome.SUCCESS, method, null, null, null);
     }
 
     public static PgApproveResult success(String method, String provider) {
-        return new PgApproveResult(PgOutcome.SUCCESS, method, null, provider);
+        return new PgApproveResult(PgOutcome.SUCCESS, method, null, provider, null);
+    }
+
+    public static PgApproveResult success(String method, String provider, String cardFingerprint) {
+        return new PgApproveResult(PgOutcome.SUCCESS, method, null, provider, cardFingerprint);
     }
 
     public static PgApproveResult failed(String reason) {
-        return new PgApproveResult(PgOutcome.FAILED, null, reason, null);
+        return new PgApproveResult(PgOutcome.FAILED, null, reason, null, null);
     }
 
     public static PgApproveResult timeout(String reason) {
-        return new PgApproveResult(PgOutcome.TIMEOUT, null, reason, null);
+        return new PgApproveResult(PgOutcome.TIMEOUT, null, reason, null, null);
     }
 
     /** 어느 PG가 처리했는지 알게 된 결과로 바꾼다. 라우터가 자기 이름을 붙일 때 쓴다 */
     public PgApproveResult withProvider(String provider) {
-        return new PgApproveResult(outcome, method, failReason, provider);
+        return new PgApproveResult(outcome, method, failReason, provider, cardFingerprint);
     }
 }

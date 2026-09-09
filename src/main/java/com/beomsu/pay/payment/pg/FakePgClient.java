@@ -39,8 +39,28 @@ public class FakePgClient implements PgClient {
 
     private final Map<String, PgPaymentStatus> pgSide = new ConcurrentHashMap<>();
 
+    /**
+     * 다음 approve 가 붙일 카드 지문. <b>기본은 null 이다.</b>
+     *
+     * <p>여기서 아무 값이나 기본으로 깔면 로컬의 모든 결제가 <b>같은 카드 한 장</b>이 된다.
+     * 그러면 속도 규칙과 창 건수가 계속 걸려 규칙 성적이 표본이 아니라 설정 탓으로 흔들린다.
+     * null 이면 사후 탐지가 예전처럼 {@code paymentKey} 로 떨어져 지금 동작이 그대로 유지된다.
+     * 카드 단위로 묶이는 흐름을 재현할 때만 {@link #setNextCardFingerprint} 로 지정한다.
+     */
+    private final AtomicReference<String> nextCardFingerprint = new AtomicReference<>();
+
     public void setNextResult(PgApproveResult result) {
         nextApproveResult.set(result);
+    }
+
+    /**
+     * 다음 승인부터 이 지문을 붙인다. 같은 값을 여러 결제에 주면 <b>한 카드가 여러 번 결제한
+     * 흐름</b>이 되어 창 건수·금액 계단·과거 중앙값 대비 배수가 살아난다.
+     *
+     * @param cardKey 카드를 가리키는 아무 문자열. 실제 PG 가 주는 마스킹 번호 대신 쓰는 대역이다
+     */
+    public void setNextCardFingerprint(String cardKey) {
+        nextCardFingerprint.set(cardKey == null ? null : CardFingerprint.of(cardKey, "FAKE"));
     }
 
     /** approve 시 PG 측에 남길 실제 상태를 지정한다 (타임아웃인데 실제론 승인된 상황 재현용). */
@@ -51,6 +71,7 @@ public class FakePgClient implements PgClient {
     public void reset() {
         nextApproveResult.set(PgApproveResult.success("CARD"));
         pgSideStatusOnApprove.set(PgPaymentStatus.APPROVED);
+        nextCardFingerprint.set(null);
         pgSide.clear();
     }
 
@@ -58,7 +79,14 @@ public class FakePgClient implements PgClient {
     public PgApproveResult approve(PgApproveCommand command) {
         // 우리에게 무엇을 돌려주든(성공/타임아웃), PG 측에는 지정된 상태를 남긴다.
         pgSide.put(command.paymentKey(), pgSideStatusOnApprove.get());
-        return nextApproveResult.get();
+        PgApproveResult result = nextApproveResult.get();
+        String card = nextCardFingerprint.get();
+        // 지문은 승인 성공에만 붙인다. 실패·미확정에 붙이면 승인 안 난 건이 창에 들어간다.
+        if (card == null || result.outcome() != PgOutcome.SUCCESS) {
+            return result;
+        }
+        return new PgApproveResult(result.outcome(), result.method(), result.failReason(),
+                result.provider(), card);
     }
 
     @Override

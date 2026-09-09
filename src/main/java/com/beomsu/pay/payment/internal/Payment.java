@@ -36,6 +36,16 @@ public class Payment {
     @Column(length = 200)
     private String paymentKey;
 
+    /**
+     * 같은 카드를 결제 여러 건에 걸쳐 묶는 키. 승인 성공 때 PG 응답에서 받아 적는다.
+     *
+     * <p><b>카드 데이터가 아니다.</b> PG 가 이미 마스킹해 준 번호와 발급사 코드를 단방향 해시로
+     * 바꾼 값이고 원문은 어디에도 안 남는다. 카드 결제가 아니거나 PG 가 카드 정보를 안 주면
+     * null 이고, 그때 사후 탐지는 예전처럼 {@code paymentKey} 로 떨어진다.
+     */
+    @Column(length = 64)
+    private String cardFingerprint;
+
     @Column(nullable = false)
     private long amount;
 
@@ -156,8 +166,16 @@ public class Payment {
      * 알려 주지 않는다.
      */
     public void approve(String method, String provider) {
+        approve(method, provider, null);
+    }
+
+    /** 승인하면서 카드 지문까지 적는다. 지문이 null 이면 기존 값을 덮지 않는다. */
+    public void approve(String method, String provider, String cardFingerprint) {
         transitionTo(PaymentStatus.DONE, TriggeredBy.USER, "승인 완료");
         this.method = method;
+        if (cardFingerprint != null) {
+            this.cardFingerprint = cardFingerprint;
+        }
         if (provider != null) {
             this.pgProvider = provider;
         }
