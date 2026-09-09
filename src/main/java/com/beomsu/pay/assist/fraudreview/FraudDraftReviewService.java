@@ -66,11 +66,24 @@ public class FraudDraftReviewService {
     /** 심사자가 자기 메모를 쓸 자리를 연다. 초안은 아직 안 준다. */
     @Transactional
     public Optional<FraudDraftReview> open(long fraudReviewId, String reviewer) {
+        return open(fraudReviewId, reviewer, FraudDraftReview.EvaluatorKind.HUMAN);
+    }
+
+    /**
+     * 평가 주체를 밝혀 연다.
+     *
+     * <p><b>기본이 {@code HUMAN} 인 것은 실수를 안전한 쪽으로 내기 위해서다.</b> 모델이 평가하는
+     * 경로는 반드시 {@code AI} 를 명시해야 하고, 안 밝히면 사람 기록으로 남아 전환 조건에
+     * 섞인다. 그 반대로 기본을 {@code AI} 로 두면 사람이 판정한 것이 참고 자료로 밀려난다.
+     */
+    @Transactional
+    public Optional<FraudDraftReview> open(long fraudReviewId, String reviewer,
+                                           FraudDraftReview.EvaluatorKind kind) {
         if (facts.factsOf(fraudReviewId).isEmpty()) {
             return Optional.empty();
         }
         return Optional.of(repository.findByFraudReviewIdAndReviewer(fraudReviewId, reviewer)
-                .orElseGet(() -> repository.save(FraudDraftReview.open(fraudReviewId, reviewer))));
+                .orElseGet(() -> repository.save(FraudDraftReview.open(fraudReviewId, reviewer, kind))));
     }
 
     /** 1단계. 초안을 보기 전에 쓴다. */
@@ -123,11 +136,23 @@ public class FraudDraftReviewService {
      */
     @Transactional(readOnly = true)
     public Stats stats() {
+        return statsOf(FraudDraftReview.EvaluatorKind.HUMAN);
+    }
+
+    /**
+     * 평가 주체별 성적.
+     *
+     * <p><b>전환 조건은 {@code HUMAN} 만 채운다.</b> 조건이 묻는 것은 <b>사람 심사자가</b>
+     * 초안을 얼마나 고쳐야 하는지다. 모델이 고친 양은 같은 질문의 답이 아니다 — 화면을 보는
+     * 것은 사람이다. {@code AI} 쪽 값은 참고 자료이지 켤 근거가 아니다.
+     */
+    @Transactional(readOnly = true)
+    public Stats statsOf(FraudDraftReview.EvaluatorKind kind) {
         List<Double> modelRates = new ArrayList<>();
         List<Double> baselineRates = new ArrayList<>();
         for (var row : repository.findAll()) {
-            if (!row.complete()) {
-                continue;   // 한쪽만 고친 건은 비교가 안 된다
+            if (!row.complete() || row.getEvaluatorKind() != kind) {
+                continue;   // 한쪽만 고친 건은 비교가 안 되고, 주체가 섞이면 조건을 못 가른다
             }
             modelRates.add(TextDistance.editRatio(row.getModelDraft(), row.getEditedDraft()));
             baselineRates.add(TextDistance.editRatio(row.getBaselineDraft(), row.getEditedBaseline()));

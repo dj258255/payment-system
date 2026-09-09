@@ -2,6 +2,8 @@ package com.beomsu.pay.assist.fraudreview;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -43,6 +45,17 @@ public class FraudDraftReview {
     @Column(nullable = false)
     private String reviewer;
 
+    /**
+     * 누가 평가했는가. <b>HUMAN 만 전환 조건을 채운다.</b>
+     *
+     * <p>전환 조건은 <b>사람 심사자가</b> 초안을 얼마나 고쳐야 하는지를 묻는다. 모델이 고친 양은
+     * 같은 질문의 답이 아니다 — 화면을 보는 것은 사람이다. 그래서 한 표에 두되 갈라서 센다.
+     * 섞으면 나중에 "그 12 건이 누구 것이었나"에 기록이 답을 못 한다.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private EvaluatorKind evaluatorKind = EvaluatorKind.HUMAN;
+
     // <b>{@code @Lob} 를 안 쓴다.</b> Hibernate 가 MySQL 에서 longtext 를 기대해
     // TEXT 로 만든 마이그레이션과 어긋나 ddl-auto=validate 가 기동을 막는다.
     // 같은 이유로 V26 의 blind_reviews 도 columnDefinition 을 명시한다.
@@ -71,14 +84,23 @@ public class FraudDraftReview {
     @Column(nullable = false)
     private Instant createdAt;
 
-    private FraudDraftReview(long fraudReviewId, String reviewer) {
+    /** 평가 주체. 늘리려면 여기에 더한다 — 문자열로 두면 오타가 조용히 새 종류가 된다. */
+    public enum EvaluatorKind { HUMAN, AI }
+
+    private FraudDraftReview(long fraudReviewId, String reviewer, EvaluatorKind evaluatorKind) {
+        this.evaluatorKind = evaluatorKind;
         this.fraudReviewId = fraudReviewId;
         this.reviewer = reviewer;
         this.createdAt = Instant.now();
     }
 
     public static FraudDraftReview open(long fraudReviewId, String reviewer) {
-        return new FraudDraftReview(fraudReviewId, reviewer);
+        return open(fraudReviewId, reviewer, EvaluatorKind.HUMAN);
+    }
+
+    /** 평가 주체를 밝혀 연다. 모델이 평가하는 경우는 반드시 이쪽으로 온다. */
+    public static FraudDraftReview open(long fraudReviewId, String reviewer, EvaluatorKind kind) {
+        return new FraudDraftReview(fraudReviewId, reviewer, kind);
     }
 
     /** 1단계. 초안을 보기 전에 쓴다. */

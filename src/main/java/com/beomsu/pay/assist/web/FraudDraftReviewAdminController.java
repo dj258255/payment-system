@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -30,6 +31,32 @@ class FraudDraftReviewAdminController {
     }
 
     /** 자리를 연다. 초안은 아직 안 준다. */
+    /**
+     * 평가 주체를 밝혀 연다. {@code kind} 를 안 주면 사람이다.
+     *
+     * <p>기본을 사람으로 두는 것이 실수를 안전한 쪽으로 낸다 — 모델 평가는 반드시 명시해야
+     * 하고, 안 밝히면 사람 기록이 되어 전환 조건에 섞인다.
+     */
+    @PostMapping("/open-as")
+    ResponseEntity<Void> openAs(@PathVariable long id, @RequestBody EvaluatorRequest req) {
+        var kind = req.kind() == null
+                ? com.beomsu.pay.assist.fraudreview.FraudDraftReview.EvaluatorKind.HUMAN
+                : com.beomsu.pay.assist.fraudreview.FraudDraftReview.EvaluatorKind.valueOf(req.kind());
+        return service.open(id, req.reviewer(), kind).isPresent()
+                ? ResponseEntity.noContent().build()
+                : ResponseEntity.notFound().build();
+    }
+
+    /** 평가 주체별 성적. {@code kind} 를 안 주면 사람 것이다(전환 조건이 보는 값). */
+    @GetMapping("/stats-of")
+    ResponseEntity<FraudDraftReviewService.Stats> statsOf(@PathVariable long id,
+                                                         @RequestParam(defaultValue = "HUMAN") String kind) {
+        return ResponseEntity.ok(service.statsOf(
+                com.beomsu.pay.assist.fraudreview.FraudDraftReview.EvaluatorKind.valueOf(kind)));
+    }
+
+    record EvaluatorRequest(String reviewer, String kind) {}
+
     @PostMapping("/open")
     ResponseEntity<Void> open(@PathVariable long id, @RequestBody ReviewerRequest req) {
         return service.open(id, req.reviewer()).isPresent()
