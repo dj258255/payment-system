@@ -133,6 +133,15 @@ case "${1:-up}" in
     if [ "${pending:-0}" -lt 12 ]; then
       echo "  대기 중인 심사 ${pending:-0}건. 표본을 심는다."
       db < tools/seed-fraud-review.sql 2>&1 | grep -v Warning || true
+      # <b>심고 나서 다시 센다.</b> 시드가 깨져도 파이프 뒤의 grep 이 0 으로 끝나 성공처럼
+      # 보인다. 실제로 그렇게 "준비됐다"를 찍고 표본 0 건으로 넘어간 적이 있다.
+      pending=$(db -N -B -e "SELECT COUNT(*) FROM fraud_reviews WHERE status='PENDING'" 2>/dev/null || echo 0)
+      if [ "${pending:-0}" -lt 12 ]; then
+        echo
+        echo "  표본이 ${pending:-0}건이다. 시드가 실패했다. 여기서 멈춘다."
+        echo "  스키마가 바뀌었을 수 있다: docker exec pay-mysql-1 mysql -uroot -proot pay -e 'SHOW COLUMNS FROM payments'"
+        exit 1
+      fi
     fi
 
     cat <<MSG

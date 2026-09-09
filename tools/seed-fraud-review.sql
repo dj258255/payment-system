@@ -19,20 +19,20 @@ SET @t0 = DATE_SUB(NOW(), INTERVAL 3 DAY);
 
 -- 카드 넷에 결제 열둘. 카드 A 가 다섯 건이라 뒤로 갈수록 "지난 심사"가 쌓인다.
 INSERT INTO payments (order_no, payment_key, card_fingerprint, amount, balance_amount, status, method,
-                      created_at, updated_at, approved_at)
+                      pg_provider, version, requested_at, approved_at)
 VALUES
- ('FR-01','pk-fr-01', SHA2('FAKE|card-A',256), 980000, 980000,'DONE','CARD',@t0,@t0,@t0),
- ('FR-02','pk-fr-02', SHA2('FAKE|card-A',256), 970000, 970000,'DONE','CARD',@t0,@t0,@t0),
- ('FR-03','pk-fr-03', SHA2('FAKE|card-A',256), 995000, 995000,'DONE','CARD',@t0,@t0,@t0),
- ('FR-04','pk-fr-04', SHA2('FAKE|card-B',256),    300,    300,'DONE','CARD',@t0,@t0,@t0),
- ('FR-05','pk-fr-05', SHA2('FAKE|card-B',256),    500,    500,'DONE','CARD',@t0,@t0,@t0),
- ('FR-06','pk-fr-06', SHA2('FAKE|card-B',256), 840000, 840000,'DONE','CARD',@t0,@t0,@t0),
- ('FR-07','pk-fr-07', SHA2('FAKE|card-C',256), 120000, 120000,'DONE','CARD',@t0,@t0,@t0),
- ('FR-08','pk-fr-08', SHA2('FAKE|card-C',256), 460000, 460000,'DONE','CARD',@t0,@t0,@t0),
- ('FR-09','pk-fr-09', SHA2('FAKE|card-C',256), 910000, 910000,'DONE','CARD',@t0,@t0,@t0),
- ('FR-10','pk-fr-10', SHA2('FAKE|card-D',256), 999000, 999000,'DONE','CARD',@t0,@t0,@t0),
- ('FR-11','pk-fr-11', SHA2('FAKE|card-A',256), 640000, 640000,'DONE','CARD',@t0,@t0,@t0),
- ('FR-12','pk-fr-12', SHA2('FAKE|card-A',256), 205000, 205000,'DONE','CARD',@t0,@t0,@t0);
+ ('FR-01','pk-fr-01', SHA2('FAKE|card-A',256), 980000, 980000,'DONE','CARD','toss',0,@t0,@t0),
+ ('FR-02','pk-fr-02', SHA2('FAKE|card-A',256), 970000, 970000,'DONE','CARD','toss',0,@t0,@t0),
+ ('FR-03','pk-fr-03', SHA2('FAKE|card-A',256), 995000, 995000,'DONE','CARD','toss',0,@t0,@t0),
+ ('FR-04','pk-fr-04', SHA2('FAKE|card-B',256),    300,    300,'DONE','CARD','toss',0,@t0,@t0),
+ ('FR-05','pk-fr-05', SHA2('FAKE|card-B',256),    500,    500,'DONE','CARD','toss',0,@t0,@t0),
+ ('FR-06','pk-fr-06', SHA2('FAKE|card-B',256), 840000, 840000,'DONE','CARD','toss',0,@t0,@t0),
+ ('FR-07','pk-fr-07', SHA2('FAKE|card-C',256), 120000, 120000,'DONE','CARD','toss',0,@t0,@t0),
+ ('FR-08','pk-fr-08', SHA2('FAKE|card-C',256), 460000, 460000,'DONE','CARD','toss',0,@t0,@t0),
+ ('FR-09','pk-fr-09', SHA2('FAKE|card-C',256), 910000, 910000,'DONE','CARD','toss',0,@t0,@t0),
+ ('FR-10','pk-fr-10', SHA2('FAKE|card-D',256), 999000, 999000,'DONE','CARD','toss',0,@t0,@t0),
+ ('FR-11','pk-fr-11', SHA2('FAKE|card-A',256), 640000, 640000,'DONE','CARD','toss',0,@t0,@t0),
+ ('FR-12','pk-fr-12', SHA2('FAKE|card-A',256), 205000, 205000,'DONE','CARD','toss',0,@t0,@t0);
 
 -- 심사 큐. decision 은 REVIEW/BLOCK 만 큐에 들어간다(ALLOW/CHALLENGE 는 제외).
 -- reasons 는 화면과 초안이 규칙 이름을 뽑는 자리다. 괄호 안 값까지 같은 모양으로 넣는다.
