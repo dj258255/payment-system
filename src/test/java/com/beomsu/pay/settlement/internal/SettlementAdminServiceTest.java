@@ -32,6 +32,7 @@ class SettlementAdminServiceTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 7, 5);
     private static final LocalDate PAYOUT = LocalDate.of(2026, 7, 7);
+    private static final long PLATFORM = com.beomsu.pay.seller.SellerPayoutGate.PLATFORM_SELLER_ID;
 
     @BeforeEach
     void setUp() {
@@ -43,7 +44,7 @@ class SettlementAdminServiceTest {
     @Test
     @DisplayName("list: 정산을 페이지 뷰 record로 매핑한다")
     void listMapsToView() {
-        Settlement s = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 3, PAYOUT);
+        Settlement s = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 3, PAYOUT, PLATFORM);
         Pageable pageable = PageRequest.of(0, 20);
         when(repository.findAll(any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(s), pageable, 1));
@@ -64,7 +65,7 @@ class SettlementAdminServiceTest {
     @Test
     @DisplayName("confirmPayout: CREATED → PAID_OUT 전이하고 saveAndFlush로 명시 영속")
     void confirmPayoutTransitionsAndPersists() {
-        Settlement s = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 3, PAYOUT);
+        Settlement s = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 3, PAYOUT, PLATFORM);
         when(repository.findById(7L)).thenReturn(Optional.of(s));
         when(repository.saveAndFlush(s)).thenReturn(s);
 
@@ -92,7 +93,7 @@ class SettlementAdminServiceTest {
     @Test
     @DisplayName("runSettlement: settle에 위임한다")
     void runSettlementDelegates() {
-        Settlement s = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 3, PAYOUT);
+        Settlement s = Settlement.of(DATE, "KRW", 100_000, 2_700, 270, 3, PAYOUT, PLATFORM);
         when(settlementService.settle(DATE)).thenReturn(s);
 
         Settlement result = service.runSettlement(DATE);

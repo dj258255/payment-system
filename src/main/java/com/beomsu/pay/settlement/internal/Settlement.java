@@ -45,15 +45,15 @@ public class Settlement {
     private String currency;
 
     /**
-     * 정산을 받을 판매자. <b>{@code null} 이면 플랫폼 직판</b>이다.
+     * 정산을 받을 판매자. <b>플랫폼 직판도 자기 판매자 행을 갖는다</b>(V49).
      *
      * <p><b>유니크 키에 들어 있다.</b> 같은 날 같은 통화라도 판매자가 다르면 정산이 따로 난다.
-     * 그런데 MySQL 유니크 인덱스는 {@code NULL} 을 서로 다른 값으로 취급하므로, 플랫폼 직판
-     * 정산이 같은 날짜에 여러 개 생기는 것을 <b>제약만으로는 못 막는다.</b> 집계 쪽 존재 검사가
-     * {@code null} 을 하나의 묶음으로 다뤄 함께 지킨다.
+     * 예전에는 플랫폼 직판을 {@code null} 로 적었는데, MySQL 유니크 인덱스가 {@code NULL} 을
+     * 서로 다른 값으로 봐서 <b>제약이 그 자리만 안 걸렸다.</b> 지금은 값이 늘 있어서
+     * 제약 하나로 끝나고, 존재 검사도 갈리지 않는다.
      */
-    @Column(name = "seller_id")
-    private Long sellerId;
+    @Column(name = "seller_id", nullable = false)
+    private long sellerId;
 
     /** 거래 총액 */
     @Column(nullable = false)
@@ -125,13 +125,7 @@ public class Settlement {
      * 하루치 집계로 정산을 만든다. netAmount는 gross - fee - feeVat로 계산하며, 불변식
      * (net = gross - fee - feeVat)을 생성 직후 재검증한다 — 불균형 정산은 만들어질 수 없다.
      */
-    public static Settlement of(LocalDate settlementDate, String currency, long grossAmount, long feeAmount,
-                                long feeVatAmount, int itemCount, LocalDate payoutDate) {
-        return of(settlementDate, currency, grossAmount, feeAmount, feeVatAmount, itemCount,
-                payoutDate, null);
-    }
-
-    /** @param sellerId 정산을 받을 판매자. {@code null} 이면 플랫폼 직판 */
+    /** @param sellerId 정산을 받을 판매자. 플랫폼 직판이면 플랫폼 판매자 id 다 */
     public static Settlement of(LocalDate settlementDate, String currency, long grossAmount, long feeAmount,
                                 long feeVatAmount, int itemCount, LocalDate payoutDate, Long sellerId) {
         if (grossAmount < 0 || feeAmount < 0 || feeVatAmount < 0) {

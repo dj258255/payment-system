@@ -100,9 +100,9 @@ class SellerScreeningEndToEndMySqlTest {
     }
 
     @Test
-    @DisplayName("플랫폼 직판은 대조할 판매자가 없어 통과한다")
+    @DisplayName("플랫폼 직판은 외부로 나가는 지급이 아니라 통과한다")
     void platformDirectSaleIsAllowed() {
-        assertThat(gate.check(null).allowed()).isTrue();
+        assertThat(gate.check(SellerPayoutGate.PLATFORM_SELLER_ID).allowed()).isTrue();
     }
 
     @Test

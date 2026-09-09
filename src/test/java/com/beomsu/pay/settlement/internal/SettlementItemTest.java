@@ -12,9 +12,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SettlementItemTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 7, 5);
+    private static final long PLATFORM = com.beomsu.pay.seller.SellerPayoutGate.PLATFORM_SELLER_ID;
 
     private static SettlementItem newItem() {
-        return SettlementItem.of(1L, "order-1", 10_000, DATE);
+        return SettlementItem.of(1L, "order-1", 10_000, DATE, PLATFORM);
     }
 
     @Test

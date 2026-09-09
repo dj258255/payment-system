@@ -34,12 +34,11 @@ public class SettlementItem {
     /**
      * 정산을 받을 판매자. <b>{@code null} 이면 플랫폼 직판</b>이다.
      *
-     * <p>기존 주문은 플랫폼이 직접 판 것이고 그건 사실이다. 가짜 판매자를 만들어 채우면
-     * 없던 판매자를 지어내는 것이 되므로 {@code null} 로 둔다. 집계는 이것도 하나의
-     * 묶음으로 센다.
+     * <p>플랫폼이 직접 판 것도 판매자가 없는 것이 아니라 <b>파는 쪽이 플랫폼인 것</b>이다.
+     * 그래서 플랫폼도 자기 판매자 행을 갖고, 이 값은 늘 채워진다(V49).
      */
-    @Column(name = "seller_id")
-    private Long sellerId;
+    @Column(name = "seller_id", nullable = false)
+    private long sellerId;
 
     @Column(nullable = false)
     private long amount;
@@ -80,14 +79,9 @@ public class SettlementItem {
         this.status = SettlementItemStatus.PENDING_CONFIRMATION;
     }
 
-    /** 결제 승인 항목을 PENDING_CONFIRMATION(구매확정 대기) 상태로 만든다. */
-    public static SettlementItem of(long paymentId, String orderNo, long amount, LocalDate confirmedDate) {
-        return of(paymentId, orderNo, amount, confirmedDate, null);
-    }
-
-    /** @param sellerId 정산을 받을 판매자. {@code null} 이면 플랫폼 직판 */
+    /** @param sellerId 정산을 받을 판매자. 플랫폼 직판이면 플랫폼 판매자 id 다 */
     public static SettlementItem of(long paymentId, String orderNo, long amount,
-                                    LocalDate confirmedDate, Long sellerId) {
+                                    LocalDate confirmedDate, long sellerId) {
         SettlementItem item = new SettlementItem(paymentId, orderNo, amount, confirmedDate);
         item.sellerId = sellerId;
         return item;
