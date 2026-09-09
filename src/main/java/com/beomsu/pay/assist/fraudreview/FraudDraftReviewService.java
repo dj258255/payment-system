@@ -150,14 +150,19 @@ public class FraudDraftReviewService {
     public Stats statsOf(FraudDraftReview.EvaluatorKind kind) {
         List<Double> modelRates = new ArrayList<>();
         List<Double> baselineRates = new ArrayList<>();
+        List<Double> seconds = new ArrayList<>();
         for (var row : repository.findAll()) {
             if (!row.complete() || row.getEvaluatorKind() != kind) {
                 continue;   // 한쪽만 고친 건은 비교가 안 되고, 주체가 섞이면 조건을 못 가른다
             }
             modelRates.add(TextDistance.editRatio(row.getModelDraft(), row.getEditedDraft()));
             baselineRates.add(TextDistance.editRatio(row.getBaselineDraft(), row.getEditedBaseline()));
+            if (row.getRevealedAt() != null && row.getEditedAt() != null) {
+                seconds.add((double) java.time.Duration.between(
+                        row.getRevealedAt(), row.getEditedAt()).toSeconds());
+            }
         }
-        return new Stats(modelRates.size(), median(modelRates), median(baselineRates));
+        return new Stats(modelRates.size(), median(modelRates), median(baselineRates), median(seconds));
     }
 
     /**
@@ -167,7 +172,18 @@ public class FraudDraftReviewService {
      * @param modelMedian   모델 초안의 편집률 중앙값. 표본이 없으면 {@code null}
      * @param baselineMedian 템플릿 초안의 편집률 중앙값
      */
-    public record Stats(int judged, Double modelMedian, Double baselineMedian) {
+    /**
+     * @param medianSeconds 초안을 보고 최종본을 낼 때까지 걸린 시간의 중앙값.
+     *                      <b>편집량만으로는 일이 줄었는지 모른다.</b> 적게 고쳤는데 오래
+     *                      걸렸으면 읽고 판단하는 데 시간을 쓴 것이고, 그건 절감이 아니다.
+     *                      {@code revealed_at → edited_at} 이라 <b>자리를 비운 시간도 들어간다.</b>
+     *                      한 건씩 끊어 재지 않으면 이 값은 상한이지 작업 시간이 아니다.
+     */
+    public record Stats(int judged, Double modelMedian, Double baselineMedian, Double medianSeconds) {
+
+        public Stats(int judged, Double modelMedian, Double baselineMedian) {
+            this(judged, modelMedian, baselineMedian, null);
+        }
 
         /** 이 밑으로는 중앙값을 근거로 쓰지 않는다. 상담 초안 실험이 12건이었다. */
         public static final int MIN_JUDGED = 12;
