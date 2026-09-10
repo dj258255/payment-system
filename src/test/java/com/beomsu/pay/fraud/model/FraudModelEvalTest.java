@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -118,6 +119,123 @@ class FraudModelEvalTest {
         return r.decision() != FdsDecision.ALLOW;
     }
 
+    @Test
+    @DisplayName("경사하강이 수렴한다 — 손실이 단조로 줄고, 에폭을 열 배로 늘려도 판정이 안 바뀐다")
+    void trainConverges() {
+        var corpus = new FraudCorpus(SEED).build(NORMALS, PER_AXIS);
+        var tr = corpus.subList(0, corpus.size() / 2);
+        var holdout = corpus.subList(corpus.size() / 2, corpus.size());
+
+        var loss = new java.util.TreeMap<Integer, Double>();
+        var model = train(tr, 4_000, 3.0, loss);
+
+        System.out.printf("%n  [손실] 시작 %.6f → 끝 %.6f%n",
+                loss.firstEntry().getValue(), loss.lastEntry().getValue());
+
+        // ① 내려간다. 이걸 안 재면 <학습이 도는지>를 아무도 모른다.
+        assertThat(loss.lastEntry().getValue())
+                .as("손실이 안 줄면 학습률이나 기울기 계산이 틀린 것이다")
+                .isLessThan(loss.firstEntry().getValue());
+
+        // ② 오르내리지 않는다. 오르내리면 학습률이 너무 크다.
+        double prev = Double.MAX_VALUE;
+        for (double v : loss.values()) {
+            assertThat(v).as("손실이 올라갔다. lr=3.0 이 너무 크다는 뜻이다").isLessThanOrEqualTo(prev);
+            prev = v;
+        }
+
+        // ③ 평탄해졌다. 4,000 에폭이 <충분한지>에 대한 답이다.
+        double tail = loss.get(3_900) - loss.get(3_999);
+        System.out.printf("  마지막 100 에폭 감소분 %.8f%n", tail);
+        assertThat(tail).as("아직 가파르면 에폭이 모자란 것이다").isLessThan(1e-4);
+
+        // ④ 열 배로 돌려도 판정이 같다. 정규화가 없어 가중치는 계속 자라지만,
+        //    이 모델은 <순서를 정하는 데만> 쓰므로 판정이 안 바뀌면 그것으로 충분하다.
+        var longer = train(tr, 40_000, 3.0);
+        double th = thresholdAt(model, tr);
+        double thLong = thresholdAt(longer, tr);
+        long flipped = holdout.stream().filter(c ->
+                (model.risk(featuresOf(c)) >= th) != (longer.risk(featuresOf(c)) >= thLong)).count();
+        System.out.printf("  4,000 vs 40,000 에폭 · 홀드아웃 %d건 중 판정이 갈린 건 %d%n",
+                holdout.size(), flipped);
+        assertThat(flipped).as("에폭을 늘려 판정이 바뀌면 4,000 에폭에서 뽑은 가중치를 쓸 수 없다")
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("서빙 가중치가 지금 학습 결과와 같다 — 손으로 옮기다 어긋나는 자리다")
+    void servedWeightsMatchTraining() {
+        var corpus = new FraudCorpus(SEED).build(NORMALS, PER_AXIS);
+        var model = train(corpus.subList(0, corpus.size() / 2), 4_000, 3.0);
+
+        assertWeights("application.yml", ymlDefault("weights"), ymlDefault("bias"), model);
+        assertWeights("FraudModelConfig", annotationDefault("weights"), annotationDefault("bias"), model);
+
+        // 임계도 학습이 정한다. 가중치만 옮기고 임계를 두면 오탐 5% 라는 전제가 깨진다.
+        double trained = thresholdAt(model, corpus.subList(0, corpus.size() / 2));
+        for (var src : java.util.Map.of(
+                "application.yml", ymlDefault("threshold"),
+                "LabelledScoreReport", labelledReportThresholdDefault()).entrySet()) {
+            assertThat(Double.parseDouble(src.getValue().trim()))
+                    .as("%s 의 임계가 학습 결과와 다르다", src.getKey())
+                    .isCloseTo(trained, within(5e-6));
+        }
+    }
+
+    /** {@code LabelledScoreReport} 의 {@code @Value} 임계 기본값. */
+    private static String labelledReportThresholdDefault() {
+        try {
+            var v = LabelledScoreReport.class.getDeclaredField("threshold")
+                    .getAnnotation(org.springframework.beans.factory.annotation.Value.class).value();
+            return v.substring(v.indexOf(':') + 1, v.length() - 1);
+        } catch (NoSuchFieldException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static void assertWeights(String where, String weightCsv, String biasText,
+                                      LogisticFraudRiskModel trained) {
+        double[] served = java.util.Arrays.stream(weightCsv.split(","))
+                .map(String::trim).mapToDouble(Double::parseDouble).toArray();
+        assertThat(served)
+                .as("%s 의 가중치 개수가 피처 개수와 다르다", where)
+                .hasSize(SequenceFeatures.NAMES.size());
+        for (int i = 0; i < served.length; i++) {
+            assertThat(served[i])
+                    .as("%s 의 %s 가중치가 학습 결과와 다르다. 하네스가 찍어 준 값을 옮기지 않았다",
+                            where, SequenceFeatures.NAMES.get(i))
+                    .isCloseTo(trained.weights()[i], within(5e-6));
+        }
+        assertThat(Double.parseDouble(biasText.trim()))
+                .as("%s 의 절편이 학습 결과와 다르다", where)
+                .isCloseTo(trained.bias(), within(5e-6));
+    }
+
+    /** {@code application.yml} 의 {@code fds.model.<key>} 기본값. 실제로 서빙에 쓰이는 값이다. */
+    private static String ymlDefault(String key) {
+        try (var in = FraudModelEvalTest.class.getResourceAsStream("/application.yml")) {
+            String yml = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            var m = java.util.regex.Pattern
+                    .compile("^\\s*" + key + ":\\s*\\$\\{[A-Z_]+:([^}]*)}", java.util.regex.Pattern.MULTILINE)
+                    .matcher(yml);
+            assertThat(m.find()).as("application.yml 에서 fds.model.%s 를 못 찾았다", key).isTrue();
+            return m.group(1);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** {@code FraudModelConfig} 의 {@code @Value} 기본값. yml 이 없을 때 쓰이는 값이다. */
+    private static String annotationDefault(String field) {
+        try {
+            var v = FraudModelConfig.class.getDeclaredField(field)
+                    .getAnnotation(org.springframework.beans.factory.annotation.Value.class).value();
+            return v.substring(v.indexOf(':') + 1, v.length() - 1);
+        } catch (NoSuchFieldException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     // ── 학습 ────────────────────────────────────────────────────────────────
 
     /**
@@ -125,6 +243,18 @@ class FraudModelEvalTest {
      * 의존을 늘리면 CI 에서 이 평가가 도는 조건이 하나 더 생긴다.
      */
     private static LogisticFraudRiskModel train(List<FraudCorpus.Case> cases, int epochs, double lr) {
+        return train(cases, epochs, lr, null);
+    }
+
+    /**
+     * 경사하강법. 위 오버로드와 <b>계산은 같고</b>, {@code lossAt} 을 주면 100 에폭마다
+     * 로그 손실을 적어 둔다.
+     *
+     * <p><b>손실은 기록할 때만 계산한다.</b> 매 에폭 재면 코퍼스를 한 번 더 훑어 학습이
+     * 두 배로 느려지고, 그 비용은 수렴을 확인하는 테스트에서만 낼 값이다.
+     */
+    private static LogisticFraudRiskModel train(List<FraudCorpus.Case> cases, int epochs, double lr,
+                                                Map<Integer, Double> lossAt) {
         int dim = SequenceFeatures.NAMES.size();
         double[] w = new double[dim];
         double b = 0;
@@ -150,8 +280,26 @@ class FraudModelEvalTest {
             }
             for (int j = 0; j < dim; j++) w[j] -= lr * gw[j] / xs.size();
             b -= lr * gb / xs.size();
+
+            if (lossAt != null && (e % 100 == 0 || e == epochs - 1)) {
+                lossAt.put(e, logLoss(w, b, xs, ys));
+            }
         }
         return new LogisticFraudRiskModel(w, b);
+    }
+
+    /** 평균 로그 손실. 경사하강이 실제로 내려가고 있는지 보는 유일한 값이다. */
+    private static double logLoss(double[] w, double b, List<double[]> xs, List<Double> ys) {
+        double sum = 0;
+        for (int i = 0; i < xs.size(); i++) {
+            double[] x = xs.get(i);
+            double z = b;
+            for (int j = 0; j < w.length; j++) z += w[j] * x[j];
+            double p = 1.0 / (1.0 + Math.exp(-z));
+            double eps = 1e-12;
+            sum += -(ys.get(i) * Math.log(p + eps) + (1 - ys.get(i)) * Math.log(1 - p + eps));
+        }
+        return sum / xs.size();
     }
 
     private static SequenceFeatures featuresOf(FraudCorpus.Case c) {

@@ -44,7 +44,7 @@ public class LabelledScoreReport {
     private long amountThreshold;
 
     /** 이 점수 위를 부정으로 본다. 코퍼스 학습에서 정상 오탐 5% 가 되던 지점이다. */
-    @Value("${fds.model.threshold:0.530019}")
+    @Value("${fds.model.threshold:0.539601}")
     private double threshold;
 
     public LabelledScoreReport(CardTransactionRepository transactions, DisputeOutcomePort disputes,
