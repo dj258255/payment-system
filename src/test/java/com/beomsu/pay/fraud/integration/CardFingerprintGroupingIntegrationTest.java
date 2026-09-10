@@ -108,8 +108,8 @@ class CardFingerprintGroupingIntegrationTest {
         transactions.save(CardTransaction.of(other, "CFG-4", 700_000, 0, null, null, now.minus(Duration.ofHours(1))));
 
         List<CardTransaction> window = transactions
-                .findByCardKeyAndOccurredAtGreaterThanEqualOrderByOccurredAtDesc(
-                        card, now.minus(Duration.ofHours(24)), PageRequest.of(0, 200));
+                .findByCardKeyAndOccurredAtBetweenOrderByOccurredAtDesc(
+                        card, now.minus(Duration.ofHours(24)), now, PageRequest.of(0, 200));
 
         assertThat(window).hasSize(3);
         assertThat(window).extracting(CardTransaction::getOrderNo)

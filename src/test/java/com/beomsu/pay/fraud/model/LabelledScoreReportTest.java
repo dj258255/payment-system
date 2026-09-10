@@ -76,8 +76,8 @@ class LabelledScoreReportTest {
         window.add(target);
 
         when(transactions.findByOrderNo(orderNo)).thenReturn(List.of(target));
-        when(transactions.findByCardKeyAndOccurredAtGreaterThanEqualOrderByOccurredAtDesc(
-                anyString(), any(Instant.class), any(Pageable.class)))
+        when(transactions.findByCardKeyAndOccurredAtBetweenOrderByOccurredAtDesc(
+                anyString(), any(Instant.class), any(Instant.class), any(Pageable.class)))
                 .thenReturn(window.reversed());
     }
 
@@ -151,9 +151,16 @@ class LabelledScoreReportTest {
             after.add(txn("card-f", "ORD-later" + i, 200, AT.plus(Duration.ofMinutes(5L * (i + 1)))));
         }
         when(transactions.findByOrderNo("ORD-1")).thenReturn(List.of(target));
-        when(transactions.findByCardKeyAndOccurredAtGreaterThanEqualOrderByOccurredAtDesc(
-                anyString(), any(Instant.class), any(Pageable.class)))
-                .thenReturn(after.reversed());
+        // 목이 조회 규약을 지킨다. 거르는 자리가 자바에서 조회로 옮겨 갔으므로,
+        // 목이 상한을 무시하면 <실제로는 안 오는 행>을 돌려주며 통과시켜 버린다.
+        when(transactions.findByCardKeyAndOccurredAtBetweenOrderByOccurredAtDesc(
+                anyString(), any(Instant.class), any(Instant.class), any(Pageable.class)))
+                .thenAnswer(inv -> {
+                    Instant until = inv.getArgument(2);
+                    return after.stream().filter(t -> !t.getOccurredAt().isAfter(until))
+                            .sorted(java.util.Comparator.comparing(CardTransaction::getOccurredAt).reversed())
+                            .toList();
+                });
         when(disputes.settledSince(any(Instant.class), org.mockito.ArgumentMatchers.anyInt()))
                 .thenReturn(List.of(lostFraud("ORD-1")));
 
@@ -163,6 +170,12 @@ class LabelledScoreReportTest {
         assertThat(r.missed())
                 .as("뒤에 일어난 소액 시도를 창에 넣으면 안 잡을 건을 잡은 것으로 세게 된다")
                 .isEqualTo(1);
+
+        // 상한을 실제로 그 결제 시각으로 줬는지. 위 목이 규약을 지켜도 본코드가 안 주면 소용없다.
+        var until = org.mockito.ArgumentCaptor.forClass(Instant.class);
+        org.mockito.Mockito.verify(transactions).findByCardKeyAndOccurredAtBetweenOrderByOccurredAtDesc(
+                anyString(), any(Instant.class), until.capture(), any(Pageable.class));
+        assertThat(until.getValue()).isEqualTo(AT);
     }
 
     @Test

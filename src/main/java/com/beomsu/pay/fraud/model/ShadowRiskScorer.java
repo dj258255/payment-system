@@ -124,8 +124,9 @@ public class ShadowRiskScorer {
      */
     private List<TxnRecord> windowOf(String cardKey, TxnRecord current) {
         Instant since = current.at().minus(Duration.ofHours(windowHours));
-        var rows = transactions.findByCardKeyAndOccurredAtGreaterThanEqualOrderByOccurredAtDesc(
-                cardKey, since, PageRequest.of(0, windowMaxRows));
+        // 이번 건보다 <나중> 거래는 그때 몰랐던 사실이다. 창에 들어오면 미래를 보고 채점한다.
+        var rows = transactions.findByCardKeyAndOccurredAtBetweenOrderByOccurredAtDesc(
+                cardKey, since, current.at(), PageRequest.of(0, windowMaxRows));
 
         List<TxnRecord> window = new ArrayList<>(rows.size() + 1);
         for (var row : rows) {

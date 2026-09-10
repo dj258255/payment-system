@@ -25,10 +25,10 @@ public class FraudModelConfig {
      * {@code windowCount, amountToMedian, nearThresholdRatio, microCount,
      * escalation, deviceChurn, ipChurn, nightRatio} 순서다.
      */
-    @Value("${fds.model.weights:2.679502,-0.158154,2.928409,8.557328,3.530378,2.452604,-0.967388,2.115038}")
+    @Value("${fds.model.weights:2.259489,0.383182,2.921201,7.864491,2.225669,2.693387,-1.296761,3.102604}")
     private List<Double> weights;
 
-    @Value("${fds.model.bias:-5.447640}")
+    @Value("${fds.model.bias:-4.714702}")
     private double bias;
 
     @Bean

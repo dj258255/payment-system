@@ -512,8 +512,10 @@ fds:
     # SequenceFeatures.NAMES 와 같다. 순서가 어긋나면 조용히 틀린 점수가 나온다.
     #   windowCount, amountToMedian, nearThresholdRatio, microCount,
     #   escalation, deviceChurn, ipChurn, nightRatio
-    weights: ${FDS_MODEL_WEIGHTS:2.679502,-0.158154,2.928409,8.557328,3.530378,2.452604,-0.967388,2.115038}
-    bias: ${FDS_MODEL_BIAS:-5.447640}
+    weights: ${FDS_MODEL_WEIGHTS:2.259489,0.383182,2.921201,7.864491,2.225669,2.693387,-1.296761,3.102604}
+    bias: ${FDS_MODEL_BIAS:-4.714702}
+    # 학습 절반에서 정상 오탐이 5% 가 되는 임계다. 가중치가 바뀌면 이 값도 같이 바뀐다.
+    threshold: ${FDS_MODEL_THRESHOLD:0.539601}
     shadow:
       # 점수를 내고 기록만 한다. 꺼도 결제와 사후 탐지는 그대로 돈다.
       enabled: ${FDS_MODEL_SHADOW_ENABLED:true}
