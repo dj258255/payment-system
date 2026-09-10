@@ -36,8 +36,10 @@ class ShadowRiskScorerTest {
     /** 학습 결과 그대로의 가중치. 설정 기본값과 같은 값이라 운영과 같은 점수가 나온다. */
     private static FraudRiskModel model() {
         return new LogisticFraudRiskModel(new double[]{
-                2.679502, -0.158154, 2.928409, 8.557328, 3.530378, 2.452604, -0.967388, 2.115038},
-                -5.447640);
+                2.259489, 0.383182, 2.921201, 7.864491,
+                2.225669, 2.693387, -1.296761, 3.102604
+        },
+                -4.714702);
     }
 
     @BeforeEach
@@ -52,9 +54,26 @@ class ShadowRiskScorerTest {
         ReflectionTestUtils.setField(scorer, "amountThreshold", THRESHOLD);
     }
 
+    @Test
+    @DisplayName("판정 시점보다 나중 거래는 창에 안 넣는다 — 학습은 그런 창을 본 적이 없다")
+    void windowStopsAtTheScoredPayment() {
+        Instant now = Instant.parse("2026-09-10T12:00:00Z");
+        givenWindow(List.of());
+
+        var captured = org.mockito.ArgumentCaptor.forClass(Instant.class);
+        scorer.score("card-w", scoredOrderNo(), new TxnRecord(10_000L, now, "dev-1", "1.1.1.1", 0));
+
+        org.mockito.Mockito.verify(transactions).findByCardKeyAndOccurredAtBetweenOrderByOccurredAtDesc(
+                anyString(), any(Instant.class), captured.capture(), any(Pageable.class));
+
+        assertThat(captured.getValue())
+                .as("상한이 판정 시점이어야 한다. 없으면 재배달로 먼저 저장된 뒤 건이 창에 섞인다")
+                .isEqualTo(now);
+    }
+
     private void givenWindow(List<CardTransaction> rows) {
-        when(transactions.findByCardKeyAndOccurredAtGreaterThanEqualOrderByOccurredAtDesc(
-                anyString(), any(Instant.class), any(Pageable.class))).thenReturn(rows);
+        when(transactions.findByCardKeyAndOccurredAtBetweenOrderByOccurredAtDesc(
+                anyString(), any(Instant.class), any(Instant.class), any(Pageable.class))).thenReturn(rows);
     }
 
     private static CardTransaction txn(String card, String orderNo, long amount, Instant at) {
@@ -173,8 +192,8 @@ class ShadowRiskScorerTest {
     @Test
     @DisplayName("창 조회가 터져도 예외를 안 올린다 — 관찰이 판정을 멈추면 안 된다")
     void repositoryFailureIsSwallowed() {
-        when(transactions.findByCardKeyAndOccurredAtGreaterThanEqualOrderByOccurredAtDesc(
-                anyString(), any(Instant.class), any(Pageable.class)))
+        when(transactions.findByCardKeyAndOccurredAtBetweenOrderByOccurredAtDesc(
+                anyString(), any(Instant.class), any(Instant.class), any(Pageable.class)))
                 .thenThrow(new IllegalStateException("DB 죽음"));
 
         var risk = scorer.score("card-1", scoredOrderNo(),

@@ -95,12 +95,11 @@ public class LabelledScoreReport {
         var target = rows.getFirst();
         Instant since = target.getOccurredAt().minus(Duration.ofHours(windowHours));
         var window = new ArrayList<TxnRecord>();
-        for (var row : transactions.findByCardKeyAndOccurredAtGreaterThanEqualOrderByOccurredAtDesc(
-                target.getCardKey(), since, PageRequest.of(0, windowMaxRows))) {
-            // 그 결제 <이후>에 일어난 것은 그때 몰랐던 사실이다. 넣으면 미래를 보고 채점하는 셈이다.
-            if (!row.getOccurredAt().isAfter(target.getOccurredAt())) {
-                window.add(row.toRecord());
-            }
+        // 그 결제 <이후>에 일어난 것은 그때 몰랐던 사실이다. 거르는 자리를 조회로 옮겼다 —
+        // 자바에서 거르면 행 상한을 미래 건이 먼저 먹어 과거 창이 짧아진다.
+        for (var row : transactions.findByCardKeyAndOccurredAtBetweenOrderByOccurredAtDesc(
+                target.getCardKey(), since, target.getOccurredAt(), PageRequest.of(0, windowMaxRows))) {
+            window.add(row.toRecord());
         }
         Collections.reverse(window);
         return model.risk(SequenceFeatures.of(window, target.toRecord(), amountThreshold));
