@@ -236,6 +236,112 @@ class FraudModelEvalTest {
         }
     }
 
+    @Test
+    @DisplayName("피처 행렬을 내보낸다 — 파이썬 학습기가 이 파일만 읽는다")
+    void exportsFeatureMatrix() throws java.io.IOException {
+        var corpus = new FraudCorpus(SEED).build(NORMALS, PER_AXIS);
+        int cut = corpus.size() / 2;
+
+        java.nio.file.Path dir = java.nio.file.Path.of("build", "fds");
+        java.nio.file.Files.createDirectories(dir);
+        writeMatrix(dir.resolve("train.csv"), corpus.subList(0, cut));
+        writeMatrix(dir.resolve("holdout.csv"), corpus.subList(cut, corpus.size()));
+
+        System.out.printf("%n  [피처 행렬] %s · 학습 %d행 · 홀드아웃 %d행 · 열 %d + label%n",
+                dir.toAbsolutePath(), cut, corpus.size() - cut, SequenceFeatures.NAMES.size());
+
+        assertThat(java.nio.file.Files.readAllLines(dir.resolve("train.csv")))
+                .as("헤더 한 줄 + 학습 표본 수만큼")
+                .hasSize(cut + 1);
+    }
+
+    /**
+     * <b>피처는 여기서만 계산한다.</b> 파이썬이 {@link SequenceFeatures} 를 다시 구현하면
+     * 학습과 서빙이 다른 값을 보게 되고, 그 어긋남은 점수가 이상해질 때까지 안 보인다.
+     * 이 저장소는 이미 그 실패를 겪었다(기기·IP 가 실행 경로에 안 실려 오던 것).
+     */
+    private static void writeMatrix(java.nio.file.Path out, List<FraudCorpus.Case> cases)
+            throws java.io.IOException {
+        var sb = new StringBuilder(String.join(",", SequenceFeatures.NAMES)).append(",label\n");
+        for (var c : cases) {
+            for (double v : featuresOf(c).toArray()) sb.append("%.10f".formatted(v)).append(',');
+            sb.append(c.fraud() ? 1 : 0).append('\n');
+        }
+        java.nio.file.Files.writeString(out, sb.toString());
+    }
+
+    @Test
+    @DisplayName("손으로 짠 학습기가 scikit-learn 과 같은 곳에 도착한다")
+    void agreesWithSklearn() throws java.io.IOException {
+        java.nio.file.Path artifact = java.nio.file.Path.of("build", "fds", "sklearn-model.json");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(artifact),
+                "tools/fds/train.py 를 안 돌렸다. 파이썬 없이도 나머지 평가는 돌아야 한다");
+
+        String json = java.nio.file.Files.readString(artifact);
+        double[] skW = parseArray(json, "weights");
+        double skB = parseScalar(json, "bias");
+        double skLoss = parseScalar(json, "trainLogLoss");
+
+        var corpus = new FraudCorpus(SEED).build(NORMALS, PER_AXIS);
+        int cut = corpus.size() / 2;
+        var tr = corpus.subList(0, cut);
+        var holdout = corpus.subList(cut, corpus.size());
+        var mine = train(tr, 4_000, 3.0);
+        var sk = new LogisticFraudRiskModel(skW, skB);
+
+        System.out.printf("%n  %-20s %12s %12s %10s%n", "피처", "손수", "sklearn", "차이");
+        for (int i = 0; i < skW.length; i++) {
+            System.out.printf("  %-18s %12.6f %12.6f %10.6f%n", SequenceFeatures.NAMES.get(i),
+                    mine.weights()[i], skW[i], Math.abs(mine.weights()[i] - skW[i]));
+        }
+        System.out.printf("  %-18s %12.6f %12.6f %10.6f%n", "bias", mine.bias(), skB,
+                Math.abs(mine.bias() - skB));
+
+        // ① 학습 손실이 거의 같다. 손수 짠 경사하강이 sklearn 이 찾은 최적점 근처에 있다는 뜻이다.
+        var xs = tr.stream().map(c -> featuresOf(c).toArray()).toList();
+        var ys = tr.stream().map(c -> c.fraud() ? 1.0 : 0.0).toList();
+        double myLoss = logLoss(mine.weights(), mine.bias(), xs, ys);
+        System.out.printf("%n  학습 손실  손수 %.6f · sklearn %.6f · 차이 %.6f%n",
+                myLoss, skLoss, Math.abs(myLoss - skLoss));
+        assertThat(myLoss).as("손실이 벌어지면 손수 짠 학습기가 최적점에 못 갔다는 뜻이다")
+                .isCloseTo(skLoss, within(1e-3));
+
+        // ② 홀드아웃 판정이 같다. 심사 순서를 정하는 데 쓰므로 실제로 같아야 하는 것은 이쪽이다.
+        double thMine = thresholdAt(mine, tr);
+        double thSk = thresholdAt(sk, tr);
+        long flipped = holdout.stream().filter(c ->
+                (mine.risk(featuresOf(c)) >= thMine) != (sk.risk(featuresOf(c)) >= thSk)).count();
+        System.out.printf("  홀드아웃 %d건 중 판정이 갈린 건 %d%n", holdout.size(), flipped);
+        assertThat(flipped).as("두 학습기가 다른 판정을 내면 어느 쪽을 서빙할지 정할 근거가 없다")
+                .isZero();
+
+        // ③ 상위 K 가 같다. 이 모델이 실제로 하는 일이 <위험한 순서로 줄 세우기> 다.
+        assertThat(topK(mine, holdout, 20))
+                .as("상위 20 집합이 다르면 심사자가 보는 목록이 달라진다")
+                .containsExactlyInAnyOrderElementsOf(topK(sk, holdout, 20));
+    }
+
+    /** 위험한 순서로 줄 세운 상위 {@code k} 의 <b>표본 번호</b>. 코퍼스에 식별자가 없어 색인을 쓴다. */
+    private static List<Integer> topK(LogisticFraudRiskModel m, List<FraudCorpus.Case> cases, int k) {
+        return java.util.stream.IntStream.range(0, cases.size()).boxed()
+                .sorted((a, b) -> Double.compare(
+                        m.risk(featuresOf(cases.get(b))), m.risk(featuresOf(cases.get(a)))))
+                .limit(k).toList();
+    }
+
+    private static double[] parseArray(String json, String key) {
+        var m = java.util.regex.Pattern.compile("\"" + key + "\"\\s*:\\s*\\[([^\\]]*)]").matcher(json);
+        assertThat(m.find()).as("%s 를 못 찾았다", key).isTrue();
+        return java.util.Arrays.stream(m.group(1).split(",")).map(String::trim)
+                .mapToDouble(Double::parseDouble).toArray();
+    }
+
+    private static double parseScalar(String json, String key) {
+        var m = java.util.regex.Pattern.compile("\"" + key + "\"\\s*:\\s*(-?[\\d.eE+-]+)").matcher(json);
+        assertThat(m.find()).as("%s 를 못 찾았다", key).isTrue();
+        return Double.parseDouble(m.group(1));
+    }
+
     // ── 학습 ────────────────────────────────────────────────────────────────
 
     /**
